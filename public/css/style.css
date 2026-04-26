@@ -715,26 +715,68 @@ body.board-page #root.board-screen {
   display: inline-block;
 }
 
-/* Tablet (her iki yön) — bileşenleri ek kompakt yap, 100dvh içine sığsın */
+/* ========================================================
+   Tablet board ekranı — her iki yön, tüm tablet boyutları
+   Hedef: oyuncu kutu kısa ama rakam büyük, keypad kolay basılır,
+          leg banner göze çarpar.
+   ======================================================== */
 @media (max-width: 1100px) {
-  /* Skor rakamı — en büyük alan kaplayan unsur */
-  .score-display { font-size: clamp(2rem, 7vmin, 5rem); }
-  /* Leg banner rakamı */
-  .leg-banner-num { font-size: clamp(2.4rem, 7.5vmin, 6rem); }
-  /* Keypad butonları daha sıkışık */
-  .keypad-grid button { padding: clamp(0.5rem, 1.5vmin, 1.1rem); font-size: clamp(0.9rem, 2.1vmin, 1.4rem); }
-  /* Keypad input kutusu */
-  .keypad-input { font-size: clamp(1.4rem, 3.5vmin, 2.2rem); padding: clamp(0.35rem, 0.9vmin, 0.7rem); margin-bottom: clamp(0.3rem, 0.8vmin, 0.7rem); }
-  /* Oyuncu paneli iç padding */
-  .player-panel { padding: clamp(0.5rem, 1.4vmin, 1.2rem); }
-  /* İstatistik değerleri */
-  .stat .value { font-size: clamp(0.85rem, 1.8vmin, 1.2rem); }
-  /* Board header */
-  .board-header { padding: clamp(0.35rem, 0.9vmin, 0.7rem) clamp(0.5rem, 1.2vmin, 1rem); }
-  /* Keypad genel padding */
-  .keypad { padding: clamp(0.4rem, 1vmin, 0.9rem); }
-  /* Genel gap */
-  .board-screen { gap: clamp(0.3rem, 0.9vmin, 0.7rem); padding: clamp(0.3rem, 1vmin, 0.9rem); }
-  /* Leg banner iç padding */
-  .leg-banner { padding: clamp(0.5rem, 1.2vmin, 1rem) clamp(0.5rem, 1.4vmin, 1.2rem); }
+
+  /* Genel board çerçevesi — dar gap, az padding */
+  .board-screen { gap: clamp(0.2rem, 0.6vmin, 0.45rem); padding: clamp(0.2rem, 0.6vmin, 0.45rem); }
+
+  /* Board header — çok ince tut */
+  .board-header { padding: clamp(0.25rem, 0.6vmin, 0.5rem) clamp(0.4rem, 1vmin, 0.8rem); }
+  .board-header .board-name { font-size: clamp(0.82rem, 1.9vmin, 1.05rem); }
+  .board-header .match-info { font-size: clamp(0.58rem, 1.2vmin, 0.75rem); }
+
+  /* ---- Oyuncu panelleri: kutu kısa, kalan rakam büyük ---- */
+  .player-panel { padding: clamp(0.3rem, 0.7vmin, 0.5rem) clamp(0.4rem, 1vmin, 0.7rem); }
+  .player-name  { font-size: clamp(0.82rem, 2vmin, 1.1rem); margin-bottom: 0.05rem; }
+  .player-sub   { font-size: clamp(0.55rem, 1.1vmin, 0.7rem); margin-bottom: 0.1rem; }
+  /* Kalan skor rakamı — büyük, ekranı doldursun */
+  .score-display {
+    font-size: clamp(3.2rem, 11vmin, 7rem);
+    margin: clamp(0.05rem, 0.2vmin, 0.2rem) 0;
+  }
+  /* İstatistik satırı — küçük, yer kaplasın */
+  .player-stats { gap: clamp(0.2rem, 0.6vmin, 0.5rem); margin-top: 0.2rem; }
+  .stat { min-width: clamp(36px, 5vmin, 52px); }
+  .stat .label { font-size: clamp(0.5rem, 0.95vmin, 0.62rem); }
+  .stat .value { font-size: clamp(0.72rem, 1.4vmin, 0.95rem); }
+
+  /* ---- Leg banner — büyük rakamlar, geniş kutu ---- */
+  .leg-banner { padding: clamp(0.5rem, 1.2vmin, 1rem) clamp(0.6rem, 1.6vmin, 1.3rem); }
+  .leg-banner-num {
+    font-size: clamp(3.2rem, 10vmin, 8.5rem);
+    line-height: 0.9;
+  }
+  .leg-banner-name { font-size: clamp(0.85rem, 2vmin, 1.1rem); }
+  .leg-banner-sep  { font-size: clamp(2rem, 6.5vmin, 5rem); }
+
+  /* ---- Keypad — büyük butonlar, kolay basılır ---- */
+  .keypad { padding: clamp(0.35rem, 0.9vmin, 0.7rem); }
+  .keypad-input {
+    font-size: clamp(1.5rem, 4vmin, 2.4rem);
+    padding: clamp(0.3rem, 0.7vmin, 0.55rem);
+    margin-bottom: clamp(0.25rem, 0.6vmin, 0.5rem);
+  }
+  .keypad-grid { gap: clamp(0.3rem, 0.7vmin, 0.55rem); }
+  .keypad-grid button {
+    padding: clamp(0.85rem, 2.4vmin, 1.7rem);
+    font-size: clamp(1.15rem, 3vmin, 1.9rem);
+    min-height: 54px;
+  }
+  .keypad-grid button.submit {
+    padding: clamp(0.85rem, 2.2vmin, 1.5rem);
+    font-size: clamp(1rem, 2.5vmin, 1.5rem);
+    margin-top: clamp(0.2rem, 0.5vmin, 0.4rem);
+  }
+  /* Hızlı skor kısayol butonları */
+  .keypad button.icon {
+    padding: clamp(0.5rem, 1.4vmin, 0.9rem) clamp(0.6rem, 1.6vmin, 1rem);
+    font-size: clamp(0.85rem, 2vmin, 1.1rem);
+    min-height: 42px;
+    margin: 0.1rem;
+  }
 }
