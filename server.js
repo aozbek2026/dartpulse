@@ -156,6 +156,22 @@ app.post('/api/tournaments/:id/start', auth.requireAuth, (req, res) => {
     res.status(400).json({ error: e.message });
   }
 });
+// Turnuva ayarlarını güncelle — sadece draft durumunda
+app.patch('/api/tournaments/:id', auth.requireAuth, (req, res) => {
+  try {
+    const t = db.tournamentById(+req.params.id);
+    if (!t) return res.status(404).json({ error: 'Turnuva bulunamadı' });
+    if (t.user_id !== req.user.id) return res.status(403).json({ error: 'Yetkisiz' });
+    if (t.status !== 'draft') return res.status(400).json({ error: 'Sadece taslak turnuvalar düzenlenebilir' });
+    const { name, game_mode, legs_to_win, sets_to_win } = req.body;
+    db.updateTournament(t.id, { name, game_mode, legs_to_win, sets_to_win });
+    broadcastState();
+    res.json({ ok: true });
+  } catch (e) {
+    res.status(400).json({ error: e.message });
+  }
+});
+
 app.delete('/api/tournaments/:id', auth.requireAuth, (req, res) => {
   const t = db.tournamentById(+req.params.id);
   if (t && t.user_id && t.user_id !== req.user.id) {

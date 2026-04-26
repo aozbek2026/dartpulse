@@ -2,10 +2,18 @@
 const socket = io();
 let state = { players: [], boards: [], tournaments: [], activeMatches: [] };
 let matchFilter = 'all';
+let watchedMatchId = null; // Aynalanan maç ID'si
 
 socket.on('state', (s) => {
   state = s;
   render();
+});
+
+// Aynalanan maç güncellenince modalı yenile
+socket.on('match:update', (data) => {
+  if (watchedMatchId && data.matchId === watchedMatchId) {
+    refreshWatchModal(data.matchId);
+  }
 });
 
 function render() {
@@ -92,7 +100,7 @@ function renderLive() {
           ? '<span class="chip" style="background: var(--warn, #f59e0b); color:#000;">BEKLİYOR</span>'
           : '<span class="chip live">CANLI</span>';
         return `
-          <div class="card" style="padding: 1rem;">
+          <div class="card" style="padding: 1rem; cursor: pointer;" onclick="openWatchModal(${m.id})" title="Tıkla — canlı skor izle">
             <div style="color: var(--text-dim); font-size: 0.8rem; margin-bottom: 0.5rem; display: flex; justify-content: space-between;">
               <span>${board ? board.name : 'Board yok'} · Leg ${m.current_leg}</span>
               <span>${statusChip}</span>
@@ -404,6 +412,102 @@ function renderRecent() {
       }).join('')}
     </div>
   `;
+}
+
+// ========== Canlı Maç Aynalama ==========
+async function openWatchModal(matchId) {
+  watchedMatchId = matchId;
+  // Modal zaten açıksa güncelle
+  let modal = document.getElementById('watch-modal');
+  if (!modal) {
+    modal = document.createElement('div');
+    modal.id = 'watch-modal';
+    modal.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,0.8);display:flex;align-items:center;justify-content:center;z-index:9999;padding:1rem;';
+    modal.innerHTML = `
+      <div style="background:var(--surface);border-radius:16px;padding:1.5rem;max-width:680px;width:100%;max-height:90vh;overflow-y:auto;position:relative;">
+        <button onclick="closeWatchModal()" style="position:absolute;top:1rem;right:1rem;background:none;border:none;color:var(--text-dim);font-size:1.5rem;cursor:pointer;line-height:1;">×</button>
+        <div id="watch-content" style="margin-top:0.5rem;">Yükleniyor…</div>
+      </div>
+    `;
+    document.body.appendChild(modal);
+    // Esc ile kapat
+    document.addEventListener('keydown', watchEscHandler, true);
+  }
+  await refreshWatchModal(matchId);
+}
+
+function closeWatchModal() {
+  watchedMatchId = null;
+  document.getElementById('watch-modal')?.remove();
+  document.removeEventListener('keydown', watchEscHandler, true);
+}
+
+function watchEscHandler(e) {
+  if (e.key === 'Escape') closeWatchModal();
+}
+
+async function refreshWatchModal(matchId) {
+  const content = document.getElementById('watch-content');
+  if (!content) return;
+  try {
+    const m = await api.get(`/api/matches/${matchId}`);
+    if (!m || m.error) { content.innerHTML = '<div style="color:var(--text-dim);">Maç bulunamadı.</div>'; return; }
+
+    const e1 = entryLabel(m.entry1);
+    const e2 = entryLabel(m.entry2);
+    const isTurn1 = m.current_turn === 1;
+    const showSets = (m.sets_to_win || 1) > 1;
+    const stats1 = (m.stats || []).find(s => s.player_slot === 1) || {};
+    const stats2 = (m.stats || []).find(s => s.player_slot === 2) || {};
+    const rem1 = m.p1_leg_score ?? startScore(m);
+    const rem2 = m.p2_leg_score ?? startScore(m);
+    const setLeg = showSets
+      ? `Set: ${m.p1_sets}-${m.p2_sets} · Leg: ${m.p1_legs}-${m.p2_legs}`
+      : `Leg: ${m.p1_legs}-${m.p2_legs}`;
+
+    content.innerHTML = `
+      <div style="text-align:center;margin-bottom:1rem;">
+        <div style="font-size:0.8rem;color:var(--text-dim);letter-spacing:0.1em;text-transform:uppercase;">${m.round_label || ''} · ${setLeg}</div>
+        <div style="font-size:0.88rem;color:var(--text-dim);margin-top:0.2rem;">Sıra: <strong style="color:var(--accent);">${isTurn1 ? e1 : e2}</strong></div>
+      </div>
+
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:1rem;margin-bottom:1rem;">
+        ${watchPlayerCard(e1, rem1, stats1, isTurn1, m.p1_legs, m.p1_sets, showSets)}
+        ${watchPlayerCard(e2, rem2, stats2, !isTurn1, m.p2_legs, m.p2_sets, showSets)}
+      </div>
+
+      <div style="text-align:center;font-size:0.8rem;color:var(--text-dim);">
+        ${m.status === 'live' ? '🟢 Canlı — her atışta otomatik güncellenir' : m.status === 'finished' ? '🏁 Maç bitti' : '⏳ Başlamayı bekliyor'}
+      </div>
+    `;
+  } catch(e) {
+    if (content) content.innerHTML = '<div style="color:var(--text-dim);">Bağlantı hatası.</div>';
+  }
+}
+
+function watchPlayerCard(name, remaining, stats, active, legs, sets, showSets) {
+  const avg3 = stats.darts_thrown ? ((stats.total_score / stats.darts_thrown) * 3).toFixed(1) : '—';
+  return `
+    <div style="background:var(--surface-2);border:2px solid ${active ? 'var(--accent)' : 'var(--border)'};border-radius:12px;padding:1rem;text-align:center;${active ? 'box-shadow:0 0 30px rgba(255,56,96,0.15);' : ''}">
+      <div style="font-weight:700;font-size:1rem;margin-bottom:0.5rem;${active ? 'color:var(--accent);' : ''}">${name}</div>
+      <div style="font-size:0.75rem;color:var(--text-dim);">Kalan</div>
+      <div style="font-size:3rem;font-weight:900;line-height:1.1;">${remaining}</div>
+      <div style="font-size:0.78rem;color:var(--text-dim);margin-top:0.4rem;">Leg: <strong>${legs}</strong>${showSets ? ` · Set: <strong>${sets}</strong>` : ''}</div>
+      <div style="display:flex;justify-content:center;gap:1rem;margin-top:0.5rem;font-size:0.8rem;">
+        <span>Ort: <strong>${avg3}</strong></span>
+        <span>180: <strong>${stats.one_eighty || 0}</strong></span>
+        <span>CO: <strong>${stats.best_checkout || '—'}</strong></span>
+      </div>
+    </div>
+  `;
+}
+
+function startScore(m) {
+  const mode = m?.game_mode;
+  if (mode === '501') return 501;
+  if (mode === '701') return 701;
+  if (mode === '1001') return 1001;
+  return 501;
 }
 
 // ========== Filter UI ==========

@@ -9,6 +9,9 @@ let roundOverridesEnabled = false;
 let openPickerKey = null;  // "i_p1" veya "i_p2" formatında
 let pickerSearch = '';
 
+// Sürükle-bırak sıralama state
+let dragSrcIndex = null;
+
 const socket = io();
 socket.on('state', (s) => {
   state = s;
@@ -366,9 +369,15 @@ function renderEntriesDraft() {
     const key1 = `${i}_p1`;
     const key2 = `${i}_p2`;
     return `
-      <div class="entry-row" style="margin-bottom: 0.5rem;">
+      <div class="entry-row" style="margin-bottom: 0.5rem;"
+           draggable="true"
+           ondragstart="dragStart(event, ${i})"
+           ondragover="dragOver(event, ${i})"
+           ondrop="dragDrop(event, ${i})"
+           ondragend="dragEnd()"
+           id="entry-row-${i}">
         <div class="row" style="align-items: center; gap: 0.5rem;">
-          <span style="min-width: 40px; color: var(--text-dim);">#${i + 1}</span>
+          <span style="min-width: 40px; color: var(--text-dim); cursor: grab;" title="Sürükle">⠿ #${i + 1}</span>
           ${renderPickerBtn(key1, p1)}
           ${teamMode === 'doubles' ? renderPickerBtn(key2, p2) : ''}
           <input type="number" min="1" placeholder="Seri başı" title="Seri başı (opsiyonel)"
@@ -437,6 +446,39 @@ function selectPlayerForEntry(entryIndex, field, playerId) {
   renderRoundOverridesPanel();
 }
 
+// ---- Sürükle-bırak sıralama ----
+function dragStart(e, index) {
+  dragSrcIndex = index;
+  e.dataTransfer.effectAllowed = 'move';
+  e.currentTarget.style.opacity = '0.4';
+}
+function dragOver(e, index) {
+  e.preventDefault();
+  e.dataTransfer.dropEffect = 'move';
+  // Hedef satırı vurgula
+  document.querySelectorAll('.entry-row').forEach((r, i) => {
+    r.style.borderTop = (i === index && i !== dragSrcIndex) ? '2px solid var(--accent)' : '';
+  });
+}
+function dragDrop(e, targetIndex) {
+  e.preventDefault();
+  if (dragSrcIndex === null || dragSrcIndex === targetIndex) return;
+  // Sıralamayı değiştir
+  const moved = entriesDraft.splice(dragSrcIndex, 1)[0];
+  entriesDraft.splice(targetIndex, 0, moved);
+  dragSrcIndex = null;
+  openPickerKey = null;
+  renderEntriesDraft();
+  renderRoundOverridesPanel();
+}
+function dragEnd() {
+  dragSrcIndex = null;
+  document.querySelectorAll('.entry-row').forEach(r => {
+    r.style.opacity = '';
+    r.style.borderTop = '';
+  });
+}
+
 // ---- Create tournament ----
 async function createTournament() {
   const name = document.getElementById('t-name').value.trim();
@@ -488,6 +530,62 @@ async function startTournament(id) {
   if (res.error) return toast('Hata: ' + res.error);
   toast('Turnuva başladı');
 }
+// Turnuva ayarları modalı (sadece draft)
+function showTournamentSettings(id) {
+  const t = state.tournaments.find(x => x.id === id);
+  if (!t || t.status !== 'draft') return;
+
+  const overlay = document.createElement('div');
+  overlay.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,0.75);display:flex;align-items:center;justify-content:center;z-index:9999;padding:1rem;';
+  overlay.innerHTML = `
+    <div style="background:var(--surface);border-radius:16px;padding:2rem;max-width:480px;width:100%;position:relative;">
+      <button onclick="this.closest('[style*=fixed]').remove()" style="position:absolute;top:1rem;right:1rem;background:none;border:none;color:var(--text-dim);font-size:1.5rem;cursor:pointer;line-height:1;">×</button>
+      <h3 style="margin-bottom:1.25rem;">⚙️ Turnuva Ayarları</h3>
+
+      <label>Turnuva adı</label>
+      <input id="ts-name" type="text" value="${t.name.replace(/"/g, '&quot;')}" style="width:100%;margin-bottom:0.75rem;box-sizing:border-box;" />
+
+      <label>Oyun modu</label>
+      <select id="ts-mode" style="width:100%;margin-bottom:0.75rem;">
+        <option value="501" ${t.game_mode === '501' ? 'selected' : ''}>501</option>
+        <option value="701" ${t.game_mode === '701' ? 'selected' : ''}>701</option>
+        <option value="1001" ${t.game_mode === '1001' ? 'selected' : ''}>1001</option>
+        <option value="cricket" ${t.game_mode === 'cricket' ? 'selected' : ''}>Cricket</option>
+      </select>
+
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:0.75rem;margin-bottom:1.25rem;">
+        <div>
+          <label>Leg sayısı (bo)</label>
+          <input id="ts-legs" type="number" min="1" max="11" value="${t.legs_to_win}" style="width:100%;box-sizing:border-box;" />
+        </div>
+        <div>
+          <label>Set sayısı (bo)</label>
+          <input id="ts-sets" type="number" min="1" max="7" value="${t.sets_to_win}" style="width:100%;box-sizing:border-box;" />
+        </div>
+      </div>
+
+      <div style="display:flex;gap:0.75rem;justify-content:flex-end;">
+        <button class="btn secondary" onclick="this.closest('[style*=fixed]').remove()">İptal</button>
+        <button class="btn primary" onclick="saveTournamentSettings(${id}, this)">Kaydet</button>
+      </div>
+    </div>
+  `;
+  document.body.appendChild(overlay);
+}
+
+async function saveTournamentSettings(id, btn) {
+  const overlay = btn.closest('[style*=fixed]');
+  const name = document.getElementById('ts-name').value.trim();
+  const game_mode = document.getElementById('ts-mode').value;
+  const legs_to_win = +document.getElementById('ts-legs').value;
+  const sets_to_win = +document.getElementById('ts-sets').value;
+  if (!name) return toast('Turnuva adı boş olamaz');
+  const res = await api.patch(`/api/tournaments/${id}`, { name, game_mode, legs_to_win, sets_to_win });
+  if (res.error) return toast('Hata: ' + res.error);
+  toast('Ayarlar kaydedildi');
+  overlay?.remove();
+}
+
 // Turnuva bitirilmeye hazır mı? Running + tüm maçlar finished
 function canFinishTournament(t) {
   if (t.status !== 'running') return false;
@@ -716,6 +814,7 @@ function renderTournament(t) {
           </div>
         </div>
         <div class="row">
+          ${t.status === 'draft' ? `<button class="secondary" onclick="showTournamentSettings(${t.id})">⚙️ Ayarlar</button>` : ''}
           ${t.status === 'draft' ? `<button class="primary" onclick="startTournament(${t.id})">Başlat</button>` : ''}
           ${t.status !== 'draft' ? `<button class="secondary" onclick="toggleReport(${t.id})">📊 Rapor</button>` : ''}
           ${canFinishTournament(t) ? `<button class="btn" style="background: #22c55e; color: #000; font-weight: 700;" onclick="showTournamentStats(${t.id})">🏆 Turnuvayı Bitir</button>` : ''}

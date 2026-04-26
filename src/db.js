@@ -283,6 +283,14 @@ function tournamentById(id) {
 function updateTournamentStatus(id, status) {
   db.prepare('UPDATE tournaments SET status = ? WHERE id = ?').run(status, id);
 }
+// Draft turnuva ayarlarını güncelle (name, game_mode, legs_to_win, sets_to_win)
+function updateTournament(id, fields) {
+  const allowed = ['name', 'game_mode', 'legs_to_win', 'sets_to_win'];
+  const updates = Object.keys(fields).filter(k => allowed.includes(k));
+  if (!updates.length) return;
+  const sql = `UPDATE tournaments SET ${updates.map(k => `${k} = ?`).join(', ')} WHERE id = ?`;
+  db.prepare(sql).run(...updates.map(k => fields[k]), id);
+}
 function deleteTournament(id) {
   db.prepare('DELETE FROM tournaments WHERE id = ?').run(id);
 }
@@ -588,7 +596,7 @@ module.exports = {
   createUser, userByEmail, userById, allUsers,
   createPlayer, allPlayers, playerById, deletePlayer,
   createBoard, allBoards, boardById, deleteBoard, setBoardMatch,
-  createTournament, allTournaments, tournamentById, updateTournamentStatus, deleteTournament,
+  createTournament, allTournaments, tournamentById, updateTournamentStatus, updateTournament, deleteTournament,
   addEntry, entriesForTournament, entryById,
   createStage, stagesForTournament, stageById, updateStageStatus,
   createMatch, matchById, matchesForTournament, matchesForStage,
