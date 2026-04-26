@@ -9,6 +9,7 @@ let currentBoard = null;
 let currentInput = '';
 let allBoards = [];
 let allTournaments = [];
+let selectedStarter = null; // 1 veya 2 — "Kim başlıyor?" seçimi
 
 socket.on('state', (s) => {
   allBoards = s.boards;
@@ -159,21 +160,48 @@ function renderPreMatch() {
         </div>
       </div>
 
-      <button class="btn" style="font-size: 1.5rem; padding: 1.25rem 3rem; background: var(--accent); color: #000; font-weight: 800; border-radius: 12px; margin-top: 1rem;" onclick="beginMatch()">
+      <div style="width: 100%; max-width: 780px;">
+        <div class="card" style="background: var(--surface-2); padding: 1.25rem;">
+          <div style="font-size: 0.78rem; color: var(--text-dim); letter-spacing: 0.1em; text-transform: uppercase; margin-bottom: 0.75rem;">🎯 Kim başlıyor?</div>
+          <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 1rem;">
+            <button class="btn ${selectedStarter === 1 ? '' : 'secondary'}"
+              style="font-size: 1.1rem; padding: 0.85rem; ${selectedStarter === 1 ? 'background: var(--accent); color: #000; font-weight: 800;' : ''}"
+              onclick="selectStarter(1)">
+              ${selectedStarter === 1 ? '▶ ' : ''}${e1}
+            </button>
+            <button class="btn ${selectedStarter === 2 ? '' : 'secondary'}"
+              style="font-size: 1.1rem; padding: 0.85rem; ${selectedStarter === 2 ? 'background: var(--accent); color: #000; font-weight: 800;' : ''}"
+              onclick="selectStarter(2)">
+              ${selectedStarter === 2 ? '▶ ' : ''}${e2}
+            </button>
+          </div>
+        </div>
+      </div>
+
+      <button class="btn" style="font-size: 1.5rem; padding: 1.25rem 3rem; background: var(--accent); color: #000; font-weight: 800; border-radius: 12px; margin-top: 0.5rem; opacity: ${selectedStarter ? 1 : 0.45}; cursor: ${selectedStarter ? 'pointer' : 'not-allowed'};"
+        onclick="${selectedStarter ? 'beginMatch()' : 'toast(\'Önce başlayan oyuncuyu seçin\')'}">
         ▶ MAÇA BAŞLA
       </button>
 
       <div style="font-size: 0.85rem; color: var(--text-dim); text-align: center; max-width: 560px;">
-        Hazır olduğunda MAÇA BAŞLA butonuna basın. Yazıcı-hakem otomatik atanmıştır; gerekirse yukarıdan değiştirebilirsiniz.
+        Başlayan oyuncuyu seçin, ardından MAÇA BAŞLA'ya basın.
       </div>
     </div>
   `;
 }
 
+function selectStarter(slot) {
+  selectedStarter = slot;
+  renderPreMatch();
+}
+
 async function beginMatch() {
   if (!currentMatch) return;
-  const res = await api.post(`/api/matches/${currentMatch.id}/begin`, {});
+  if (!selectedStarter) return toast('Önce başlayan oyuncuyu seçin');
+  const body = { starting_turn: selectedStarter };
+  const res = await api.post(`/api/matches/${currentMatch.id}/begin`, body);
   if (res.error) return toast('Hata: ' + res.error);
+  selectedStarter = null;
   toast('Maç başladı!');
 }
 
@@ -279,6 +307,11 @@ function renderPlayer(name, remaining, stats, active, m, slot) {
 // ---- Post-match ekranı (status === 'finished') ----
 function renderPostMatch() {
   const m = currentMatch;
+  // Turnuvada başka oynanacak maç var mı? Yoksa bu final/son maçtır.
+  const t = allTournaments.find(tt => tt.id === m.tournament_id);
+  const hasMoreMatches = t?.matches?.some(
+    mx => mx.id !== m.id && mx.status !== 'finished' && mx.entry1_id && mx.entry2_id
+  );
   const winnerEntry = m.winner_entry_id === m.entry1_id ? m.entry1 : m.entry2;
   const loserEntry  = m.winner_entry_id === m.entry1_id ? m.entry2 : m.entry1;
   const winnerSlot  = m.winner_entry_id === m.entry1_id ? 1 : 2;
@@ -351,12 +384,21 @@ function renderPostMatch() {
 
       ${scorer ? `<div style="color: var(--text-dim); font-size: 0.95rem;">✍️ Yazıcı-Hakem: <strong style="color: var(--text);">${scorer}</strong></div>` : ''}
 
-      <button class="btn" style="font-size: 1.3rem; padding: 1rem 2.5rem; background: var(--accent); color: #000; font-weight: 800; border-radius: 12px; margin-top: 0.5rem;" onclick="nextMatch()">
-        ➜ SONRAKİ MAÇ
-      </button>
-      <div style="font-size: 0.85rem; color: var(--text-dim);">
-        Bu butona bastığınızda board serbest kalır ve sıradaki maç otomatik yüklenir.
-      </div>
+      ${hasMoreMatches ? `
+        <button class="btn" style="font-size: 1.3rem; padding: 1rem 2.5rem; background: var(--accent); color: #000; font-weight: 800; border-radius: 12px; margin-top: 0.5rem;" onclick="nextMatch()">
+          ➜ SONRAKİ MAÇ
+        </button>
+        <div style="font-size: 0.85rem; color: var(--text-dim);">
+          Bu butona bastığınızda board serbest kalır ve sıradaki maç otomatik yüklenir.
+        </div>
+      ` : `
+        <div style="font-size: 1.4rem; font-weight: 800; color: #22c55e; margin-top: 0.75rem; text-align: center;">
+          🏆 Turnuva tamamlandı!
+        </div>
+        <button class="btn secondary" style="font-size: 1rem; padding: 0.75rem 2rem; margin-top: 0.25rem; border-radius: 12px;" onclick="nextMatch()">
+          Board'u serbest bırak
+        </button>
+      `}
     </div>
   `;
 }

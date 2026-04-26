@@ -5,6 +5,10 @@ let entriesDraft = [{ player1_id: null, player2_id: null, seed: null }];
 let reportsCache = {}; // tournamentId -> report data
 let roundOverridesEnabled = false;
 
+// Oyuncu picker state
+let openPickerKey = null;  // "i_p1" veya "i_p2" formatında
+let pickerSearch = '';
+
 const socket = io();
 socket.on('state', (s) => {
   state = s;
@@ -355,43 +359,82 @@ function drawLots() {
 function renderEntriesDraft() {
   const host = document.getElementById('entries-list');
   const teamMode = document.getElementById('t-team').value;
-  const opts = ['<option value="">— seç —</option>']
-    .concat(state.players.map(p => `<option value="${p.id}">${p.nickname || p.name}</option>`))
-    .join('');
-  host.innerHTML = entriesDraft.map((e, i) => `
-    <div class="row" style="margin-bottom: 0.5rem;">
-      <span style="min-width: 40px; color: var(--text-dim);">#${i + 1}</span>
-      <select data-role="p1" style="flex: 1;">
-        ${opts}
-      </select>
-      ${teamMode === 'doubles' ? `
-        <select data-role="p2" style="flex: 1;">
-          ${opts}
-        </select>
-      ` : ''}
-      <input type="number" min="1" placeholder="Seri başı" title="Seri başı (opsiyonel)"
-        value="${e.seed || ''}" data-role="seed"
-        style="width: 100px;" />
-      <button class="icon danger" onclick="removeEntry(${i})">×</button>
+
+  host.innerHTML = entriesDraft.map((e, i) => {
+    const p1 = state.players.find(p => p.id === e.player1_id);
+    const p2 = state.players.find(p => p.id === e.player2_id);
+    const key1 = `${i}_p1`;
+    const key2 = `${i}_p2`;
+    return `
+      <div class="entry-row" style="margin-bottom: 0.5rem;">
+        <div class="row" style="align-items: center; gap: 0.5rem;">
+          <span style="min-width: 40px; color: var(--text-dim);">#${i + 1}</span>
+          ${renderPickerBtn(key1, p1)}
+          ${teamMode === 'doubles' ? renderPickerBtn(key2, p2) : ''}
+          <input type="number" min="1" placeholder="Seri başı" title="Seri başı (opsiyonel)"
+            value="${e.seed || ''}"
+            style="width: 90px;"
+            oninput="updateEntry(${i}, 'seed', this.value)" />
+          <button class="icon danger" onclick="removeEntry(${i})">×</button>
+        </div>
+        ${openPickerKey === key1 ? renderPickerDropdown(key1, i, 'player1_id', e.player1_id) : ''}
+        ${teamMode === 'doubles' && openPickerKey === key2 ? renderPickerDropdown(key2, i, 'player2_id', e.player2_id) : ''}
+      </div>
+    `;
+  }).join('');
+}
+
+function renderPickerBtn(key, selectedPlayer) {
+  const isOpen = openPickerKey === key;
+  const label = selectedPlayer ? (selectedPlayer.nickname || selectedPlayer.name) : '— Oyuncu seç —';
+  return `
+    <button class="btn secondary" style="flex: 1; text-align: left; padding: 0.4rem 0.75rem; display: flex; justify-content: space-between; align-items: center;"
+            onclick="togglePicker('${key}')">
+      <span>${label}</span>
+      <span style="opacity: 0.5; font-size: 0.8rem;">${isOpen ? '▴' : '▾'}</span>
+    </button>
+  `;
+}
+
+function renderPickerDropdown(key, entryIndex, field, selectedId) {
+  const q = pickerSearch.toLowerCase();
+  const filtered = state.players.filter(p =>
+    !q || p.name.toLowerCase().includes(q) || (p.nickname || '').toLowerCase().includes(q)
+  );
+  return `
+    <div style="margin: 0.25rem 0 0.25rem 46px; background: var(--surface-2); border: 1px solid var(--border); border-radius: 8px; padding: 0.5rem; z-index: 100; position: relative;">
+      <input type="text" placeholder="İsim ara…" value="${pickerSearch.replace(/"/g, '&quot;')}"
+             style="width: 100%; margin-bottom: 0.4rem; padding: 0.35rem 0.5rem; background: var(--surface); border: 1px solid var(--border); border-radius: 6px; color: var(--text); box-sizing: border-box;"
+             autofocus
+             oninput="pickerSearch = this.value; renderEntriesDraft()" />
+      <div style="max-height: 180px; overflow-y: auto;">
+        ${filtered.length === 0
+          ? '<div style="color: var(--text-dim); padding: 0.4rem 0.5rem; font-size: 0.88rem;">Sonuç yok</div>'
+          : filtered.map(p => `
+            <div class="picker-item ${p.id === selectedId ? 'selected' : ''}"
+                 onclick="selectPlayerForEntry(${entryIndex}, '${field}', ${p.id})">
+              ${p.name}${p.nickname ? ` <span style="opacity: 0.6; font-size: 0.85em;">(${p.nickname})</span>` : ''}
+              ${p.id === selectedId ? ' <span style="color: var(--accent);">✓</span>' : ''}
+            </div>
+          `).join('')
+        }
+      </div>
     </div>
-  `).join('');
-  // Bind values + handlers (innerHTML-safe seçili değer ayarı)
-  entriesDraft.forEach((e, i) => {
-    const row = host.children[i];
-    if (!row) return;
-    const p1 = row.querySelector('[data-role="p1"]');
-    const p2 = row.querySelector('[data-role="p2"]');
-    const sd = row.querySelector('[data-role="seed"]');
-    if (p1) {
-      if (e.player1_id) p1.value = e.player1_id;
-      p1.onchange = (ev) => updateEntry(i, 'player1_id', ev.target.value);
-    }
-    if (p2) {
-      if (e.player2_id) p2.value = e.player2_id;
-      p2.onchange = (ev) => updateEntry(i, 'player2_id', ev.target.value);
-    }
-    if (sd) sd.onchange = (ev) => updateEntry(i, 'seed', ev.target.value);
-  });
+  `;
+}
+
+function togglePicker(key) {
+  openPickerKey = (openPickerKey === key) ? null : key;
+  pickerSearch = '';
+  renderEntriesDraft();
+}
+
+function selectPlayerForEntry(entryIndex, field, playerId) {
+  updateEntry(entryIndex, field, playerId);
+  openPickerKey = null;
+  pickerSearch = '';
+  renderEntriesDraft();
+  renderRoundOverridesPanel();
 }
 
 // ---- Create tournament ----
@@ -430,11 +473,82 @@ async function createTournament() {
 
 // ---- Tournament controls ----
 async function startTournament(id) {
-  if (!confirm('Turnuvayı başlat?')) return;
+  // Board atanmamışsa uyar
+  if (state.boards.length === 0) {
+    const devam = confirm(
+      '⚠️ Henüz hiç board eklenmemiş!\n\n' +
+      'Maçlar board olmadan oynanamaz. ' +
+      '"Boards" sekmesinden board ekledikten sonra başlatmanı öneririz.\n\n' +
+      'Yine de şimdi başlatmak istiyor musun?'
+    );
+    if (!devam) return;
+  } else if (!confirm('Turnuvayı başlat?')) return;
+
   const res = await api.post(`/api/tournaments/${id}/start`, {});
   if (res.error) return toast('Hata: ' + res.error);
   toast('Turnuva başladı');
 }
+// Turnuva bitirilmeye hazır mı? Running + tüm maçlar finished
+function canFinishTournament(t) {
+  if (t.status !== 'running') return false;
+  const playable = t.matches.filter(m => m.entry1_id && m.entry2_id);
+  return playable.length > 0 && playable.every(m => m.status === 'finished');
+}
+
+// Turnuva istatistik modalı
+function showTournamentStats(id) {
+  const t = state.tournaments.find(x => x.id === id);
+  if (!t) return;
+  const report = t.report || [];
+
+  // Sıralama: en çok leg kazanan önce
+  const sorted = [...report].sort((a, b) => (b.legs_won || 0) - (a.legs_won || 0));
+
+  const overlay = document.createElement('div');
+  overlay.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,0.75);display:flex;align-items:center;justify-content:center;z-index:9999;padding:1rem;';
+  overlay.innerHTML = `
+    <div style="background:var(--surface);border-radius:16px;padding:2rem;max-width:700px;width:100%;max-height:90vh;overflow-y:auto;position:relative;">
+      <button onclick="this.closest('[style]').remove()" style="position:absolute;top:1rem;right:1rem;background:none;border:none;color:var(--text-dim);font-size:1.5rem;cursor:pointer;line-height:1;">×</button>
+      <h2 style="margin-bottom:0.25rem;">🏆 ${t.name}</h2>
+      <div style="color:var(--text-dim);font-size:0.9rem;margin-bottom:1.5rem;">Turnuva istatistikleri</div>
+
+      ${sorted.length === 0 ? '<div style="color:var(--text-dim);">İstatistik bulunamadı.</div>' : `
+        <table style="width:100%;border-collapse:collapse;font-size:0.9rem;">
+          <thead>
+            <tr style="color:var(--text-dim);font-size:0.78rem;text-transform:uppercase;letter-spacing:0.05em;border-bottom:1px solid var(--border);">
+              <th style="text-align:left;padding:0.5rem 0.25rem;">#</th>
+              <th style="text-align:left;padding:0.5rem 0.25rem;">Oyuncu</th>
+              <th style="text-align:right;padding:0.5rem 0.25rem;">Maç</th>
+              <th style="text-align:right;padding:0.5rem 0.25rem;">Leg G/K</th>
+              <th style="text-align:right;padding:0.5rem 0.25rem;">3-Ok Ort.</th>
+              <th style="text-align:right;padding:0.5rem 0.25rem;">180</th>
+              <th style="text-align:right;padding:0.5rem 0.25rem;">Best CO</th>
+            </tr>
+          </thead>
+          <tbody>
+            ${sorted.map((r, idx) => `
+              <tr style="border-bottom:1px solid var(--border);${idx === 0 ? 'color:var(--accent);font-weight:700;' : ''}">
+                <td style="padding:0.6rem 0.25rem;">${idx + 1}</td>
+                <td style="padding:0.6rem 0.25rem;">${idx === 0 ? '🏆 ' : ''}${r.player_name || r.entry_label || '?'}</td>
+                <td style="text-align:right;padding:0.6rem 0.25rem;">${r.matches_played || 0}</td>
+                <td style="text-align:right;padding:0.6rem 0.25rem;">${r.legs_won || 0} / ${r.legs_lost || 0}</td>
+                <td style="text-align:right;padding:0.6rem 0.25rem;">${r.avg_3dart ? (+r.avg_3dart).toFixed(2) : '—'}</td>
+                <td style="text-align:right;padding:0.6rem 0.25rem;">${r.one_eighties || 0}</td>
+                <td style="text-align:right;padding:0.6rem 0.25rem;">${r.best_checkout || '—'}</td>
+              </tr>
+            `).join('')}
+          </tbody>
+        </table>
+      `}
+
+      <div style="margin-top:1.5rem;display:flex;gap:0.75rem;justify-content:flex-end;">
+        <button class="btn secondary" onclick="this.closest('[style]').remove()">Kapat</button>
+      </div>
+    </div>
+  `;
+  document.body.appendChild(overlay);
+}
+
 async function deleteTournament(id) {
   if (!confirm('Turnuva silinsin mi? Tüm maçlar/skorlar kaybolur.')) return;
   await api.del('/api/tournaments/' + id);
@@ -604,6 +718,7 @@ function renderTournament(t) {
         <div class="row">
           ${t.status === 'draft' ? `<button class="primary" onclick="startTournament(${t.id})">Başlat</button>` : ''}
           ${t.status !== 'draft' ? `<button class="secondary" onclick="toggleReport(${t.id})">📊 Rapor</button>` : ''}
+          ${canFinishTournament(t) ? `<button class="btn" style="background: #22c55e; color: #000; font-weight: 700;" onclick="showTournamentStats(${t.id})">🏆 Turnuvayı Bitir</button>` : ''}
           <button class="danger" onclick="deleteTournament(${t.id})">Sil</button>
         </div>
       </div>

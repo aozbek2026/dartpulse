@@ -438,9 +438,30 @@ body.board-page #root.board-screen {
   .sidebar { flex-direction: row; overflow-x: auto; padding: 0.75rem; }
   .sidebar h1 { display: none; }
   .main { padding: 1rem; }
-  .match-display { grid-template-columns: 1fr; }
+  /* match-display tablet'te 2 kolon kalır — skor panelleri yan yana */
   .leaderboard-grid { grid-template-columns: 1fr; }
 }
+
+/* Skor panelleri tablet portrait'te daha kompakt — keypad için yer açılır */
+@media (max-width: 860px) and (orientation: portrait) {
+  .score-display { font-size: clamp(2rem, 7vmin, 5rem); }
+  .player-name { font-size: clamp(0.85rem, 2vmin, 1.3rem); }
+  .player-sub { font-size: clamp(0.65rem, 1.3vmin, 0.85rem); margin-bottom: clamp(0.2rem, 0.8vmin, 0.8rem); }
+  .player-stats { gap: clamp(0.2rem, 0.8vmin, 0.75rem); }
+  .stat .label { font-size: clamp(0.55rem, 1vmin, 0.7rem); }
+  .stat .value { font-size: clamp(0.8rem, 1.6vmin, 1.1rem); }
+}
+
+/* Oyuncu seçici (picker) */
+.picker-item {
+  padding: 0.4rem 0.5rem;
+  cursor: pointer;
+  border-radius: 4px;
+  font-size: 0.9rem;
+  transition: background 0.1s;
+}
+.picker-item:hover { background: rgba(255,255,255,0.06); }
+.picker-item.selected { color: var(--accent); }
 
 .toast {
   position: fixed;

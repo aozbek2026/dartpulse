@@ -207,6 +207,12 @@ app.post('/api/matches/:id/begin', (req, res) => {
     if (req.body && req.body.scorer_entry_id !== undefined) {
       patch.scorer_entry_id = req.body.scorer_entry_id || null;
     }
+    // İlk atan oyuncu seçimi (1 ya da 2)
+    const st = req.body?.starting_turn;
+    if (st === 1 || st === 2) {
+      patch.current_turn = st;
+      patch.starter_slot = st;
+    }
     db.updateMatch(id, patch);
     if (m.board_id) {
       io.to(`board:${m.board_id}`).emit('board:state', {
