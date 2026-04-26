@@ -182,17 +182,18 @@ th { color: var(--text-dim); font-weight: 500; font-size: 0.82rem; text-transfor
 /* Board view specific */
 /* Board sayfasında body'yi viewport'a kilitle — scroll yok, her tablette tam ekran */
 body.board-page {
-  height: 100dvh;
-  height: 100svh; /* dvh desteklemeyen eski tarayıcılar için */
+  height: 100dvh;        /* modern tarayıcılar — browser chrome dahil değil */
+  height: 100svh;        /* dvh desteklemeyen fallback */
   overflow: hidden;
   margin: 0;
 }
 body.board-page #root.board-screen {
   height: 100dvh;
   height: 100svh;
+  min-height: 0;         /* min-height: 100vh'yi geçersiz kıl — taşmanın asıl sebebi */
 }
 .board-screen {
-  min-height: 100vh; /* board olmayan layoutlar için fallback (kullanılmıyor ama zarar yok) */
+  /* min-height: 100vh KALDIRILD — board-page bağlamında bu değer taşmaya neden oluyordu */
   background: radial-gradient(ellipse at center, #1a1e2d 0%, #0b0d14 100%);
   padding: clamp(0.5rem, 1.5vmin, 1.5rem);
   display: flex;
@@ -714,18 +715,26 @@ body.board-page #root.board-screen {
   display: inline-block;
 }
 
-/* Android tablet: score-display biraz daha kompakt — adres çubuğu yer alıyor */
-@media (max-width: 860px) and (orientation: portrait) {
-  .score-display { font-size: clamp(1.8rem, 6vmin, 4rem); }
-  .keypad-grid button { padding: clamp(0.5rem, 1.4vmin, 1.1rem); font-size: clamp(0.9rem, 2.1vmin, 1.4rem); }
-  .leg-banner-num { font-size: clamp(2.2rem, 7vmin, 6rem); }
-}
-/* Skor girişi kutusunu 100dvh ile zorla (tarayıcı chrome adres çubuğunu hesaba kat) */
-body.board-page {
-  height: 100dvh;
-  overflow: hidden;
-}
-body.board-page #root.board-screen,
-body.board-page .board-screen {
-  height: 100dvh;
+/* Tablet (her iki yön) — bileşenleri ek kompakt yap, 100dvh içine sığsın */
+@media (max-width: 1100px) {
+  /* Skor rakamı — en büyük alan kaplayan unsur */
+  .score-display { font-size: clamp(2rem, 7vmin, 5rem); }
+  /* Leg banner rakamı */
+  .leg-banner-num { font-size: clamp(2.4rem, 7.5vmin, 6rem); }
+  /* Keypad butonları daha sıkışık */
+  .keypad-grid button { padding: clamp(0.5rem, 1.5vmin, 1.1rem); font-size: clamp(0.9rem, 2.1vmin, 1.4rem); }
+  /* Keypad input kutusu */
+  .keypad-input { font-size: clamp(1.4rem, 3.5vmin, 2.2rem); padding: clamp(0.35rem, 0.9vmin, 0.7rem); margin-bottom: clamp(0.3rem, 0.8vmin, 0.7rem); }
+  /* Oyuncu paneli iç padding */
+  .player-panel { padding: clamp(0.5rem, 1.4vmin, 1.2rem); }
+  /* İstatistik değerleri */
+  .stat .value { font-size: clamp(0.85rem, 1.8vmin, 1.2rem); }
+  /* Board header */
+  .board-header { padding: clamp(0.35rem, 0.9vmin, 0.7rem) clamp(0.5rem, 1.2vmin, 1rem); }
+  /* Keypad genel padding */
+  .keypad { padding: clamp(0.4rem, 1vmin, 0.9rem); }
+  /* Genel gap */
+  .board-screen { gap: clamp(0.3rem, 0.9vmin, 0.7rem); padding: clamp(0.3rem, 1vmin, 0.9rem); }
+  /* Leg banner iç padding */
+  .leg-banner { padding: clamp(0.5rem, 1.2vmin, 1rem) clamp(0.5rem, 1.4vmin, 1.2rem); }
 }
