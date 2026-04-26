@@ -1,0 +1,182 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Organizatör · Dart Turnuva</title>
+<link rel="stylesheet" href="/css/style.css" />
+</head>
+<body>
+<div class="app">
+  <aside class="sidebar">
+    <h1><span class="dot"></span> Dart Turnuva</h1>
+    <div id="user-bar" style="margin-bottom: 1rem; font-size: 0.85rem; color: var(--text-dim); display: none;">
+      <div id="user-name" style="margin-bottom: 0.4rem;"></div>
+      <button id="logout-btn" style="background: transparent; border: 1px solid var(--border); color: var(--text-dim); padding: 0.35rem 0.7rem; border-radius: 6px; cursor: pointer; font-size: 0.82rem;">Çıkış Yap</button>
+    </div>
+    <nav>
+      <a href="#players" class="tab-link active" data-tab="players">Katılımcılar</a>
+      <a href="#boards" class="tab-link" data-tab="boards">Board'lar</a>
+      <a href="#new-tournament" class="tab-link" data-tab="new-tournament">Yeni Turnuva</a>
+      <a href="#tournaments" class="tab-link" data-tab="tournaments">Turnuvalar</a>
+      <a href="/viewer.html" target="_blank" style="margin-top: 1rem; color: var(--accent-2);">📺 İzleyici aç ↗</a>
+    </nav>
+  </aside>
+
+  <script>
+    // Auth gate: girişsiz kullanıcıları login'e at
+    fetch('/auth/me', { credentials: 'same-origin' })
+      .then(r => r.json())
+      .then(data => {
+        if (!data.user) { window.location.href = '/login.html'; return; }
+        const bar = document.getElementById('user-bar');
+        const nameEl = document.getElementById('user-name');
+        if (bar) bar.style.display = 'block';
+        if (nameEl) nameEl.textContent = (data.user.name || data.user.email);
+      })
+      .catch(() => { window.location.href = '/login.html'; });
+
+    document.addEventListener('click', (e) => {
+      if (e.target && e.target.id === 'logout-btn') {
+        fetch('/auth/logout', { method: 'POST', credentials: 'same-origin' })
+          .finally(() => { window.location.href = '/login.html'; });
+      }
+    });
+  </script>
+
+  <main class="main">
+    <!-- PLAYERS TAB -->
+    <section class="tab" id="tab-players">
+      <h2>Katılımcılar</h2>
+      <p class="subtitle">Turnuvaya katılacak oyuncuları kaydet.</p>
+
+      <div class="card">
+        <div class="row">
+          <input id="player-name" placeholder="İsim Soyisim" style="flex: 1; min-width: 200px;" />
+          <input id="player-nick" placeholder="Nickname (opsiyonel)" style="flex: 1; min-width: 160px;" />
+          <button class="primary" onclick="addPlayer()">Ekle</button>
+        </div>
+      </div>
+
+      <div class="card">
+        <h3>Kayıtlı oyuncular (<span id="player-count">0</span>)</h3>
+        <ul class="list" id="player-list"></ul>
+      </div>
+    </section>
+
+    <!-- BOARDS TAB -->
+    <section class="tab" id="tab-boards" hidden>
+      <h2>Board'lar</h2>
+      <p class="subtitle">Etkinlikteki dart tahtalarını kaydet. Her board tablet üzerinde kendi ekranını açar.</p>
+
+      <div class="card">
+        <div class="row">
+          <input id="board-name" placeholder="Örn: Board 1" style="flex: 1;" />
+          <button class="primary" onclick="addBoard()">Ekle</button>
+        </div>
+      </div>
+
+      <div class="card">
+        <h3>Kayıtlı board'lar (<span id="board-count">0</span>)</h3>
+        <div id="board-list" class="grid cols-3"></div>
+      </div>
+    </section>
+
+    <!-- NEW TOURNAMENT TAB -->
+    <section class="tab" id="tab-new-tournament" hidden>
+      <h2>Yeni Turnuva Oluştur</h2>
+      <p class="subtitle">Oyun formatını, aşamaları ve katılımcıları seç.</p>
+
+      <div class="card">
+        <h3>Genel</h3>
+        <div class="grid cols-2" style="gap: 1rem;">
+          <div>
+            <label>Turnuva adı</label>
+            <input id="t-name" placeholder="Bahar Kupası 2026" style="width: 100%;" />
+          </div>
+          <div>
+            <label>Oyun modu</label>
+            <select id="t-mode" style="width: 100%;">
+              <option value="501">501 Double-out</option>
+              <option value="701">701 Double-out</option>
+              <option value="1001">1001 Double-out</option>
+              <option value="cricket">Cricket</option>
+            </select>
+          </div>
+          <div>
+            <label>Takım modu</label>
+            <select id="t-team" style="width: 100%;">
+              <option value="singles">Teklik (singles)</option>
+              <option value="doubles">Çiftli (doubles)</option>
+            </select>
+          </div>
+          <div>
+            <label>Leg (set başına) - kazanmak için</label>
+            <input type="number" id="t-legs" min="1" value="3" style="width: 100%;" />
+          </div>
+          <div>
+            <label>Set - kazanmak için (1 = sadece leg modu)</label>
+            <input type="number" id="t-sets" min="1" value="1" style="width: 100%;" />
+          </div>
+        </div>
+      </div>
+
+      <div class="card">
+        <h3>Oyun formatı</h3>
+        <p style="color: var(--text-dim); font-size: 0.88rem; margin-bottom: 0.75rem;">
+          Turnuvanın nasıl oynanacağını seçin. Round-robin seçerseniz gruptan çıkacak kişi sayısını
+          ve sonraki elemination aşamasını da soracağız.
+        </p>
+        <div id="stages-wizard"></div>
+
+        <div style="margin-top: 0.85rem; padding-top: 0.75rem; border-top: 1px solid var(--bg-2, rgba(255,255,255,0.06));">
+          <label style="display: flex; align-items: center; gap: 0.5rem; cursor: pointer;">
+            <input type="checkbox" id="round-override-toggle" onchange="toggleRoundOverrides(this.checked)" />
+            <span>Round başına farklı leg/set sayısı belirle</span>
+          </label>
+          <p style="color: var(--text-dim); font-size: 0.82rem; margin: 0.35rem 0 0 1.6rem;">
+            Çeyrek/Yarı/Final için farklı best-of değerleri (örn. çeyrek 7, yarı 9, final 11). Boş bırakılan round'lar yukarıdaki varsayılana düşer.
+          </p>
+          <div id="round-overrides-panel" hidden style="margin-top: 0.7rem;"></div>
+        </div>
+
+        <details style="margin-top: 0.75rem;">
+          <summary style="cursor: pointer; color: var(--text-dim); font-size: 0.85rem;">⚙️ Gelişmiş: özel çok-aşamalı yapı</summary>
+          <div id="stages-list" style="margin-top: 0.5rem;"></div>
+          <button class="secondary" onclick="addStage()" style="margin-top: 0.4rem;">+ Aşama ekle</button>
+        </details>
+      </div>
+
+      <div class="card">
+        <h3>Katılımcılar</h3>
+        <p style="color: var(--text-dim); font-size: 0.88rem; margin-bottom: 0.75rem;">
+          Teklik modda her satır bir oyuncu. Çiftli modda iki oyuncu seçilir.
+          <strong>Seri başı</strong> sütununa numara girersen (1, 2, 3…) bracket'te seed olarak yerleştirilir;
+          boş bırakılanlar kura ile karıştırılır.
+        </p>
+        <div id="entries-list"></div>
+        <div class="row" style="margin-top: 0.5rem; gap: 0.5rem;">
+          <button class="secondary" onclick="addEntry()">+ Katılımcı ekle</button>
+          <button class="secondary" onclick="drawLots()">🎲 Kura çek (önizleme)</button>
+        </div>
+      </div>
+
+      <div class="row end">
+        <button class="primary" onclick="createTournament()">Turnuvayı Oluştur</button>
+      </div>
+    </section>
+
+    <!-- TOURNAMENTS LIST TAB -->
+    <section class="tab" id="tab-tournaments" hidden>
+      <h2>Turnuvalar</h2>
+      <p class="subtitle">Mevcut turnuvalar, kontrolleri ve bracket görünümü.</p>
+      <div id="tournament-list"></div>
+    </section>
+  </main>
+</div>
+
+<script src="/socket.io/socket.io.js"></script>
+<script src="/js/common.js"></script>
+<script src="/js/organizer.js"></script>
+</body>
+</html>

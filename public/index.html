@@ -1,0 +1,77 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Dart Turnuva Sistemi</title>
+<link rel="stylesheet" href="/css/style.css" />
+<style>
+  body { display: flex; flex-direction: column; align-items: center; justify-content: center; padding: 2rem; min-height: 100vh; }
+  .hero { text-align: center; max-width: 640px; margin-bottom: 3rem; }
+  .hero h1 { font-size: 3rem; letter-spacing: -0.03em; margin-bottom: 1rem; }
+  .hero .gradient {
+    background: linear-gradient(135deg, var(--accent), var(--accent-3), var(--accent-2));
+    -webkit-background-clip: text;
+    background-clip: text;
+    -webkit-text-fill-color: transparent;
+  }
+  .hero p { color: var(--text-dim); font-size: 1.1rem; }
+  .roles {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+    gap: 1.25rem;
+    max-width: 900px;
+    width: 100%;
+  }
+  .role {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 16px;
+    padding: 2rem 1.5rem;
+    text-decoration: none;
+    color: var(--text);
+    transition: all 0.2s;
+    display: block;
+  }
+  .role:hover { transform: translateY(-4px); border-color: var(--accent); text-decoration: none; }
+  .role .icon { font-size: 2.5rem; margin-bottom: 1rem; }
+  .role h3 { font-size: 1.2rem; margin-bottom: 0.5rem; }
+  .role p { color: var(--text-dim); font-size: 0.92rem; }
+</style>
+</head>
+<body>
+  <div class="hero">
+    <h1>🎯 <span class="gradient">Dart Turnuva</span> Sistemi</h1>
+    <p>Katılımcıları kaydet, turnuvayı kur, board'lara maç gönder. Tabletten skor gir, bracket otomatik ilerlesin.</p>
+  </div>
+
+  <div class="roles">
+    <a href="/login.html" class="role" id="organizer-link">
+      <div class="icon">⚙️</div>
+      <h3>Organizatör</h3>
+      <p>Katılımcı kaydı, board yönetimi, turnuva kurulumu ve kontrol paneli.</p>
+    </a>
+    <a href="/board.html" class="role">
+      <div class="icon">🎯</div>
+      <h3>Board (Tablet)</h3>
+      <p>Bir dart tahtasına kurulum; aktif maç ve skor girişi ekranı.</p>
+    </a>
+    <a href="/viewer.html" class="role">
+      <div class="icon">📺</div>
+      <h3>İzleyici</h3>
+      <p>Canlı bracket, aktif maçlar ve leaderboard.</p>
+    </a>
+  </div>
+
+<script>
+// Login durumuna göre organizatör linkini ayarla
+fetch('/auth/me', { credentials: 'same-origin' })
+  .then(r => r.json())
+  .then(data => {
+    const link = document.getElementById('organizer-link');
+    if (data.user && link) link.href = '/organizer.html';
+  })
+  .catch(() => {});
+</script>
+</body>
+</html>

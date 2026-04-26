@@ -1,0 +1,163 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Giriş — Dart Turnuva</title>
+<link rel="stylesheet" href="/css/style.css" />
+<style>
+  body { display: flex; align-items: center; justify-content: center; min-height: 100vh; padding: 2rem; }
+  .auth-card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 16px;
+    padding: 2.5rem;
+    width: 100%;
+    max-width: 420px;
+  }
+  h1 { font-size: 1.8rem; margin-bottom: 0.4rem; text-align: center; }
+  .subtitle { color: var(--text-dim); text-align: center; margin-bottom: 2rem; font-size: 0.95rem; }
+  .tabs {
+    display: flex;
+    gap: 0.5rem;
+    margin-bottom: 1.5rem;
+    border-bottom: 1px solid var(--border);
+  }
+  .tab {
+    flex: 1;
+    padding: 0.75rem;
+    background: transparent;
+    border: none;
+    color: var(--text-dim);
+    cursor: pointer;
+    font-size: 0.95rem;
+    border-bottom: 2px solid transparent;
+    transition: all 0.15s;
+  }
+  .tab.active { color: var(--text); border-bottom-color: var(--accent); }
+  form { display: flex; flex-direction: column; gap: 0.9rem; }
+  label { font-size: 0.85rem; color: var(--text-dim); display: flex; flex-direction: column; gap: 0.4rem; }
+  input {
+    background: var(--bg);
+    border: 1px solid var(--border);
+    color: var(--text);
+    padding: 0.7rem 0.85rem;
+    border-radius: 8px;
+    font-size: 0.95rem;
+  }
+  input:focus { outline: 2px solid var(--accent); outline-offset: 1px; }
+  button.submit {
+    background: var(--accent);
+    color: var(--bg);
+    border: none;
+    padding: 0.85rem;
+    border-radius: 8px;
+    font-weight: 600;
+    cursor: pointer;
+    margin-top: 0.5rem;
+    font-size: 1rem;
+  }
+  button.submit:hover { filter: brightness(1.1); }
+  .err {
+    background: rgba(255, 90, 90, 0.12);
+    color: #ff8585;
+    padding: 0.6rem 0.85rem;
+    border-radius: 8px;
+    font-size: 0.88rem;
+    display: none;
+  }
+  .err.show { display: block; }
+  .footer-link { text-align: center; margin-top: 1.25rem; font-size: 0.9rem; color: var(--text-dim); }
+  .footer-link a { color: var(--accent); }
+</style>
+</head>
+<body>
+  <div class="auth-card">
+    <h1>🎯 Dart Turnuva</h1>
+    <p class="subtitle">Organizatör hesabınızla giriş yapın</p>
+
+    <div class="tabs">
+      <button class="tab active" data-tab="login" type="button">Giriş Yap</button>
+      <button class="tab" data-tab="register" type="button">Kayıt Ol</button>
+    </div>
+
+    <div id="error" class="err"></div>
+
+    <form id="auth-form">
+      <label id="name-row" style="display:none">
+        İsim
+        <input type="text" id="name" placeholder="Adınız" />
+      </label>
+      <label>
+        E-posta
+        <input type="email" id="email" required placeholder="ornek@dart.com" />
+      </label>
+      <label>
+        Şifre
+        <input type="password" id="password" required minlength="6" placeholder="En az 6 karakter" />
+      </label>
+      <button type="submit" class="submit" id="submit-btn">Giriş Yap</button>
+    </form>
+
+    <p class="footer-link"><a href="/">← Ana sayfaya dön</a></p>
+  </div>
+
+<script>
+let mode = 'login';
+
+const tabs = document.querySelectorAll('.tab');
+const submitBtn = document.getElementById('submit-btn');
+const nameRow = document.getElementById('name-row');
+const errEl = document.getElementById('error');
+
+tabs.forEach(tab => {
+  tab.addEventListener('click', () => {
+    mode = tab.dataset.tab;
+    tabs.forEach(t => t.classList.toggle('active', t === tab));
+    submitBtn.textContent = mode === 'login' ? 'Giriş Yap' : 'Kayıt Ol';
+    nameRow.style.display = mode === 'register' ? 'flex' : 'none';
+    errEl.classList.remove('show');
+  });
+});
+
+document.getElementById('auth-form').addEventListener('submit', async (e) => {
+  e.preventDefault();
+  errEl.classList.remove('show');
+  const email = document.getElementById('email').value.trim();
+  const password = document.getElementById('password').value;
+  const name = document.getElementById('name').value.trim();
+
+  const url = mode === 'login' ? '/auth/login' : '/auth/register';
+  const body = mode === 'login' ? { email, password } : { email, password, name };
+
+  try {
+    const r = await fetch(url, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      credentials: 'same-origin',
+      body: JSON.stringify(body),
+    });
+    const data = await r.json();
+    if (!r.ok) {
+      errEl.textContent = data.error || 'Bir hata oluştu';
+      errEl.classList.add('show');
+      return;
+    }
+    // Başarılı → organizatör paneline gönder
+    window.location.href = '/organizer.html';
+  } catch (err) {
+    errEl.textContent = 'Bağlantı hatası: ' + err.message;
+    errEl.classList.add('show');
+  }
+});
+
+// Zaten girişli ise yönlendir
+fetch('/auth/me', { credentials: 'same-origin' })
+  .then(r => r.json())
+  .then(data => {
+    if (data.user) window.location.href = '/organizer.html';
+  })
+  .catch(() => {});
+</script>
+</body>
+</html>

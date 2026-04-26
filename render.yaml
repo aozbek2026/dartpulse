@@ -1,0 +1,20 @@
+services:
+  - type: web
+    name: dart-tournament
+    runtime: node
+    plan: starter
+    buildCommand: npm install
+    startCommand: npm start
+    envVars:
+      - key: NODE_VERSION
+        value: "20"
+      - key: NODE_ENV
+        value: production
+      - key: DB_PATH
+        value: /data/data.db
+      - key: SESSION_SECRET
+        generateValue: true   # Render otomatik üretir, her deploy'da sabit kalır
+    disk:
+      name: sqlite-data
+      mountPath: /data
+      sizeGB: 1
