@@ -41,6 +41,7 @@ button, .btn {
   display: inline-flex;
   align-items: center;
   gap: 0.4rem;
+  touch-action: manipulation; /* iPad çift dokunma zoom'unu önle */
 }
 button:hover, .btn:hover { background: var(--border); }
 button:active { transform: translateY(1px); }
