@@ -35,15 +35,7 @@
   .sc-bar { display: flex; align-items: center; justify-content: center; gap: 1rem; background: var(--surface); border: 1px solid var(--border); border-radius: 12px; padding: 0.5rem 1rem; font-size: 0.82rem; color: var(--text-dim); flex-wrap: wrap; }
   .sc-bar strong { color: var(--text); }
 
-  /* Keypad */
-  .sc-keypad { background: var(--surface); border: 1px solid var(--border); border-radius: clamp(12px, 1.5vmin, 16px); padding: clamp(0.6rem, 1.4vmin, 1.2rem); }
-  .sc-input-row { display: flex; align-items: center; gap: 0.5rem; margin-bottom: clamp(0.5rem, 1vmin, 0.9rem); }
-  .sc-input-display { flex: 1; font-size: clamp(1.6rem, 4.5vmin, 2.8rem); font-weight: 800; text-align: center; background: var(--bg); border: 2px solid var(--border); border-radius: 10px; padding: 0.4rem 0.6rem; color: var(--accent-2); letter-spacing: 0.04em; min-height: 3rem; display: flex; align-items: center; justify-content: center; }
-  .sc-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: clamp(0.35rem, 0.9vmin, 0.7rem); }
-  .sc-grid button { padding: clamp(0.6rem, 1.7vmin, 1.3rem); font-size: clamp(1rem, 2.4vmin, 1.5rem); font-weight: 700; background: var(--surface-2); border: 1px solid var(--border); border-radius: 8px; min-height: 44px; }
-  .sc-grid button:hover { background: var(--border); }
-  .sc-grid button.submit { grid-column: span 3; background: linear-gradient(135deg, var(--accent), var(--accent-3)); color: white; font-size: clamp(1rem, 2.5vmin, 1.4rem); margin-top: 0.2rem; }
-  .sc-grid button.undo-btn { background: var(--surface); color: var(--text-dim); }
+  /* Keypad — turnuva board'undaki .keypad, .keypad-input, .keypad-grid class'larını kullanıyoruz */
 
   /* Result */
   #result-panel { display: none; flex-direction: column; align-items: center; justify-content: center; text-align: center; gap: 1rem; padding: 2rem; background: var(--surface); border: 1px solid var(--border); border-radius: 16px; }
@@ -141,13 +133,12 @@
     <!-- Cricket scoreboard -->
     <div id="cricket-board" style="display:none;"></div>
 
-    <div class="sc-keypad">
-      <div class="sc-input-row">
-        <div class="sc-input-display" id="sc-input">0</div>
-      </div>
-      <div class="sc-grid" id="sc-grid">
+    <div class="keypad">
+      <div class="keypad-input" id="sc-input">0</div>
+      <div class="keypad-grid" id="sc-grid">
         <!-- rendered by JS -->
       </div>
+      <div id="sc-quick" style="margin-top:0.75rem;text-align:center;color:var(--text-dim);font-size:0.85rem;"></div>
     </div>
 
     <!-- Result overlay -->
@@ -226,17 +217,32 @@ function resetGame() {
 function renderKeypad() {
   const grid = document.getElementById('sc-grid');
   if (!grid) return;
+  const quick = document.getElementById('sc-quick');
+
   if (G && G.mode === 'cricket') {
     grid.innerHTML = renderCricketKeypad();
-  } else {
-    grid.innerHTML = `
-      ${['7','8','9','4','5','6','1','2','3'].map(n =>
-        `<button onclick="kbInput('${n}')">${n}</button>`
+    if (quick) quick.innerHTML = '';
+    return;
+  }
+
+  // Turnuva board ile aynı düzen: 1 üstte (telefon numpad), hızlı skorlar altta
+  const cur = inputBuf || '0';
+  grid.innerHTML = `
+    ${[1,2,3,4,5,6,7,8,9].map(n => `<button onclick="kbInput('${n}')">${n}</button>`).join('')}
+    <button class="action" onclick="kbClear()">C</button>
+    <button onclick="kbInput('0')">0</button>
+    <button class="action" onclick="undoThrow()">↶ Geri Al</button>
+    <button class="submit" onclick="submitScore()">Skor Gönder (${cur})</button>
+  `;
+
+  if (quick) {
+    quick.innerHTML = `
+      Hızlı:
+      ${[60, 80, 100, 120, 140, 180].map(s =>
+        `<button class="icon" style="margin:0 0.15rem;" onclick="setQuick(${s})">${s}</button>`
       ).join('')}
-      <button onclick="kbInput('0')">0</button>
-      <button onclick="kbClear()" class="undo-btn">C</button>
-      <button onclick="kbBackspace()" class="undo-btn">⌫</button>
-      <button class="submit" onclick="submitScore()">KAYDET ✓</button>
+      <button class="icon" style="margin:0 0.15rem;" onclick="setQuick(26)">26</button>
+      <button class="icon" style="margin:0 0.15rem;background:var(--danger);color:white;" onclick="setQuick(0)">Bust/0</button>
     `;
   }
 }
@@ -256,6 +262,13 @@ function renderCricketKeypad() {
   // Pad to 9 buttons (3x3)
   while (buttons.length < 9) buttons.push('<button disabled style="opacity:0;pointer-events:none;">—</button>');
   return buttons.join('');
+}
+
+function setQuick(score) {
+  inputBuf = String(score);
+  document.getElementById('sc-input').textContent = inputBuf || '0';
+  renderKeypad(); // butondaki değeri güncelle
+  submitScore();
 }
 
 function kbInput(ch) {
