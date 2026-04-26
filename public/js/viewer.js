@@ -3,6 +3,8 @@ const socket = io();
 let state = { players: [], boards: [], tournaments: [], activeMatches: [] };
 let matchFilter = 'all';
 let watchedMatchId = null; // Aynalanan maç ID'si
+let watchFlashKeys = new Set(); // Flash animasyonu için kalan skor key'leri
+let watchPrevScores = {}; // Önceki kalan skorlar (flash tetiklemek için)
 
 socket.on('state', (s) => {
   state = s;
@@ -221,18 +223,59 @@ function renderElim(stage, matches) {
     const key = `${m.bracket}-${m.round}`;
     (rounds[key] = rounds[key] || []).push(m);
   }
-  const keys = Object.keys(rounds).sort((a, b) => {
+  const sortKeys = (keys) => keys.sort((a, b) => {
     const [ba, ra] = a.split('-'); const [bb, rb] = b.split('-');
     const order = { winners: 0, losers: 1, final: 2 };
     return (order[ba] || 99) - (order[bb] || 99) || +ra - +rb;
   });
+  const allKeys = sortKeys(Object.keys(rounds));
+  const isDoubleElim = stage.format === 'double_elim';
+
+  if (isDoubleElim) {
+    const wbKeys = allKeys.filter(k => k.startsWith('winners-'));
+    const lbKeys = allKeys.filter(k => k.startsWith('losers-'));
+    const finalKeys = allKeys.filter(k => k.startsWith('final-'));
+
+    const renderSection = (keys, sectionLabel) => {
+      if (!keys.length) return '';
+      return `
+        <div style="margin-bottom: 0.6rem;">
+          <div style="font-size: 0.7rem; color: var(--text-dim); text-transform: uppercase; letter-spacing: 0.06em; margin-bottom: 0.3rem; padding: 0.15rem 0.4rem; background: var(--bg-2); border-radius: 4px; display: inline-block;">${sectionLabel}</div>
+          <div class="bracket">
+            ${keys.map(k => {
+              const ms = rounds[k];
+              const [bracket, round] = k.split('-');
+              const label = bracket === 'winners' ? `WB R${round}` :
+                bracket === 'losers' ? `LB R${round}` : 'Grand Final';
+              return `
+                <div class="bracket-round">
+                  <h4>${label}</h4>
+                  ${ms.map(m => renderBracketMatch(m)).join('')}
+                </div>
+              `;
+            }).join('')}
+          </div>
+        </div>
+      `;
+    };
+
+    return `
+      <div style="margin-top: 0.5rem;">
+        <h4 style="color: var(--text-dim); font-size: 0.78rem; text-transform: uppercase; letter-spacing: 0.05em; margin-bottom: 0.6rem;">${formatLabel(stage.format)}</h4>
+        ${renderSection(wbKeys, '🏆 Winners Bracket')}
+        ${renderSection(lbKeys, '🔁 Losers Bracket')}
+        ${renderSection(finalKeys, '🎯 Grand Final')}
+      </div>
+    `;
+  }
+
   return `
     <div style="margin-top: 0.5rem;">
       <h4 style="color: var(--text-dim); font-size: 0.78rem; text-transform: uppercase; letter-spacing: 0.05em; margin-bottom: 0.5rem;">
         ${formatLabel(stage.format)}
       </h4>
       <div class="bracket">
-        ${keys.map(k => {
+        ${allKeys.map(k => {
           const ms = rounds[k];
           const [bracket, round] = k.split('-');
           const label = bracket === 'final' ? 'Final' :
@@ -438,6 +481,8 @@ async function openWatchModal(matchId) {
 
 function closeWatchModal() {
   watchedMatchId = null;
+  watchFlashKeys = new Set();
+  watchPrevScores = {};
   document.getElementById('watch-modal')?.remove();
   document.removeEventListener('keydown', watchEscHandler, true);
 }
@@ -465,6 +510,14 @@ async function refreshWatchModal(matchId) {
       ? `Set: ${m.p1_sets}-${m.p2_sets} · Leg: ${m.p1_legs}-${m.p2_legs}`
       : `Leg: ${m.p1_legs}-${m.p2_legs}`;
 
+    // Flash animasyonu: önceki skorla karşılaştır
+    const fk1 = `${matchId}-1`, fk2 = `${matchId}-2`;
+    watchFlashKeys = new Set();
+    if (watchPrevScores[fk1] !== undefined && watchPrevScores[fk1] !== rem1) watchFlashKeys.add(fk1);
+    if (watchPrevScores[fk2] !== undefined && watchPrevScores[fk2] !== rem2) watchFlashKeys.add(fk2);
+    watchPrevScores[fk1] = rem1;
+    watchPrevScores[fk2] = rem2;
+
     content.innerHTML = `
       <div style="text-align:center;margin-bottom:1rem;">
         <div style="font-size:0.8rem;color:var(--text-dim);letter-spacing:0.1em;text-transform:uppercase;">${m.round_label || ''} · ${setLeg}</div>
@@ -472,8 +525,8 @@ async function refreshWatchModal(matchId) {
       </div>
 
       <div style="display:grid;grid-template-columns:1fr 1fr;gap:1rem;margin-bottom:1rem;">
-        ${watchPlayerCard(e1, rem1, stats1, isTurn1, m.p1_legs, m.p1_sets, showSets)}
-        ${watchPlayerCard(e2, rem2, stats2, !isTurn1, m.p2_legs, m.p2_sets, showSets)}
+        ${watchPlayerCard(e1, rem1, stats1, isTurn1, m.p1_legs, m.p1_sets, showSets, fk1)}
+        ${watchPlayerCard(e2, rem2, stats2, !isTurn1, m.p2_legs, m.p2_sets, showSets, fk2)}
       </div>
 
       <div style="text-align:center;font-size:0.8rem;color:var(--text-dim);">
@@ -485,13 +538,14 @@ async function refreshWatchModal(matchId) {
   }
 }
 
-function watchPlayerCard(name, remaining, stats, active, legs, sets, showSets) {
+function watchPlayerCard(name, remaining, stats, active, legs, sets, showSets, flashKey) {
   const avg3 = stats.darts_thrown ? ((stats.total_score / stats.darts_thrown) * 3).toFixed(1) : '—';
+  const isFlashing = flashKey && watchFlashKeys && watchFlashKeys.has(flashKey);
   return `
     <div style="background:var(--surface-2);border:2px solid ${active ? 'var(--accent)' : 'var(--border)'};border-radius:12px;padding:1rem;text-align:center;${active ? 'box-shadow:0 0 30px rgba(255,56,96,0.15);' : ''}">
       <div style="font-weight:700;font-size:1rem;margin-bottom:0.5rem;${active ? 'color:var(--accent);' : ''}">${name}</div>
       <div style="font-size:0.75rem;color:var(--text-dim);">Kalan</div>
-      <div style="font-size:3rem;font-weight:900;line-height:1.1;">${remaining}</div>
+      <div class="${isFlashing ? 'score-flash' : ''}" style="font-size:4.5rem;font-weight:900;line-height:1.05;letter-spacing:-2px;">${remaining}</div>
       <div style="font-size:0.78rem;color:var(--text-dim);margin-top:0.4rem;">Leg: <strong>${legs}</strong>${showSets ? ` · Set: <strong>${sets}</strong>` : ''}</div>
       <div style="display:flex;justify-content:center;gap:1rem;margin-top:0.5rem;font-size:0.8rem;">
         <span>Ort: <strong>${avg3}</strong></span>

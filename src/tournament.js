@@ -63,6 +63,33 @@ function onMatchFinished(matchId) {
   const t = db.tournamentById(m.tournament_id);
   const stage = db.stageById(m.stage_id);
 
+  // Çift eleme Grand Final reset: WB oyuncusu (slot 1) eğer LB oyuncusu (slot 2) kazanırsa
+  // ikinci/belirleyici bir maç oynanır. Bu reset finalden sonra kazanan kim olursa olsun turnuva biter.
+  if (m.bracket === 'final' && stage.format === 'double_elim' && !m.is_reset_final) {
+    // entry1 = WB'den gelen; entry2 = LB'den gelen
+    // LB oyuncusu kazandıysa (entry2 = winner) → reset match oluştur
+    if (m.winner_entry_id && m.winner_entry_id === m.entry2_id) {
+      const start_score = START_SCORES[t.game_mode] ?? null;
+      const resetMatch = db.createMatch({
+        tournament_id: t.id,
+        stage_id: stage.id,
+        bracket: 'final',
+        round: (m.round || 1) + 1,
+        match_index: (m.match_index || 0) + 1,
+        entry1_id: m.entry1_id, // WB oyuncusu (her iki oyuncu da 0 kaybıyla)
+        entry2_id: m.entry2_id, // LB oyuncusu
+        status: 'ready',
+        start_score,
+        legs_to_win: m.legs_to_win || null,
+        sets_to_win: m.sets_to_win || null,
+        is_reset_final: 1,
+      });
+      // Reset match stats satırlarını ekle
+      // (db.createMatch zaten match_stats ekliyor)
+      return; // Sahneyi bitmiş sayma — reset maçı bekle
+    }
+  }
+
   // Propagate winner / loser to next match
   if (m.next_winner_match_id && m.winner_entry_id) {
     db.setMatchEntry(m.next_winner_match_id, m.next_winner_slot, m.winner_entry_id);

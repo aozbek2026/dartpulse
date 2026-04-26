@@ -101,6 +101,7 @@ function init() {
       scorer_entry_id INTEGER,        -- yazıcı-hakem olarak atanan entry
       legs_to_win INTEGER,            -- null → turnuva varsayılanı; round başına override
       sets_to_win INTEGER,            -- null → turnuva varsayılanı; round başına override
+      is_reset_final INTEGER DEFAULT 0, -- çift elemede 2. grand final (reset match)
       finished_at TEXT,
       FOREIGN KEY(tournament_id) REFERENCES tournaments(id) ON DELETE CASCADE,
       FOREIGN KEY(stage_id) REFERENCES stages(id) ON DELETE CASCADE
@@ -168,6 +169,9 @@ function init() {
   }
   if (!matchCols.includes('sets_to_win')) {
     try { db.exec('ALTER TABLE matches ADD COLUMN sets_to_win INTEGER'); } catch {}
+  }
+  if (!matchCols.includes('is_reset_final')) {
+    try { db.exec('ALTER TABLE matches ADD COLUMN is_reset_final INTEGER DEFAULT 0'); } catch {}
   }
 
   // Visit başına dart sayısı: bitiren visit için 1/2/3 olabilir; eski kayıtlar için varsayılan 3.
@@ -562,8 +566,12 @@ function tournamentPlayerReport(tournamentId) {
       darts_per_leg: +dartsPerLeg.toFixed(1),
     });
   }
-  // Ortalamaya göre sırala
-  out.sort((a, b) => b.average_3dart - a.average_3dart);
+  // Sıralama: kazanılan maç → kazanılan leg → 3-ok ortalaması
+  out.sort((a, b) =>
+    b.matches_won - a.matches_won ||
+    b.legs_won - a.legs_won ||
+    b.average_3dart - a.average_3dart
+  );
   return out;
 }
 

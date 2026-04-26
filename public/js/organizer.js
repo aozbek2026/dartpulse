@@ -599,8 +599,8 @@ function showTournamentStats(id) {
   if (!t) return;
   const report = t.report || [];
 
-  // Sıralama: en çok leg kazanan önce
-  const sorted = [...report].sort((a, b) => (b.legs_won || 0) - (a.legs_won || 0));
+  // db.js zaten doğru sıralar (matches_won → legs_won → avg); burada kopyala
+  const sorted = [...report];
 
   const overlay = document.createElement('div');
   overlay.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,0.75);display:flex;align-items:center;justify-content:center;z-index:9999;padding:1rem;';
@@ -616,8 +616,8 @@ function showTournamentStats(id) {
             <tr style="color:var(--text-dim);font-size:0.78rem;text-transform:uppercase;letter-spacing:0.05em;border-bottom:1px solid var(--border);">
               <th style="text-align:left;padding:0.5rem 0.25rem;">#</th>
               <th style="text-align:left;padding:0.5rem 0.25rem;">Oyuncu</th>
-              <th style="text-align:right;padding:0.5rem 0.25rem;">Maç</th>
-              <th style="text-align:right;padding:0.5rem 0.25rem;">Leg G/K</th>
+              <th style="text-align:right;padding:0.5rem 0.25rem;">Maç G/O</th>
+              <th style="text-align:right;padding:0.5rem 0.25rem;">Leg</th>
               <th style="text-align:right;padding:0.5rem 0.25rem;">3-Ok Ort.</th>
               <th style="text-align:right;padding:0.5rem 0.25rem;">180</th>
               <th style="text-align:right;padding:0.5rem 0.25rem;">Best CO</th>
@@ -627,11 +627,11 @@ function showTournamentStats(id) {
             ${sorted.map((r, idx) => `
               <tr style="border-bottom:1px solid var(--border);${idx === 0 ? 'color:var(--accent);font-weight:700;' : ''}">
                 <td style="padding:0.6rem 0.25rem;">${idx + 1}</td>
-                <td style="padding:0.6rem 0.25rem;">${idx === 0 ? '🏆 ' : ''}${r.player_name || r.entry_label || '?'}</td>
-                <td style="text-align:right;padding:0.6rem 0.25rem;">${r.matches_played || 0}</td>
-                <td style="text-align:right;padding:0.6rem 0.25rem;">${r.legs_won || 0} / ${r.legs_lost || 0}</td>
-                <td style="text-align:right;padding:0.6rem 0.25rem;">${r.avg_3dart ? (+r.avg_3dart).toFixed(2) : '—'}</td>
-                <td style="text-align:right;padding:0.6rem 0.25rem;">${r.one_eighties || 0}</td>
+                <td style="padding:0.6rem 0.25rem;">${idx === 0 ? '🏆 ' : ''}${r.label || '?'}</td>
+                <td style="text-align:right;padding:0.6rem 0.25rem;">${r.matches_won || 0} / ${r.matches_played || 0}</td>
+                <td style="text-align:right;padding:0.6rem 0.25rem;">${r.legs_won || 0}</td>
+                <td style="text-align:right;padding:0.6rem 0.25rem;">${r.average_3dart ? (+r.average_3dart).toFixed(2) : '—'}</td>
+                <td style="text-align:right;padding:0.6rem 0.25rem;">${r.one_eighty || 0}</td>
                 <td style="text-align:right;padding:0.6rem 0.25rem;">${r.best_checkout || '—'}</td>
               </tr>
             `).join('')}
@@ -859,19 +859,64 @@ function renderElimStage(stage, matches) {
     const key = `${m.bracket}-${m.round}`;
     (rounds[key] = rounds[key] || []).push(m);
   }
-  const keys = Object.keys(rounds).sort((a, b) => {
+  const sortKeys = (keys) => keys.sort((a, b) => {
     const [ba, ra] = a.split('-'); const [bb, rb] = b.split('-');
     const order = { winners: 0, losers: 1, final: 2 };
     return (order[ba] || 99) - (order[bb] || 99) || +ra - +rb;
   });
 
+  const allKeys = sortKeys(Object.keys(rounds));
+  const isDoubleElim = stage.format === 'double_elim';
+
+  // Çift elemede WB, LB ve Final gruplarını ayır
+  if (isDoubleElim) {
+    const wbKeys = allKeys.filter(k => k.startsWith('winners-'));
+    const lbKeys = allKeys.filter(k => k.startsWith('losers-'));
+    const finalKeys = allKeys.filter(k => k.startsWith('final-'));
+
+    const renderSection = (keys, sectionLabel) => {
+      if (!keys.length) return '';
+      return `
+        <div style="margin-bottom: 0.75rem;">
+          <div style="font-size: 0.72rem; color: var(--text-dim); text-transform: uppercase; letter-spacing: 0.06em; margin-bottom: 0.35rem; padding: 0.2rem 0.4rem; background: var(--bg-2); border-radius: 4px; display: inline-block;">${sectionLabel}</div>
+          <div class="bracket">
+            ${keys.map(k => {
+              const ms = rounds[k];
+              const [bracket, round] = k.split('-');
+              const label = bracket === 'winners' ? `WB R${round}` :
+                bracket === 'losers' ? `LB R${round}` : 'Grand Final';
+              return `
+                <div class="bracket-round">
+                  <h4>${label}</h4>
+                  ${ms.map(m => renderBracketMatch(m)).join('')}
+                </div>
+              `;
+            }).join('')}
+          </div>
+        </div>
+      `;
+    };
+
+    return `
+      <div style="margin-top: 1rem;">
+        <h4 style="color: var(--text-dim); font-size: 0.8rem; text-transform: uppercase; letter-spacing: 0.05em; margin-bottom: 0.75rem;">
+          ${formatLabel(stage.format)} — Aşama ${stage.stage_index + 1}
+        </h4>
+        ${renderSection(wbKeys, '🏆 Winners Bracket')}
+        ${renderSection(lbKeys, '🔁 Losers Bracket')}
+        ${renderSection(finalKeys, '🎯 Grand Final')}
+      </div>
+    `;
+  }
+
+  // Tek eleme — orijinal görünüm
   return `
     <div style="margin-top: 1rem;">
       <h4 style="color: var(--text-dim); font-size: 0.8rem; text-transform: uppercase; letter-spacing: 0.05em; margin-bottom: 0.5rem;">
         ${formatLabel(stage.format)} — Aşama ${stage.stage_index + 1}
       </h4>
       <div class="bracket">
-        ${keys.map(k => {
+        ${allKeys.map(k => {
           const ms = rounds[k];
           const [bracket, round] = k.split('-');
           const label = bracket === 'final' ? 'Final' :
@@ -897,8 +942,13 @@ function renderBracketMatch(m) {
   const s2 = m.p1_sets > 0 || m.p2_sets > 0 ? `${m.p2_sets} (${m.p2_legs})` : `${m.p2_legs}`;
   const w1 = m.winner_entry_id && m.winner_entry_id === m.entry1_id;
   const w2 = m.winner_entry_id && m.winner_entry_id === m.entry2_id;
+  const matchNum = m.match_index != null ? `<span style="font-size:0.68rem;color:var(--text-dim);float:right;opacity:0.7;">#${m.match_index + 1}</span>` : '';
+  const resetBadge = m.is_reset_final ? `<span style="font-size:0.68rem;color:var(--warn);margin-left:4px;">RESET</span>` : '';
   return `
     <div class="bracket-match ${cls}">
+      <div style="font-size:0.68rem;color:var(--text-dim);padding:0.15rem 0.4rem 0;display:flex;justify-content:space-between;">
+        <span>${resetBadge}</span>${matchNum}
+      </div>
       <div class="slot ${w1 ? 'winner' : ''}">
         <span>${label1}</span>
         <span class="score">${m.entry1_id ? s1 : ''}</span>

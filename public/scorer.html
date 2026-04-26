@@ -1,0 +1,487 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no" />
+<title>Hızlı Skor — Dart</title>
+<link rel="stylesheet" href="/css/style.css" />
+<style>
+  body { min-height: 100dvh; padding: 0; margin: 0; display: flex; flex-direction: column; }
+  #scorer-root { flex: 1; display: flex; flex-direction: column; padding: clamp(0.75rem, 2vmin, 1.5rem); gap: clamp(0.5rem, 1.5vmin, 1rem); max-width: 700px; margin: 0 auto; width: 100%; }
+
+  /* Setup paneli */
+  #setup-panel { display: flex; flex-direction: column; gap: 1rem; padding: 2rem; background: var(--surface); border: 1px solid var(--border); border-radius: 16px; max-width: 500px; margin: 4rem auto; width: 100%; }
+  #setup-panel h2 { font-size: 1.4rem; margin-bottom: 0.5rem; }
+
+  /* Oyuncu paneli */
+  .sc-players { display: grid; grid-template-columns: 1fr 1fr; gap: clamp(0.6rem, 1.5vmin, 1.2rem); }
+  .sc-player {
+    background: var(--surface);
+    border: 2px solid var(--border);
+    border-radius: clamp(12px, 1.5vmin, 18px);
+    padding: clamp(0.6rem, 1.8vmin, 1.4rem);
+    text-align: center;
+    transition: border-color 0.2s, box-shadow 0.2s;
+  }
+  .sc-player.active { border-color: var(--accent); box-shadow: 0 0 24px rgba(255,56,96,0.15); }
+  .sc-player-name { font-weight: 700; font-size: clamp(0.9rem, 2.5vmin, 1.3rem); margin-bottom: 0.3rem; }
+  .sc-player.active .sc-player-name { color: var(--accent); }
+  .sc-remaining { font-size: clamp(2.5rem, 9vmin, 6rem); font-weight: 900; line-height: 1; letter-spacing: -2px; background: linear-gradient(135deg, var(--accent-2), var(--accent-3)); -webkit-background-clip: text; background-clip: text; -webkit-text-fill-color: transparent; }
+  .sc-legs { font-size: clamp(0.8rem, 1.8vmin, 1rem); color: var(--text-dim); margin-top: 0.4rem; }
+  .sc-legs strong { color: var(--text); }
+  .sc-avg { font-size: clamp(0.72rem, 1.5vmin, 0.88rem); color: var(--text-dim); margin-top: 0.25rem; }
+
+  /* Scoreboard bar */
+  .sc-bar { display: flex; align-items: center; justify-content: center; gap: 1rem; background: var(--surface); border: 1px solid var(--border); border-radius: 12px; padding: 0.5rem 1rem; font-size: 0.82rem; color: var(--text-dim); flex-wrap: wrap; }
+  .sc-bar strong { color: var(--text); }
+
+  /* Keypad */
+  .sc-keypad { background: var(--surface); border: 1px solid var(--border); border-radius: clamp(12px, 1.5vmin, 16px); padding: clamp(0.6rem, 1.4vmin, 1.2rem); }
+  .sc-input-row { display: flex; align-items: center; gap: 0.5rem; margin-bottom: clamp(0.5rem, 1vmin, 0.9rem); }
+  .sc-input-display { flex: 1; font-size: clamp(1.6rem, 4.5vmin, 2.8rem); font-weight: 800; text-align: center; background: var(--bg); border: 2px solid var(--border); border-radius: 10px; padding: 0.4rem 0.6rem; color: var(--accent-2); letter-spacing: 0.04em; min-height: 3rem; display: flex; align-items: center; justify-content: center; }
+  .sc-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: clamp(0.35rem, 0.9vmin, 0.7rem); }
+  .sc-grid button { padding: clamp(0.6rem, 1.7vmin, 1.3rem); font-size: clamp(1rem, 2.4vmin, 1.5rem); font-weight: 700; background: var(--surface-2); border: 1px solid var(--border); border-radius: 8px; min-height: 44px; }
+  .sc-grid button:hover { background: var(--border); }
+  .sc-grid button.submit { grid-column: span 3; background: linear-gradient(135deg, var(--accent), var(--accent-3)); color: white; font-size: clamp(1rem, 2.5vmin, 1.4rem); margin-top: 0.2rem; }
+  .sc-grid button.undo-btn { background: var(--surface); color: var(--text-dim); }
+
+  /* Result */
+  #result-panel { display: none; flex-direction: column; align-items: center; justify-content: center; text-align: center; gap: 1rem; padding: 2rem; background: var(--surface); border: 1px solid var(--border); border-radius: 16px; }
+  #result-panel h2 { font-size: 2rem; }
+  #result-panel .winner-name { font-size: clamp(1.6rem, 6vmin, 2.8rem); font-weight: 900; color: var(--accent); }
+
+  /* Cricket overlay */
+  .cricket-state { display: grid; grid-template-columns: auto 1fr auto; gap: 0.4rem 0.8rem; align-items: center; background: var(--surface); border: 1px solid var(--border); border-radius: 12px; padding: 0.7rem 1rem; font-size: clamp(0.8rem, 1.8vmin, 1rem); }
+  .cric-marks { display: flex; gap: 3px; }
+  .cric-mark { width: 18px; height: 18px; border-radius: 50%; background: var(--surface-2); border: 1px solid var(--border); display: flex; align-items: center; justify-content: center; font-size: 0.65rem; font-weight: 700; }
+  .cric-mark.hit { background: var(--accent); border-color: var(--accent); color: white; }
+  .cric-mark.closed { background: var(--success); border-color: var(--success); color: #062; }
+  .cric-num { text-align: center; font-weight: 700; color: var(--text-dim); }
+  .cric-score { text-align: right; font-weight: 700; }
+
+  @media (max-width: 500px) {
+    .sc-players { grid-template-columns: 1fr 1fr; gap: 0.5rem; }
+    .sc-remaining { font-size: clamp(2rem, 10vw, 4rem); }
+  }
+</style>
+</head>
+<body>
+<div id="scorer-root">
+  <!-- Setup -->
+  <div id="setup-panel">
+    <h2>🖊️ Hızlı Skor</h2>
+    <p style="color:var(--text-dim);font-size:0.9rem;margin-top:-0.5rem;">Turnuva olmadan iki oyuncu arasında skor hesabı.</p>
+
+    <div>
+      <label>Oyun modu</label>
+      <select id="s-mode" style="width:100%;">
+        <option value="501">501</option>
+        <option value="701">701</option>
+        <option value="1001">1001</option>
+        <option value="cricket">Cricket</option>
+      </select>
+    </div>
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:0.75rem;">
+      <div>
+        <label>1. Oyuncu</label>
+        <input id="s-p1" type="text" placeholder="Oyuncu 1" value="Oyuncu 1" style="width:100%;box-sizing:border-box;" />
+      </div>
+      <div>
+        <label>2. Oyuncu</label>
+        <input id="s-p2" type="text" placeholder="Oyuncu 2" value="Oyuncu 2" style="width:100%;box-sizing:border-box;" />
+      </div>
+    </div>
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:0.75rem;">
+      <div>
+        <label>Kazanmak için leg (Bo?)</label>
+        <input id="s-legs" type="number" min="1" max="11" value="2" style="width:100%;box-sizing:border-box;" />
+      </div>
+      <div>
+        <label>Başlayan oyuncu</label>
+        <select id="s-starter" style="width:100%;">
+          <option value="1">Oyuncu 1</option>
+          <option value="2">Oyuncu 2</option>
+        </select>
+      </div>
+    </div>
+    <button class="btn primary" onclick="startGame()" style="margin-top:0.5rem;">Oyuna Başla</button>
+    <a href="/" style="text-align:center;color:var(--text-dim);font-size:0.85rem;margin-top:0.25rem;">← Ana sayfa</a>
+  </div>
+
+  <!-- Game (hidden until start) -->
+  <div id="game-panel" style="display:none;flex-direction:column;gap:inherit;">
+    <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:0.5rem;">
+      <div style="font-size:1.1rem;font-weight:700;" id="game-title">Oyun</div>
+      <div style="display:flex;gap:0.5rem;">
+        <button class="btn secondary" style="font-size:0.82rem;padding:0.35rem 0.7rem;" onclick="undoThrow()">↩ Geri Al</button>
+        <button class="btn danger" style="font-size:0.82rem;padding:0.35rem 0.7rem;" onclick="resetGame()">🔄 Yeniden</button>
+        <a href="/" class="btn secondary" style="font-size:0.82rem;padding:0.35rem 0.7rem;">← Çıkış</a>
+      </div>
+    </div>
+
+    <div class="sc-bar" id="sc-bar">
+      <span>Leg 1</span>
+    </div>
+
+    <div class="sc-players">
+      <div class="sc-player" id="panel-1">
+        <div class="sc-player-name" id="name-1">—</div>
+        <div class="sc-remaining" id="rem-1">501</div>
+        <div class="sc-legs">Leg: <strong id="legs-1">0</strong></div>
+        <div class="sc-avg" id="avg-1">Ort: —</div>
+      </div>
+      <div class="sc-player" id="panel-2">
+        <div class="sc-player-name" id="name-2">—</div>
+        <div class="sc-remaining" id="rem-2">501</div>
+        <div class="sc-legs">Leg: <strong id="legs-2">0</strong></div>
+        <div class="sc-avg" id="avg-2">Ort: —</div>
+      </div>
+    </div>
+
+    <!-- Cricket scoreboard -->
+    <div id="cricket-board" style="display:none;"></div>
+
+    <div class="sc-keypad">
+      <div class="sc-input-row">
+        <div class="sc-input-display" id="sc-input">0</div>
+      </div>
+      <div class="sc-grid" id="sc-grid">
+        <!-- rendered by JS -->
+      </div>
+    </div>
+
+    <!-- Result overlay -->
+    <div id="result-panel">
+      <div style="font-size:3rem;">🏆</div>
+      <div style="color:var(--text-dim);font-size:0.9rem;text-transform:uppercase;letter-spacing:0.1em;">Kazanan</div>
+      <div class="winner-name" id="winner-name">—</div>
+      <div id="result-stats" style="color:var(--text-dim);font-size:0.88rem;"></div>
+      <button class="btn primary" onclick="resetGame()">Yeni Oyun</button>
+      <a href="/" class="btn secondary">Ana Sayfa</a>
+    </div>
+  </div>
+</div>
+
+<script>
+// ===== State =====
+let G = null; // aktif oyun state'i
+let inputBuf = '';
+
+function startGame() {
+  const mode = document.getElementById('s-mode').value;
+  const p1 = document.getElementById('s-p1').value.trim() || 'Oyuncu 1';
+  const p2 = document.getElementById('s-p2').value.trim() || 'Oyuncu 2';
+  const legsToWin = Math.max(1, +document.getElementById('s-legs').value || 2);
+  const starter = +document.getElementById('s-starter').value;
+
+  const startScore = { '501': 501, '701': 701, '1001': 1001, 'cricket': 0 }[mode] ?? 501;
+
+  G = {
+    mode,
+    names: [null, p1, p2],
+    legsToWin,
+    legs: [0, 0, 0],          // index 1/2
+    turn: starter,
+    starter,
+    currentLeg: 1,
+    remaining: [0, startScore, startScore],
+    totalScore: [0, 0, 0],
+    darts: [0, 0, 0],
+    turns: [0, 0, 0],
+    history: [],               // [{slot, score, remaining, bust}]
+    cricket: initCricket(),
+    finished: false,
+    winnerSlot: null,
+  };
+
+  document.getElementById('setup-panel').style.display = 'none';
+  const gp = document.getElementById('game-panel');
+  gp.style.display = 'flex';
+  document.getElementById('game-title').textContent = `${mode.toUpperCase()} — Bo${legsToWin * 2 - 1}`;
+
+  inputBuf = '';
+  renderKeypad();
+  renderGame();
+}
+
+function initCricket() {
+  // marks[slot][number] = 0..3 (3 = closed)
+  const nums = [20, 19, 18, 17, 16, 15, 25];
+  return {
+    marks: { 1: {}, 2: {} },
+    score: [0, 0, 0],
+    nums,
+  };
+}
+
+function resetGame() {
+  G = null;
+  inputBuf = '';
+  document.getElementById('setup-panel').style.display = 'flex';
+  document.getElementById('game-panel').style.display = 'none';
+  document.getElementById('result-panel').style.display = 'none';
+}
+
+// ===== Keypad =====
+function renderKeypad() {
+  const grid = document.getElementById('sc-grid');
+  if (!grid) return;
+  if (G && G.mode === 'cricket') {
+    grid.innerHTML = renderCricketKeypad();
+  } else {
+    grid.innerHTML = `
+      ${['7','8','9','4','5','6','1','2','3'].map(n =>
+        `<button onclick="kbInput('${n}')">${n}</button>`
+      ).join('')}
+      <button onclick="kbInput('0')">0</button>
+      <button onclick="kbClear()" class="undo-btn">C</button>
+      <button onclick="kbBackspace()" class="undo-btn">⌫</button>
+      <button class="submit" onclick="submitScore()">KAYDET ✓</button>
+    `;
+  }
+}
+
+function renderCricketKeypad() {
+  if (!G) return '';
+  const nums = [20, 19, 18, 17, 16, 15, 25];
+  const slot = G.turn;
+  const other = slot === 1 ? 2 : 1;
+  const buttons = nums.map(n => {
+    const myMarks = G.cricket.marks[slot][n] || 0;
+    const theirMarks = G.cricket.marks[other][n] || 0;
+    const closed = myMarks >= 3 && theirMarks >= 3;
+    const label = n === 25 ? 'Bull' : String(n);
+    return `<button onclick="cricketMark(${n})" ${closed ? 'disabled style="opacity:0.3;"' : ''}>${label}</button>`;
+  });
+  // Pad to 9 buttons (3x3)
+  while (buttons.length < 9) buttons.push('<button disabled style="opacity:0;pointer-events:none;">—</button>');
+  return buttons.join('');
+}
+
+function kbInput(ch) {
+  if (inputBuf.length >= 3) return;
+  inputBuf += ch;
+  document.getElementById('sc-input').textContent = inputBuf || '0';
+}
+function kbClear() { inputBuf = ''; document.getElementById('sc-input').textContent = '0'; }
+function kbBackspace() { inputBuf = inputBuf.slice(0, -1); document.getElementById('sc-input').textContent = inputBuf || '0'; }
+
+function submitScore() {
+  if (!G || G.finished) return;
+  const score = +inputBuf;
+  if (isNaN(score) || score < 0 || score > 180) { kbClear(); return; }
+  inputBuf = '';
+  document.getElementById('sc-input').textContent = '0';
+  recordThrow(G.turn, score);
+}
+
+function cricketMark(num) {
+  if (!G || G.finished) return;
+  recordCricketMark(G.turn, num);
+}
+
+// ===== Game Logic: X01 =====
+function recordThrow(slot, score) {
+  const cur = G.remaining[slot];
+  let newRem = cur - score;
+  let bust = false;
+
+  if (newRem < 0 || newRem === 1) { bust = true; newRem = cur; }
+  // Double out: check newRem === 0 requires double — simplified: any finish is valid
+  G.history.push({ slot, score, remaining: cur, bust });
+  G.totalScore[slot] += bust ? 0 : score;
+  G.darts[slot] += 3;
+  G.turns[slot] += 1;
+
+  if (!bust) {
+    G.remaining[slot] = newRem;
+  }
+
+  if (newRem === 0 && !bust) {
+    // Leg won
+    G.legs[slot] += 1;
+    if (G.legs[slot] >= G.legsToWin) {
+      G.finished = true;
+      G.winnerSlot = slot;
+    } else {
+      // Reset leg
+      const startScore = { '501': 501, '701': 701, '1001': 1001 }[G.mode] ?? 501;
+      G.remaining[1] = startScore;
+      G.remaining[2] = startScore;
+      G.currentLeg += 1;
+      // Alternate starter
+      G.starter = G.starter === 1 ? 2 : 1;
+      G.turn = G.starter;
+    }
+  } else {
+    G.turn = G.turn === 1 ? 2 : 1;
+  }
+
+  renderGame();
+}
+
+// ===== Game Logic: Cricket =====
+function recordCricketMark(slot, num) {
+  const other = slot === 1 ? 2 : 1;
+  const myMarks = G.cricket.marks[slot][num] || 0;
+  if (myMarks >= 3) {
+    // already closed for me — no-op
+    G.turn = other;
+    renderGame();
+    return;
+  }
+  G.cricket.marks[slot][num] = myMarks + 1;
+  G.history.push({ slot, num, type: 'cricket' });
+  G.darts[slot] += 3;
+  G.turns[slot] += 1;
+
+  // Score points if I own (>=3 marks) and opponent hasn't closed yet
+  const newMarks = G.cricket.marks[slot][num];
+  const theirMarks = G.cricket.marks[other][num] || 0;
+  if (newMarks >= 3 && theirMarks < 3) {
+    G.cricket.score[slot] += num === 25 ? 25 : num;
+  }
+
+  // Check win: all numbers closed AND highest score
+  const nums = G.cricket.nums;
+  const allClosed = nums.every(n =>
+    (G.cricket.marks[1][n] || 0) >= 3 && (G.cricket.marks[2][n] || 0) >= 3
+  );
+  const myAllClosed = nums.every(n => (G.cricket.marks[slot][n] || 0) >= 3);
+  const myScore = G.cricket.score[slot];
+  const theirScore = G.cricket.score[other];
+
+  if (myAllClosed && myScore >= theirScore) {
+    G.finished = true;
+    G.winnerSlot = slot;
+  } else if (allClosed) {
+    const winner = G.cricket.score[1] >= G.cricket.score[2] ? 1 : 2;
+    G.finished = true;
+    G.winnerSlot = winner;
+  } else {
+    G.turn = other;
+  }
+
+  renderGame();
+}
+
+function undoThrow() {
+  if (!G || !G.history.length) return;
+  // Simple undo: restart the leg state from scratch based on history minus last
+  // For simplicity: just pop last entry and re-apply all history
+  G.history.pop();
+  rebuildFromHistory();
+  inputBuf = '';
+  document.getElementById('sc-input').textContent = '0';
+  renderGame();
+}
+
+function rebuildFromHistory() {
+  const startScore = { '501': 501, '701': 701, '1001': 1001, 'cricket': 0 }[G.mode] ?? 501;
+  const history = G.history.slice();
+  // Reset state
+  G.legs = [0, 0, 0];
+  G.remaining = [0, startScore, startScore];
+  G.totalScore = [0, 0, 0];
+  G.darts = [0, 0, 0];
+  G.turns = [0, 0, 0];
+  G.cricket = initCricket();
+  G.finished = false;
+  G.winnerSlot = null;
+  G.turn = G.starter;
+  G.currentLeg = 1;
+  G.history = [];
+
+  for (const h of history) {
+    if (h.type === 'cricket') {
+      recordCricketMark(h.slot, h.num);
+    } else {
+      recordThrow(h.slot, h.score);
+    }
+    if (G.finished) break;
+  }
+}
+
+// ===== Render =====
+function renderGame() {
+  if (!G) return;
+  const isCricket = G.mode === 'cricket';
+
+  for (const slot of [1, 2]) {
+    document.getElementById(`name-${slot}`).textContent = G.names[slot];
+    const avg = G.darts[slot] > 0 ? ((G.totalScore[slot] / G.darts[slot]) * 3).toFixed(1) : '—';
+    document.getElementById(`avg-${slot}`).textContent = `Ort: ${avg}`;
+    document.getElementById(`legs-${slot}`).textContent = G.legs[slot];
+    document.getElementById(`panel-${slot}`).classList.toggle('active', G.turn === slot && !G.finished);
+
+    if (isCricket) {
+      document.getElementById(`rem-${slot}`).textContent = G.cricket.score[slot];
+    } else {
+      document.getElementById(`rem-${slot}`).textContent = G.remaining[slot];
+    }
+  }
+
+  const barText = isCricket
+    ? `Cricket · Sıra: <strong>${G.names[G.turn]}</strong>`
+    : `Leg ${G.currentLeg} · Sıra: <strong>${G.names[G.turn]}</strong>`;
+  document.getElementById('sc-bar').innerHTML = barText;
+
+  // Cricket board
+  const cb = document.getElementById('cricket-board');
+  if (isCricket) {
+    cb.style.display = 'block';
+    cb.innerHTML = renderCricketBoard();
+  } else {
+    cb.style.display = 'none';
+  }
+
+  renderKeypad();
+
+  if (G.finished) showResult();
+}
+
+function renderCricketBoard() {
+  const nums = G.cricket.nums;
+  const renderMarks = (slot, n) => {
+    const m = G.cricket.marks[slot][n] || 0;
+    const marks = [];
+    for (let i = 0; i < 3; i++) {
+      marks.push(`<div class="cric-mark ${i < m ? (m >= 3 ? 'closed' : 'hit') : ''}">${i < m ? (m >= 3 ? '✓' : '×') : ''}</div>`);
+    }
+    return `<div class="cric-marks">${marks.join('')}</div>`;
+  };
+  const rows = nums.map(n => `
+    <div>${renderMarks(1, n)}</div>
+    <div class="cric-num">${n === 25 ? 'Bull' : n}</div>
+    <div style="display:flex;justify-content:flex-end;">${renderMarks(2, n)}</div>
+  `).join('');
+  return `
+    <div class="cricket-state">
+      <div style="text-align:center;font-weight:700;font-size:0.8rem;color:var(--text-dim);">${G.names[1]}</div>
+      <div></div>
+      <div style="text-align:center;font-weight:700;font-size:0.8rem;color:var(--text-dim);">${G.names[2]}</div>
+      ${rows}
+    </div>
+  `;
+}
+
+function showResult() {
+  const rp = document.getElementById('result-panel');
+  rp.style.display = 'flex';
+  document.getElementById('winner-name').textContent = G.names[G.winnerSlot];
+  const otherSlot = G.winnerSlot === 1 ? 2 : 1;
+  document.getElementById('result-stats').textContent =
+    `${G.names[G.winnerSlot]} ${G.legs[G.winnerSlot]} – ${G.legs[otherSlot]} ${G.names[otherSlot]}`;
+}
+
+// Keyboard support
+document.addEventListener('keydown', (e) => {
+  if (!G || G.finished || G.mode === 'cricket') return;
+  if (e.key >= '0' && e.key <= '9') kbInput(e.key);
+  else if (e.key === 'Backspace') kbBackspace();
+  else if (e.key === 'Enter') submitScore();
+  else if (e.key === 'Escape') kbClear();
+});
+</script>
+</body>
+</html>
