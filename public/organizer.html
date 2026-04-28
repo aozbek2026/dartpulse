@@ -19,6 +19,7 @@
       <a href="#boards" class="tab-link" data-tab="boards">Board'lar</a>
       <a href="#new-tournament" class="tab-link" data-tab="new-tournament">Yeni Turnuva</a>
       <a href="#tournaments" class="tab-link" data-tab="tournaments">Turnuvalar</a>
+      <a href="#past-tournaments" class="tab-link" data-tab="past-tournaments">Geçmiş</a>
       <a href="/viewer.html" target="_blank" style="margin-top: 1rem; color: var(--accent-2);">📺 İzleyici aç ↗</a>
     </nav>
   </aside>
@@ -51,11 +52,24 @@
       <p class="subtitle">Turnuvaya katılacak oyuncuları kaydet.</p>
 
       <div class="card">
-        <div class="row">
+        <div class="row" style="margin-bottom: 0.75rem;">
           <input id="player-name" placeholder="İsim Soyisim" style="flex: 1; min-width: 200px;" />
           <input id="player-nick" placeholder="Nickname (opsiyonel)" style="flex: 1; min-width: 160px;" />
           <button class="primary" onclick="addPlayer()">Ekle</button>
         </div>
+        <details id="bulk-details">
+          <summary style="cursor: pointer; color: var(--text-dim); font-size: 0.88rem; user-select: none;">📋 Toplu ekle — birden fazla isim</summary>
+          <div style="margin-top: 0.6rem;">
+            <p style="color: var(--text-dim); font-size: 0.82rem; margin-bottom: 0.4rem;">
+              Her satıra bir oyuncu yaz. İsteğe bağlı: <code>İsim / Nickname</code> formatını kullanabilirsin.
+            </p>
+            <textarea id="bulk-names" rows="6" placeholder="Ali Veli&#10;Mehmet Yılmaz / Çakır&#10;Fatma Kaya&#10;Zeynep Demir / Zey" style="width: 100%; box-sizing: border-box; font-family: monospace; font-size: 0.88rem; resize: vertical;"></textarea>
+            <div class="row" style="margin-top: 0.4rem;">
+              <button class="primary" onclick="bulkAddPlayers()">➕ Hepsini Ekle</button>
+              <button class="secondary" onclick="document.getElementById('bulk-names').value=''">Temizle</button>
+            </div>
+          </div>
+        </details>
       </div>
 
       <div class="card">
@@ -157,6 +171,7 @@
         <div id="entries-list"></div>
         <div class="row" style="margin-top: 0.5rem; gap: 0.5rem;">
           <button class="secondary" onclick="addEntry()">+ Katılımcı ekle</button>
+          <button class="secondary" onclick="addAllPlayers()">👥 Tümünü Ekle</button>
           <button class="secondary" onclick="drawLots()">🎲 Kura çek (önizleme)</button>
         </div>
       </div>
@@ -169,8 +184,15 @@
     <!-- TOURNAMENTS LIST TAB -->
     <section class="tab" id="tab-tournaments" hidden>
       <h2>Turnuvalar</h2>
-      <p class="subtitle">Mevcut turnuvalar, kontrolleri ve bracket görünümü.</p>
+      <p class="subtitle">Aktif turnuvalar, kontrolleri ve bracket görünümü.</p>
       <div id="tournament-list"></div>
+    </section>
+
+    <!-- PAST TOURNAMENTS TAB -->
+    <section class="tab" id="tab-past-tournaments" hidden>
+      <h2>Geçmiş Turnuvalar</h2>
+      <p class="subtitle">Tamamlanmış turnuvalar ve sonuçları.</p>
+      <div id="past-tournament-list"></div>
     </section>
   </main>
 </div>

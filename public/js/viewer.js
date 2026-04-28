@@ -24,6 +24,7 @@ function render() {
   renderBracket();
   renderMatches();
   renderRecent();
+  renderPast();
 }
 
 // ========== Klasman hesaplaması ==========
@@ -457,6 +458,46 @@ function renderRecent() {
   `;
 }
 
+// ========== Render: Geçmiş turnuvalar ==========
+function renderPast() {
+  const host = document.getElementById('past-host');
+  if (!host) return;
+  const finished = state.tournaments.filter(t => t.status === 'finished');
+  if (!finished.length) {
+    host.innerHTML = `<div class="card empty">Henüz tamamlanmış turnuva yok</div>`;
+    return;
+  }
+  host.innerHTML = finished.map(t => {
+    // Son aşamanın final maçını bul → şampiyonu belirle
+    const finalMatch = [...t.matches].reverse().find(m =>
+      m.status === 'finished' && (m.bracket === 'final' || m.round === Math.max(...t.matches.map(x => x.round || 0)))
+    );
+    const champion = finalMatch
+      ? entryLabel(finalMatch.winner_entry_id === finalMatch.entry1_id ? finalMatch.entry1 : finalMatch.entry2)
+      : '—';
+    const totalMatches = t.matches.filter(m => m.status === 'finished').length;
+    const stages = t.stages.map(s => formatLabel(s.format)).join(' + ');
+    return `
+      <div class="card" style="margin-bottom: 1rem;">
+        <div style="display: flex; justify-content: space-between; align-items: flex-start; gap: 1rem;">
+          <div>
+            <div style="font-weight: 600; font-size: 1.05rem; margin-bottom: 0.25rem;">
+              🏆 ${t.name}
+            </div>
+            <div style="color: var(--text-dim); font-size: 0.85rem;">
+              ${modeLabel(t.game_mode)} · ${stages} · ${t.entries.length} katılımcı · ${totalMatches} maç
+            </div>
+            <div style="margin-top: 0.5rem; font-size: 0.88rem;">
+              Şampiyon: <strong style="color: var(--accent);">${champion}</strong>
+            </div>
+          </div>
+          <span class="chip success">TAMAMLANDI</span>
+        </div>
+      </div>
+    `;
+  }).join('');
+}
+
 // ========== Canlı Maç Aynalama ==========
 async function openWatchModal(matchId) {
   watchedMatchId = matchId;
@@ -576,7 +617,7 @@ document.addEventListener('click', (e) => {
 
 // ========== Sticky nav: aktif bölüm vurgusu ==========
 const navLinks = document.querySelectorAll('#nav a');
-const sections = ['sec-live', 'sec-standings', 'sec-bracket', 'sec-matches', 'sec-recent'];
+const sections = ['sec-live', 'sec-standings', 'sec-bracket', 'sec-matches', 'sec-recent', 'sec-past'];
 const obs = new IntersectionObserver((entries) => {
   for (const ent of entries) {
     if (ent.isIntersecting) {

@@ -405,29 +405,29 @@ body.board-page #root.board-screen {
 /* Bracket */
 .bracket {
   display: flex;
-  gap: 3rem;
+  gap: 1.25rem;
   overflow-x: auto;
-  padding: 1rem 0;
+  padding: 0.75rem 0;
 }
 .bracket-round {
   display: flex;
   flex-direction: column;
   justify-content: space-around;
-  min-width: 220px;
-  gap: 1rem;
+  min-width: 180px;
+  gap: 0.5rem;
 }
-.bracket-round h4 { font-size: 0.8rem; color: var(--text-dim); text-transform: uppercase; letter-spacing: 0.05em; margin-bottom: 0.5rem; }
+.bracket-round h4 { font-size: 0.75rem; color: var(--text-dim); text-transform: uppercase; letter-spacing: 0.05em; margin-bottom: 0.35rem; }
 .bracket-match {
   background: var(--surface);
   border: 1px solid var(--border);
-  border-radius: 10px;
-  padding: 0.5rem 0.75rem;
-  font-size: 0.85rem;
-  min-height: 56px;
+  border-radius: 8px;
+  padding: 0.35rem 0.6rem;
+  font-size: 0.82rem;
+  min-height: 48px;
 }
 .bracket-match.live { border-color: var(--accent); }
 .bracket-match.finished { opacity: 0.85; }
-.bracket-match .slot { display: flex; justify-content: space-between; padding: 0.2rem 0; }
+.bracket-match .slot { display: flex; justify-content: space-between; padding: 0.15rem 0; }
 .bracket-match .slot.winner { color: var(--success); font-weight: 600; }
 .bracket-match .slot .score { color: var(--text-dim); font-variant-numeric: tabular-nums; }
 

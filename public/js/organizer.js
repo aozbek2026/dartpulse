@@ -44,6 +44,25 @@ async function deletePlayer(id) {
   await api.del('/api/players/' + id);
 }
 
+async function bulkAddPlayers() {
+  const raw = document.getElementById('bulk-names').value;
+  const lines = raw.split('\n').map(l => l.trim()).filter(l => l.length > 0);
+  if (!lines.length) return toast('Liste boş');
+  let added = 0;
+  for (const line of lines) {
+    const parts = line.split('/').map(p => p.trim());
+    const name = parts[0];
+    const nickname = parts[1] || '';
+    if (!name) continue;
+    await api.post('/api/players', { name, nickname });
+    added++;
+  }
+  document.getElementById('bulk-names').value = '';
+  const det = document.getElementById('bulk-details');
+  if (det) det.removeAttribute('open');
+  toast(`${added} oyuncu eklendi`);
+}
+
 // ---- Boards ----
 async function addBoard() {
   const name = document.getElementById('board-name').value.trim();
@@ -345,6 +364,24 @@ function updateEntry(i, field, value) {
   }
   if (field === 'player1_id' || field === 'player2_id') renderRoundOverridesPanel();
 }
+// Kayıtlı tüm oyuncuları entriesDraft'a ekle (zaten eklenenleri atla)
+function addAllPlayers() {
+  const teamMode = document.getElementById('t-team').value;
+  const existing1 = new Set(entriesDraft.map(e => e.player1_id).filter(Boolean));
+  const existing2 = new Set(entriesDraft.map(e => e.player2_id).filter(Boolean));
+  const usedIds = new Set([...existing1, ...existing2]);
+  const remaining = state.players.filter(p => !usedIds.has(p.id));
+  if (!remaining.length) return toast('Tüm oyuncular zaten eklenmiş');
+  // Boş slot'ları önce kaldır (player seçilmemiş satırlar)
+  entriesDraft = entriesDraft.filter(e => e.player1_id || e.player2_id);
+  for (const p of remaining) {
+    entriesDraft.push({ player1_id: p.id, player2_id: null, seed: null });
+  }
+  renderEntriesDraft();
+  renderRoundOverridesPanel();
+  toast(`${remaining.length} oyuncu eklendi`);
+}
+
 // Kura: seed'i olmayan katılımcıları Fisher-Yates ile karıştır,
 // seed'liler (seed değerine göre sıralı) önde kalsın
 function drawLots() {
@@ -738,6 +775,7 @@ function render() {
   renderEntriesDraft();
   renderRoundOverridesPanel();
   renderTournaments();
+  renderPastTournaments();
 }
 
 // Base legs/sets değiştiğinde override paneli yenilensin (placeholder güncellemesi için)
@@ -790,11 +828,23 @@ function renderBoards() {
 
 function renderTournaments() {
   const host = document.getElementById('tournament-list');
-  if (!state.tournaments.length) {
-    host.innerHTML = '<div class="empty">Henüz turnuva yok. "Yeni Turnuva" sekmesinden oluşturabilirsin.</div>';
+  const active = state.tournaments.filter(t => t.status !== 'finished');
+  if (!active.length) {
+    host.innerHTML = '<div class="empty">Aktif turnuva yok. "Yeni Turnuva" sekmesinden oluşturabilirsin.</div>';
     return;
   }
-  host.innerHTML = state.tournaments.map(t => renderTournament(t)).join('');
+  host.innerHTML = active.map(t => renderTournament(t)).join('');
+}
+
+function renderPastTournaments() {
+  const host = document.getElementById('past-tournament-list');
+  if (!host) return;
+  const finished = state.tournaments.filter(t => t.status === 'finished');
+  if (!finished.length) {
+    host.innerHTML = '<div class="empty">Henüz tamamlanmış turnuva yok.</div>';
+    return;
+  }
+  host.innerHTML = finished.map(t => renderTournament(t)).join('');
 }
 
 function renderTournament(t) {
