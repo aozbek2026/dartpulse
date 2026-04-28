@@ -306,7 +306,16 @@ app.post('/api/matches/:id/throw', (req, res) => {
       // Maçın sahibi olan kullanıcı için scheduler çalıştır
       const m = db.matchById(matchId);
       const t = m ? db.tournamentById(m.tournament_id) : null;
-      scheduler.assignPendingMatches(io, t?.user_id || null);
+      // Turnuva bittiyse board'ları serbest bırak ve tabletlere bildir
+      if (t && t.status === 'finished') {
+        const boards = db.allBoards(t.user_id);
+        db.clearUserBoards(t.user_id);
+        for (const b of boards) {
+          io.to(`board:${b.id}`).emit('board:state', { board: { ...b, current_match_id: null, status: 'idle' }, match: null });
+        }
+      } else {
+        scheduler.assignPendingMatches(io, t?.user_id || null);
+      }
       broadcastState();
     } else {
       broadcastState();

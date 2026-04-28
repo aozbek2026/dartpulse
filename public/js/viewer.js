@@ -105,7 +105,7 @@ function renderLive() {
         return `
           <div class="card" style="padding: 1rem; cursor: pointer;" onclick="openWatchModal(${m.id})" title="Tıkla — canlı skor izle">
             <div style="color: var(--text-dim); font-size: 0.8rem; margin-bottom: 0.5rem; display: flex; justify-content: space-between;">
-              <span>${board ? board.name : 'Board yok'} · Leg ${m.current_leg}</span>
+              <span>${board ? board.name : 'Board yok'} · ${m.round_label || (m.bracket === 'final' ? 'Grand Final' : m.bracket === 'losers' ? `LB R${m.round}` : m.bracket === 'winners' ? `WB R${m.round}` : m.round ? `R${m.round}` : '')} · Leg ${m.current_leg}</span>
               <span>${statusChip}</span>
             </div>
             <div style="display: flex; justify-content: space-between; align-items: center;">
@@ -339,12 +339,19 @@ function renderMatches() {
   else if (matchFilter === 'ready') filtered = all.filter(m => m.status === 'ready');
   else if (matchFilter === 'finished') filtered = all.filter(m => m.status === 'finished');
 
-  // Sıralama: live → ready → finished, sonra round/match_index
-  const order = { live: 0, ready: 1, finished: 2, pending: 3 };
-  filtered.sort((a, b) =>
-    (order[a.status] || 9) - (order[b.status] || 9) ||
-    (a.round || 0) - (b.round || 0) ||
-    (a.match_index || 0) - (b.match_index || 0));
+  // Sıralama: son biten en üstte; aktif (live/ready) sonra; bekleyenler en altta
+  filtered.sort((a, b) => {
+    const aFin = a.status === 'finished';
+    const bFin = b.status === 'finished';
+    // İkisi de bitmişse → finished_at desc (en yeni üstte)
+    if (aFin && bFin) {
+      if (a.finished_at && b.finished_at) return b.finished_at.localeCompare(a.finished_at);
+      return (b.id || 0) - (a.id || 0);
+    }
+    // Bitmişler önce, sonra live, ready, pending
+    const order = { finished: 0, live: 1, ready: 2, pending: 3 };
+    return (order[a.status] ?? 9) - (order[b.status] ?? 9);
+  });
 
   if (filtered.length === 0) {
     host.innerHTML = `<div class="card empty">Bu filtreye uyan maç yok</div>`;

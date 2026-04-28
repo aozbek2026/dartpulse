@@ -599,11 +599,19 @@ function resetAll(userId = null) {
   ).run(userId);
 }
 
+// Turnuva bitince board'ları serbest bırak (veri silmeden)
+function clearUserBoards(userId) {
+  if (!userId) return;
+  db.prepare(
+    `UPDATE boards SET current_match_id = NULL, status = 'idle' WHERE user_id = ?`
+  ).run(userId);
+}
+
 module.exports = {
   db, init,
   createUser, userByEmail, userById, allUsers,
   createPlayer, allPlayers, playerById, deletePlayer,
-  createBoard, allBoards, boardById, deleteBoard, setBoardMatch,
+  createBoard, allBoards, boardById, deleteBoard, setBoardMatch, clearUserBoards,
   createTournament, allTournaments, tournamentById, updateTournamentStatus, updateTournament, deleteTournament,
   addEntry, entriesForTournament, entryById,
   createStage, stagesForTournament, stageById, updateStageStatus,
