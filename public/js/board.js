@@ -276,7 +276,7 @@ function renderMatch() {
         <button class="submit" onclick="submitScore()">Skor Gönder (${currentInput || '0'})</button>
       </div>
       <div style="margin-top: 0.75rem; text-align: center; color: var(--text-dim); font-size: 0.85rem;">
-        Hızlı: ${[60, 80, 100, 120, 140, 180].map(s =>
+        Hızlı: ${[41, 45, 60, 80, 81, 85, 100, 140].map(s =>
           `<button class="icon" style="margin: 0 0.15rem;" onclick="setScore(${s})">${s}</button>`
         ).join('')}
         <button class="icon" style="margin: 0 0.15rem;" onclick="setScore(26)">26</button>
