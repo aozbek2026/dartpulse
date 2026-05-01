@@ -391,80 +391,39 @@ body.board-page #root.board-screen {
   color: var(--text-dim);
 }
 
-/* İki oyuncu yan yana paneli */
-.match-panels {
-  flex: 1 1 auto;
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: clamp(0.5rem, 1.2vmin, 1rem);
-  min-height: 0;
-}
-.match-pane {
+/* Visit geçmişi paneli */
+.history-panel {
   background: var(--surface);
-  border: 2px solid var(--border);
-  border-radius: clamp(12px, 1.5vmin, 16px);
-  display: flex;
-  flex-direction: column;
-  padding: clamp(0.5rem, 1.2vmin, 1rem);
+  border: 1px solid var(--border);
+  border-radius: clamp(10px, 1.2vmin, 14px);
   overflow: hidden;
-  transition: border-color 0.2s, box-shadow 0.2s;
+  flex: 0 0 auto;
 }
-.match-pane.active {
-  border-color: var(--accent);
-  box-shadow: 0 0 30px rgba(255,56,96,0.15);
-}
-.pane-name {
-  font-size: clamp(0.8rem, 2vmin, 1.1rem);
-  font-weight: 700;
-  color: var(--text-dim);
-  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
-  margin-bottom: clamp(0.1rem, 0.3vmin, 0.25rem);
-}
-.match-pane.active .pane-name { color: var(--accent); }
-.pane-legs {
-  font-size: clamp(0.75rem, 1.8vmin, 1rem);
-  font-weight: 600;
-  color: var(--text-dim);
-  margin-bottom: clamp(0.1rem, 0.3vmin, 0.2rem);
-}
-.pane-sets { font-size: 0.85em; opacity: 0.7; }
-.pane-rem {
-  font-size: clamp(2.8rem, 10vmin, 7rem);
-  font-weight: 900;
-  line-height: 1;
-  letter-spacing: -0.03em;
-  font-variant-numeric: tabular-nums;
-  background: linear-gradient(135deg, var(--accent-2), var(--accent-3));
-  -webkit-background-clip: text;
-  background-clip: text;
-  -webkit-text-fill-color: transparent;
-  margin-bottom: clamp(0.2rem, 0.6vmin, 0.5rem);
-}
-.match-pane.active .pane-rem {
-  background: linear-gradient(135deg, var(--accent), var(--accent-3));
-  -webkit-background-clip: text;
-  background-clip: text;
-}
-.pane-history {
-  flex: 1 1 auto;
-  overflow-y: auto;
+.history-rows {
   display: flex;
   flex-direction: column;
-  justify-content: flex-end;
-  border-top: 1px solid var(--border);
-  padding-top: clamp(0.2rem, 0.5vmin, 0.4rem);
-  gap: clamp(0.1rem, 0.3vmin, 0.2rem);
+  padding: clamp(0.2rem, 0.5vmin, 0.4rem) 0;
 }
-.visit-item {
+.visit-row {
+  display: grid;
+  grid-template-columns: 1fr clamp(28px, 5vmin, 44px) 1fr;
+  align-items: center;
+  padding: clamp(0.1rem, 0.3vmin, 0.25rem) clamp(0.6rem, 1.4vmin, 1rem);
+}
+.visit-row:nth-child(even) { background: rgba(255,255,255,0.025); }
+.visit-score {
   font-size: clamp(1rem, 2.6vmin, 1.6rem);
   font-weight: 700;
   font-variant-numeric: tabular-nums;
   color: var(--text-dim);
-  padding: clamp(0.05rem, 0.2vmin, 0.1rem) 0;
 }
-.visit-item.visit-last {
-  font-size: clamp(1.3rem, 3.5vmin, 2.2rem);
-  color: var(--accent-2);
+.visit-score-r { text-align: right; }
+.visit-score.visit-last { color: var(--accent-2); font-size: clamp(1.15rem, 3vmin, 1.9rem); }
+.visit-num {
+  text-align: center;
+  font-size: clamp(0.6rem, 1.2vmin, 0.78rem);
+  color: var(--text-dim);
+  opacity: 0.4;
 }
 
 /* Yeni keypad layout */
@@ -912,9 +871,7 @@ body.board-page #root.board-screen {
     font-size: clamp(0.9rem, 2.2vmin, 1.3rem);
     min-height: clamp(44px, 9vmin, 68px);
   }
-  /* Oyuncu panelleri tablet */
-  .pane-rem { font-size: clamp(3rem, 11vmin, 7rem); }
-  .pane-name { font-size: clamp(0.75rem, 1.8vmin, 1rem); }
-  .visit-item { font-size: clamp(1.05rem, 2.8vmin, 1.7rem); }
-  .visit-item.visit-last { font-size: clamp(1.3rem, 3.8vmin, 2.4rem); }
+  /* Visit geçmişi tablet */
+  .visit-score { font-size: clamp(1rem, 2.6vmin, 1.6rem); }
+  .visit-score.visit-last { font-size: clamp(1.2rem, 3.2vmin, 2rem); }
 }

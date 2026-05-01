@@ -236,21 +236,32 @@ function renderMatch() {
   );
   const visits1 = legThrows.filter(t => t.player_slot === 1);
   const visits2 = legThrows.filter(t => t.player_slot === 2);
-  const SHOW = 5;
+  const SHOW = 6;
   const vis1 = visits1.slice(-SHOW);
   const vis2 = visits2.slice(-SHOW);
+  const visCount = Math.max(vis1.length, vis2.length, 3);
 
-  const renderVisitList = (visits, isLast) => visits.map((t, i) => {
-    const isLatest = i === visits.length - 1 && isLast;
-    const txt = t.bust ? `<span style="color:var(--danger)">Bust</span>` : t.score;
-    return `<div class="visit-item ${isLatest ? 'visit-last' : ''}">${txt}</div>`;
-  }).join('') || `<div class="visit-item" style="color:var(--text-dim);opacity:0.4;">—</div>`;
+  let historyRows = '';
+  for (let i = 0; i < visCount; i++) {
+    const t1 = vis1[i];
+    const t2 = vis2[i];
+    const isLastP1 = t1 && i === vis1.length - 1 && !isTurn1;
+    const isLastP2 = t2 && i === vis2.length - 1 && isTurn1;
+    const visitNum = Math.max(visits1.length, visits2.length) - visCount + i + 1;
+    historyRows += `
+      <div class="visit-row">
+        <div class="visit-score ${isLastP1 ? 'visit-last' : ''}">${t1 ? (t1.bust ? '<span style="color:var(--danger)">Bust</span>' : t1.score) : ''}</div>
+        <div class="visit-num">${t1 || t2 ? visitNum : ''}</div>
+        <div class="visit-score visit-score-r ${isLastP2 ? 'visit-last' : ''}">${t2 ? (t2.bust ? '<span style="color:var(--danger)">Bust</span>' : t2.score) : ''}</div>
+      </div>`;
+  }
 
   root.innerHTML = `
     <div class="board-header">
       <div>
-        <div class="board-name">${currentBoard.name} · ${m.round_label || ('Leg ' + m.current_leg)}${m.current_set > 1 ? ` · Set ${m.current_set}` : ''}</div>
+        <div class="board-name">${currentBoard.name}</div>
         <div class="match-info">
+          ${m.round_label || ''} · Leg ${m.current_leg}${m.current_set > 1 ? ` · Set ${m.current_set}` : ''} ·
           Sıra: <strong>${isTurn1 ? e1 : e2}</strong>
           ${scorer ? ` · ✍️ ${scorer}` : ''}
         </div>
@@ -258,26 +269,14 @@ function renderMatch() {
       <a href="/board.html" class="btn secondary">Board değiştir</a>
     </div>
 
-    <div class="match-panels">
-      <div class="match-pane ${isTurn1 ? 'active' : ''}">
-        <div class="pane-name">${e1}</div>
-        <div class="pane-legs">
-          ${m.p1_legs}${showSets ? ` <span class="pane-sets">/ ${m.p1_sets} set</span>` : ''}
-        </div>
-        <div class="pane-rem">${rem1}</div>
-        <div class="pane-history">
-          ${renderVisitList(vis1, !isTurn1)}
-        </div>
-      </div>
-      <div class="match-pane ${!isTurn1 ? 'active' : ''}">
-        <div class="pane-name">${e2}</div>
-        <div class="pane-legs">
-          ${m.p2_legs}${showSets ? ` <span class="pane-sets">/ ${m.p2_sets} set</span>` : ''}
-        </div>
-        <div class="pane-rem">${rem2}</div>
-        <div class="pane-history">
-          ${renderVisitList(vis2, isTurn1)}
-        </div>
+    <div class="match-display">
+      ${renderPlayer(e1, rem1, m.p1_legs, m.p1_sets, isTurn1, m, showSets)}
+      ${renderPlayer(e2, rem2, m.p2_legs, m.p2_sets, !isTurn1, m, showSets)}
+    </div>
+
+    <div class="history-panel">
+      <div class="history-rows">
+        ${historyRows || '<div class="visit-row" style="opacity:0.3;"><div class="visit-score">—</div><div class="visit-num"></div><div class="visit-score">—</div></div>'}
       </div>
     </div>
 
@@ -300,6 +299,24 @@ function renderMatch() {
         <div class="quick-side">
           ${[45, 60, 81, 85].map(s => `<button class="quick-btn" onclick="setScore(${s})">${s}</button>`).join('')}
         </div>
+      </div>
+    </div>
+  `;
+}
+
+function renderPlayer(name, remaining, legs, sets, active, m, showSets) {
+  const isCricket = m.game_mode === 'cricket';
+  const stats = m.stats?.find(s => s.player_slot === (active ? m.current_turn : (m.current_turn === 1 ? 2 : 1))) || {};
+  return `
+    <div class="player-panel ${active ? 'active' : ''}">
+      <div class="player-name">${name}</div>
+      <div class="player-sub">${isCricket ? 'Puan' : 'Kalan'}</div>
+      <div class="score-display">${remaining}</div>
+      <div class="player-stats">
+        <div class="stat"><div class="label">Leg</div><div class="value">${legs}</div></div>
+        ${showSets ? `<div class="stat"><div class="label">Set</div><div class="value">${sets}</div></div>` : ''}
+        <div class="stat"><div class="label">Ort.</div><div class="value">${avg(stats).toFixed(1)}</div></div>
+        <div class="stat"><div class="label">180</div><div class="value">${stats.one_eighty || 0}</div></div>
       </div>
     </div>
   `;
