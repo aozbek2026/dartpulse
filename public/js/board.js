@@ -1,6 +1,8 @@
 // Board (tablet) ekranı - üç durum: pre-match (ready) / live / post-match (finished)
 const params = new URLSearchParams(location.search);
 const boardId = params.get('id') ? +params.get('id') : null;
+const readonlyMatchId = params.get('match') ? +params.get('match') : null;
+const isReadonly = params.get('readonly') === '1' && !!readonlyMatchId;
 const root = document.getElementById('root');
 const socket = io();
 
@@ -14,6 +16,7 @@ let selectedStarter = null; // 1 veya 2 — "Kim başlıyor?" seçimi
 socket.on('state', (s) => {
   allBoards = s.boards;
   allTournaments = s.tournaments || [];
+  if (isReadonly) { refreshMatch(readonlyMatchId); return; }
   if (!boardId) return renderBoardPicker();
   currentBoard = s.boards.find(b => b.id === boardId);
   currentMatch = currentBoard?.currentMatch || null;
@@ -30,6 +33,7 @@ socket.on('board:state', (data) => {
 });
 
 socket.on('match:update', (data) => {
+  if (isReadonly && data.matchId === readonlyMatchId) { refreshMatch(readonlyMatchId); return; }
   if (currentMatch && data.matchId === currentMatch.id) {
     refreshMatch(currentMatch.id);
   }
@@ -46,9 +50,19 @@ async function refreshMatch(id) {
 }
 
 if (boardId) socket.emit('board:subscribe', boardId);
+if (isReadonly) refreshMatch(readonlyMatchId);
 
 // ---- Render ----
 function render() {
+  if (isReadonly) {
+    if (!currentMatch) { root.innerHTML = `<div class="empty">Yükleniyor…</div>`; return; }
+    if (currentMatch.status === 'ready') {
+      root.innerHTML = `<div style="display:flex;flex-direction:column;align-items:center;justify-content:center;height:100vh;gap:1rem;"><div style="font-size:3rem;">⏳</div><h2>Maç başlamayı bekliyor</h2><p style="color:var(--text-dim);">${entryLabel(currentMatch.entry1)} vs ${entryLabel(currentMatch.entry2)}</p></div>`;
+      return;
+    }
+    if (currentMatch.status === 'finished') return renderPostMatch();
+    return renderMatch();
+  }
   if (!boardId) return renderBoardPicker();
   if (!currentBoard) {
     root.innerHTML = `<div class="empty">Board bulunamadı. <a href="/board.html">Geri dön</a></div>`;
@@ -186,6 +200,17 @@ function renderPreMatch() {
       <div style="font-size: 0.85rem; color: var(--text-dim); text-align: center; max-width: 560px;">
         Başlayan oyuncuyu seçin, ardından MAÇA BAŞLA'ya basın.
       </div>
+
+      <div style="display: flex; gap: 1rem; margin-top: 0.5rem;">
+        <button class="btn secondary" style="font-size: 0.9rem; padding: 0.6rem 1.2rem; border-color: var(--danger, #ef4444); color: var(--danger, #ef4444);"
+          onclick="declareWalkover(1, '${e2.replace(/'/g, "\\'")}')">
+          ${e2} gelmedi
+        </button>
+        <button class="btn secondary" style="font-size: 0.9rem; padding: 0.6rem 1.2rem; border-color: var(--danger, #ef4444); color: var(--danger, #ef4444);"
+          onclick="declareWalkover(2, '${e1.replace(/'/g, "\\'")}')">
+          ${e1} gelmedi
+        </button>
+      </div>
     </div>
   `;
 }
@@ -203,6 +228,20 @@ async function beginMatch() {
   if (res.error) return toast('Hata: ' + res.error);
   selectedStarter = null;
   toast('Maç başladı!');
+}
+
+// winnerSlot: gelen oyuncunun slot'u (1 veya 2), absentName: gelmeyen oyuncunun adı
+async function declareWalkover(winnerSlot, absentName) {
+  if (!currentMatch) return;
+  const confirmed = await showConfirm(
+    `${absentName} turnuvadan çekildi olarak işaretlensin mi?\nBu maç istatistiklere sayılmayacak.`,
+    'Evet, Çekildi',
+    'İptal'
+  );
+  if (!confirmed) return;
+  const res = await api.post(`/api/matches/${currentMatch.id}/walkover`, { winnerSlot });
+  if (res.error) return toast('Hata: ' + res.error);
+  toast('Walkover kaydedildi — bracket güncellendi');
 }
 
 async function changeScorer() {
@@ -256,17 +295,22 @@ function renderMatch() {
       </div>`;
   }
 
+  const boardName = isReadonly ? '👁 Canlı İzleme' : currentBoard.name;
+  const headerRight = isReadonly
+    ? `<button onclick="window.close()" class="btn secondary">Kapat</button>`
+    : `<a href="/board.html" class="btn secondary">Board değiştir</a>`;
+
   root.innerHTML = `
     <div class="board-header">
       <div>
-        <div class="board-name">${currentBoard.name}</div>
+        <div class="board-name">${boardName}</div>
         <div class="match-info">
           ${m.round_label || ''} · Leg ${m.current_leg}${m.current_set > 1 ? ` · Set ${m.current_set}` : ''} ·
           Sıra: <strong>${isTurn1 ? e1 : e2}</strong>
           ${scorer ? ` · ✍️ ${scorer}` : ''}
         </div>
       </div>
-      <a href="/board.html" class="btn secondary">Board değiştir</a>
+      ${headerRight}
     </div>
 
     <div class="match-display">
@@ -280,6 +324,7 @@ function renderMatch() {
       </div>
     </div>
 
+    ${isReadonly ? '' : `
     <div class="keypad">
       <div class="keypad-top-row">
         <button class="keypad-undo" onclick="undoThrow()">↶ Undo</button>
@@ -301,6 +346,7 @@ function renderMatch() {
         </div>
       </div>
     </div>
+    `}
   `;
 }
 

@@ -334,6 +334,38 @@ app.post('/api/matches/:id/throw', (req, res) => {
   }
 });
 
+// Walkover: rakip gelmedi / çekildi — dart atılmadan kazanan belirlenir
+app.post('/api/matches/:id/walkover', (req, res) => {
+  try {
+    const matchId = +req.params.id;
+    const { winnerSlot } = req.body; // 1 | 2
+    if (winnerSlot !== 1 && winnerSlot !== 2) return res.status(400).json({ error: 'winnerSlot 1 veya 2 olmalı' });
+    const m = db.matchById(matchId);
+    if (!m) return res.status(404).json({ error: 'Maç bulunamadı' });
+    if (m.status === 'finished') return res.status(400).json({ error: 'Maç zaten bitti' });
+    // Walkover olarak bitir
+    db.walkoverMatch(matchId, winnerSlot);
+    // Bracket ilerletme
+    tournament.onMatchFinished(matchId);
+    const updated = db.matchById(matchId);
+    const t = updated ? db.tournamentById(updated.tournament_id) : null;
+    if (t && t.status === 'finished') {
+      const boards = db.allBoards(t.user_id);
+      db.clearUserBoards(t.user_id);
+      for (const b of boards) {
+        io.to(`board:${b.id}`).emit('board:state', { board: { ...b, current_match_id: null, status: 'idle' }, match: null });
+      }
+    } else {
+      scheduler.assignPendingMatches(io, t?.user_id || null);
+    }
+    io.emit('match:update', { matchId });
+    broadcastState();
+    res.json({ ok: true });
+  } catch (e) {
+    res.status(400).json({ error: e.message });
+  }
+});
+
 app.post('/api/matches/:id/undo', (req, res) => {
   try {
     const result = engine.undoLastThrow(+req.params.id);

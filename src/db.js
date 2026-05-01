@@ -102,6 +102,7 @@ function init() {
       legs_to_win INTEGER,            -- null → turnuva varsayılanı; round başına override
       sets_to_win INTEGER,            -- null → turnuva varsayılanı; round başına override
       is_reset_final INTEGER DEFAULT 0, -- çift elemede 2. grand final (reset match)
+      is_walkover INTEGER DEFAULT 0,   -- 1 = rakip gelmedi, istatistiklere sayılmaz
       finished_at TEXT,
       FOREIGN KEY(tournament_id) REFERENCES tournaments(id) ON DELETE CASCADE,
       FOREIGN KEY(stage_id) REFERENCES stages(id) ON DELETE CASCADE
@@ -172,6 +173,9 @@ function init() {
   }
   if (!matchCols.includes('is_reset_final')) {
     try { db.exec('ALTER TABLE matches ADD COLUMN is_reset_final INTEGER DEFAULT 0'); } catch {}
+  }
+  if (!matchCols.includes('is_walkover')) {
+    try { db.exec('ALTER TABLE matches ADD COLUMN is_walkover INTEGER DEFAULT 0'); } catch {}
   }
 
   // Visit başına dart sayısı: bitiren visit için 1/2/3 olabilir; eski kayıtlar için varsayılan 3.
@@ -504,7 +508,7 @@ function tournamentPlayerReport(tournamentId) {
       CASE WHEN s.player_slot = 1 THEN m.entry1_id ELSE m.entry2_id END = m.winner_entry_id AS is_winner
     FROM matches m
     JOIN match_stats s ON s.match_id = m.id
-    WHERE m.tournament_id = ?
+    WHERE m.tournament_id = ? AND m.is_walkover = 0
   `).all(tournamentId);
 
   // entry -> aggregated stats
@@ -599,6 +603,22 @@ function resetAll(userId = null) {
   ).run(userId);
 }
 
+// Walkover: rakip gelmedi, winnerSlot (1|2) kazanır — dart atılmaz, istatistik sayılmaz
+function walkoverMatch(matchId, winnerSlot) {
+  const m = db.prepare('SELECT * FROM matches WHERE id = ?').get(matchId);
+  if (!m) return null;
+  const winnerEntryId = winnerSlot === 1 ? m.entry1_id : m.entry2_id;
+  db.prepare(`
+    UPDATE matches SET
+      status = 'finished',
+      winner_entry_id = ?,
+      is_walkover = 1,
+      finished_at = CURRENT_TIMESTAMP
+    WHERE id = ?
+  `).run(winnerEntryId, matchId);
+  return db.prepare('SELECT * FROM matches WHERE id = ?').get(matchId);
+}
+
 // Turnuva bitince board'ları serbest bırak (veri silmeden)
 function clearUserBoards(userId) {
   if (!userId) return;
@@ -616,7 +636,7 @@ module.exports = {
   addEntry, entriesForTournament, entryById,
   createStage, stagesForTournament, stageById, updateStageStatus,
   createMatch, matchById, matchesForTournament, matchesForStage,
-  activeMatches, pendingReadyMatches, updateMatch, setMatchEntry,
+  activeMatches, pendingReadyMatches, updateMatch, setMatchEntry, walkoverMatch,
   addThrow, throwsForMatch, lastThrow, deleteThrow,
   getStats, updateStats, statsForMatch, tournamentPlayerReport,
   resetAll,

@@ -5,6 +5,7 @@ let matchFilter = 'all';
 let watchedMatchId = null; // Aynalanan maç ID'si
 let watchFlashKeys = new Set(); // Flash animasyonu için kalan skor key'leri
 let watchPrevScores = {}; // Önceki kalan skorlar (flash tetiklemek için)
+let watchLastThrows = {}; // Son atılan skor { fk: score }
 
 socket.on('state', (s) => {
   state = s;
@@ -531,6 +532,7 @@ function closeWatchModal() {
   watchedMatchId = null;
   watchFlashKeys = new Set();
   watchPrevScores = {};
+  watchLastThrows = {};
   document.getElementById('watch-modal')?.remove();
   document.removeEventListener('keydown', watchEscHandler, true);
 }
@@ -558,11 +560,16 @@ async function refreshWatchModal(matchId) {
       ? `Set: ${m.p1_sets}-${m.p2_sets} · Leg: ${m.p1_legs}-${m.p2_legs}`
       : `Leg: ${m.p1_legs}-${m.p2_legs}`;
 
-    // Flash animasyonu: önceki skorla karşılaştır
+    // Flash + throw badge: önceki skorla karşılaştır
     const fk1 = `${matchId}-1`, fk2 = `${matchId}-2`;
     watchFlashKeys = new Set();
-    if (watchPrevScores[fk1] !== undefined && watchPrevScores[fk1] !== rem1) watchFlashKeys.add(fk1);
-    if (watchPrevScores[fk2] !== undefined && watchPrevScores[fk2] !== rem2) watchFlashKeys.add(fk2);
+    // Kalan skor düştüyse → o oyuncu attı, farkı throw badge olarak göster
+    watchLastThrows[fk1] = (watchPrevScores[fk1] !== undefined && rem1 < watchPrevScores[fk1])
+      ? watchPrevScores[fk1] - rem1 : null;
+    watchLastThrows[fk2] = (watchPrevScores[fk2] !== undefined && rem2 < watchPrevScores[fk2])
+      ? watchPrevScores[fk2] - rem2 : null;
+    if (watchLastThrows[fk1]) watchFlashKeys.add(fk1);
+    if (watchLastThrows[fk2]) watchFlashKeys.add(fk2);
     watchPrevScores[fk1] = rem1;
     watchPrevScores[fk2] = rem2;
 
@@ -577,8 +584,9 @@ async function refreshWatchModal(matchId) {
         ${watchPlayerCard(e2, rem2, stats2, !isTurn1, m.p2_legs, m.p2_sets, showSets, fk2)}
       </div>
 
-      <div style="text-align:center;font-size:0.8rem;color:var(--text-dim);">
-        ${m.status === 'live' ? '🟢 Canlı — her atışta otomatik güncellenir' : m.status === 'finished' ? '🏁 Maç bitti' : '⏳ Başlamayı bekliyor'}
+      <div style="text-align:center;font-size:0.8rem;color:var(--text-dim);display:flex;align-items:center;justify-content:center;gap:1rem;">
+        <span>${m.status === 'live' ? '🟢 Canlı — her atışta otomatik güncellenir' : m.status === 'finished' ? '🏁 Maç bitti' : '⏳ Başlamayı bekliyor'}</span>
+        ${m.status === 'live' ? `<a href="/board.html?match=${matchId}&readonly=1" target="_blank" style="display:inline-block;padding:0.35rem 0.9rem;background:var(--accent);color:#000;border-radius:8px;font-weight:700;font-size:0.82rem;text-decoration:none;">Canlı İzle ▶</a>` : ''}
       </div>
     `;
   } catch(e) {
@@ -589,10 +597,12 @@ async function refreshWatchModal(matchId) {
 function watchPlayerCard(name, remaining, stats, active, legs, sets, showSets, flashKey) {
   const avg3 = stats.darts_thrown ? ((stats.total_score / stats.darts_thrown) * 3).toFixed(1) : '—';
   const isFlashing = flashKey && watchFlashKeys && watchFlashKeys.has(flashKey);
+  const thrown = flashKey && watchLastThrows[flashKey];
   return `
     <div style="background:var(--surface-2);border:2px solid ${active ? 'var(--accent)' : 'var(--border)'};border-radius:12px;padding:1rem;text-align:center;${active ? 'box-shadow:0 0 30px rgba(255,56,96,0.15);' : ''}">
       <div style="font-weight:700;font-size:1rem;margin-bottom:0.5rem;${active ? 'color:var(--accent);' : ''}">${name}</div>
       <div style="font-size:0.75rem;color:var(--text-dim);">Kalan</div>
+      ${thrown ? `<div class="throw-badge">${thrown}</div>` : '<div style="height:2rem;"></div>'}
       <div class="${isFlashing ? 'score-flash' : ''}" style="font-size:4.5rem;font-weight:900;line-height:1.05;letter-spacing:-2px;">${remaining}</div>
       <div style="font-size:0.78rem;color:var(--text-dim);margin-top:0.4rem;">Leg: <strong>${legs}</strong>${showSets ? ` · Set: <strong>${sets}</strong>` : ''}</div>
       <div style="display:flex;justify-content:center;gap:1rem;margin-top:0.5rem;font-size:0.8rem;">

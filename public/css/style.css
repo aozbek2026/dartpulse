@@ -809,6 +809,24 @@ body.board-page #root.board-screen {
   display: inline-block;
 }
 
+/* Viewer: atılan skor badge — kısa görünür, yukarı kayarak solar */
+@keyframes throwFade {
+  0%   { opacity: 1; transform: translateY(0)   scale(1.3); }
+  50%  { opacity: 1; transform: translateY(-8px) scale(1.1); }
+  100% { opacity: 0; transform: translateY(-18px) scale(0.9); }
+}
+.throw-badge {
+  font-size: 1.8rem;
+  font-weight: 900;
+  color: var(--accent-2, #00d4ff);
+  animation: throwFade 1.2s ease-out forwards;
+  display: block;
+  text-align: center;
+  pointer-events: none;
+  height: 2rem;
+  line-height: 1;
+}
+
 /* ========================================================
    Tablet board ekranı — her iki yön, tüm tablet boyutları
    Hedef: oyuncu kutu kısa ama rakam büyük, keypad kolay basılır,

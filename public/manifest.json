@@ -1,0 +1,22 @@
+{
+  "name": "Dart Pulse — Hızlı Skor",
+  "short_name": "Dart Skor",
+  "description": "İki oyuncu arasında hızlı dart skor takibi",
+  "start_url": "/scorer.html",
+  "display": "fullscreen",
+  "orientation": "portrait",
+  "background_color": "#0b0d14",
+  "theme_color": "#0b0d14",
+  "icons": [
+    {
+      "src": "/icons/icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png"
+    },
+    {
+      "src": "/icons/icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png"
+    }
+  ]
+}
