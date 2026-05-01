@@ -906,16 +906,17 @@ body.board-page #root.board-screen {
   font-size: clamp(10px, 1.2vmin, 12px);
 }
 
-/* Skor alanı — 3 kolon: sol-skor | ok-sayıları | sağ-skor */
+/* Skor alanı — ekranın geri kalanını doldurur */
 .dp-scores {
   display: grid;
   grid-template-columns: 1fr clamp(18px, 2.8vmin, 26px) 1fr;
   border-bottom: 1px solid #1e2336;
-  flex: 0 0 auto;
+  flex: 1 1 auto;
+  min-height: 0;
 }
 
 .dp-score-col {
-  padding: 7px 9px;
+  padding: 10px 9px;
   display: flex;
   flex-direction: column;
   align-items: center;
@@ -931,7 +932,7 @@ body.board-page #root.board-screen {
   flex-direction: column;
   align-items: center;
   justify-content: flex-start;
-  padding-top: clamp(36px, 5.5vmin, 50px); /* rem satırı yüksekliği + padding */
+  padding-top: clamp(40px, 6vh, 72px);
   border-left: 1px solid #1e2336;
   border-right: 1px solid #1e2336;
 }
@@ -940,24 +941,24 @@ body.board-page #root.board-screen {
   font-size: clamp(9px, 1.1vmin, 11px);
   color: #2a2e42;
   font-weight: 500;
-  line-height: 2.1;
+  line-height: 2.2;
   font-variant-numeric: tabular-nums;
 }
 
-/* Kalan skor rakamı */
+/* Kalan skor rakamı — vh bazlı, ekrana göre büyür */
 .dp-rem {
-  font-size: clamp(28px, 5vmin, 44px);
+  font-size: clamp(2.5rem, 7vh, 6rem);
   font-weight: 900;
   line-height: 1;
   letter-spacing: -0.03em;
-  margin-bottom: 4px;
+  margin-bottom: 6px;
   font-variant-numeric: tabular-nums;
 }
 
 .dp-score-col.active .dp-rem       { color: #ff3860; }
 .dp-score-col:not(.active) .dp-rem { color: #4a5568; }
 
-/* Atış geçmişi listesi */
+/* Atış geçmişi */
 .dp-throws {
   display: flex;
   flex-direction: column;
@@ -966,25 +967,24 @@ body.board-page #root.board-screen {
 }
 
 .dp-throw {
-  font-size: clamp(11px, 1.4vmin, 14px);
+  font-size: clamp(11px, 1.6vmin, 15px);
   color: #4a5568;
   text-align: center;
-  line-height: 2.1;
+  line-height: 2.2;
   font-variant-numeric: tabular-nums;
 }
 
 .dp-throw.last { color: #00d4ff; font-weight: 500; }
 .dp-throw.bust { color: #ef4444; }
 
-/* Keypad bölümü — kalan yüksekliği doldurur */
+/* Keypad — içeriğe göre boyutlanır, alta yapışık */
 .dp-keypad {
   background: #0b0d14;
-  padding: 5px 5px max(env(safe-area-inset-bottom, 0px), 6px);
-  flex: 1 1 auto;
+  padding: 5px 5px max(env(safe-area-inset-bottom, 0px), 8px);
+  flex: 0 0 auto;
   display: flex;
   flex-direction: column;
   gap: 4px;
-  min-height: 0;
 }
 
 /* Üst satır: [Geri Al | giriş | Gönder] */
@@ -992,17 +992,16 @@ body.board-page #root.board-screen {
   display: grid;
   grid-template-columns: 1fr 1.6fr 1fr;
   gap: 4px;
-  flex: 0 0 auto;
 }
 
 .dp-undo {
   background: #1a1e2d;
   border: 1px solid #2a2e42;
   border-radius: 7px;
-  padding: 8px 0;
+  padding: clamp(7px, 1.3vh, 12px) 0;
   text-align: center;
   color: #8892b0;
-  font-size: 13px;
+  font-size: clamp(11px, 1.4vmin, 14px);
   cursor: pointer;
   touch-action: manipulation;
   user-select: none;
@@ -1012,9 +1011,9 @@ body.board-page #root.board-screen {
   background: #111526;
   border: 1.5px solid #2a2e42;
   border-radius: 7px;
-  padding: 8px;
+  padding: clamp(7px, 1.3vh, 12px);
   text-align: center;
-  font-size: clamp(20px, 3vmin, 32px);
+  font-size: clamp(18px, 3vh, 30px);
   font-weight: 500;
   color: #fff;
   font-variant-numeric: tabular-nums;
@@ -1023,10 +1022,10 @@ body.board-page #root.board-screen {
 .dp-gon {
   background: #ff3860;
   border-radius: 7px;
-  padding: 8px 0;
+  padding: clamp(7px, 1.3vh, 12px) 0;
   text-align: center;
   color: #000;
-  font-size: 13px;
+  font-size: clamp(11px, 1.4vmin, 14px);
   font-weight: 600;
   cursor: pointer;
   touch-action: manipulation;
@@ -1036,13 +1035,11 @@ body.board-page #root.board-screen {
 .dp-undo:active { background: #2a2e42; }
 .dp-gon:active  { filter: brightness(0.88); }
 
-/* Ana keypad: [quick-sol | numpad | quick-sağ] — kalan alanı doldurur */
+/* Ana keypad: [quick-sol | numpad | quick-sağ] */
 .dp-main {
   display: grid;
   grid-template-columns: clamp(28px, 4vmin, 38px) 1fr clamp(28px, 4vmin, 38px);
   gap: 4px;
-  flex: 1 1 auto;
-  min-height: 0;
 }
 
 .dp-quick {
@@ -1057,7 +1054,7 @@ body.board-page #root.board-screen {
   border: 1px solid #2a2e42;
   border-radius: 5px;
   text-align: center;
-  font-size: 11px;
+  font-size: clamp(10px, 1.3vmin, 13px);
   color: #8892b0;
   cursor: pointer;
   touch-action: manipulation;
@@ -1069,11 +1066,10 @@ body.board-page #root.board-screen {
 
 .dp-qbtn:active { background: #2a2e42; }
 
-/* Numpad grid — 4 eşit satır, kalan alanı doldurur */
+/* Numpad grid — içeriğe göre boyutlanır */
 .dp-grid {
   display: grid;
   grid-template-columns: repeat(3, 1fr);
-  grid-template-rows: repeat(4, 1fr);
   gap: 3px;
 }
 
@@ -1081,10 +1077,9 @@ body.board-page #root.board-screen {
   background: #1a1e2d;
   border: 1px solid #2a2e42;
   border-radius: 5px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  font-size: clamp(16px, 2.5vmin, 26px);
+  padding: clamp(10px, 2vh, 18px) 0;
+  text-align: center;
+  font-size: clamp(15px, 2.2vmin, 22px);
   color: #e2e8f0;
   cursor: pointer;
   touch-action: manipulation;
@@ -1098,7 +1093,7 @@ body.board-page #root.board-screen {
   background: #2d1020;
   border-color: #5a1f35;
   color: #ff6b8a;
-  font-size: 12px;
+  font-size: clamp(10px, 1.3vmin, 13px);
 }
 
 /* Android/iOS gezinme çubuğu güvenli alan */
