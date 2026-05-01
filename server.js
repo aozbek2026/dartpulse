@@ -30,9 +30,13 @@ app.use((req, res, next) => {
 app.use(express.json());
 
 // Session — multi-organizer için kimlik izolasyonu
+// SQLite tabanlı session store: server yeniden başlayınca oturumlar kaybolmaz
+const SQLiteStore = require('connect-sqlite3')(session);
+const DB_PATH_FOR_SESSION = process.env.DB_PATH || path.join(__dirname, 'data.db');
 const SESSION_SECRET = process.env.SESSION_SECRET
   || 'dev-secret-please-set-SESSION_SECRET-in-prod';
 app.use(session({
+  store: new SQLiteStore({ db: DB_PATH_FOR_SESSION, concurrentDB: true }),
   secret: SESSION_SECRET,
   resave: false,
   saveUninitialized: false,
