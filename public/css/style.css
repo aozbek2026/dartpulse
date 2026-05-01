@@ -829,10 +829,27 @@ body.board-page #root.board-screen {
 
 /* ========================================================
    YENİ BOARD LAYOUT v2 — dp-* sınıfları
-   Mutabık kalınan board_layout_v2.html mockup'ı ile birebir.
+   Tüm boyutlar vw bazlı → 380px telefonda mockup ile birebir,
+   768px tablette 2× büyük, aynı proporsiyon, uzaktan okunabilir.
    ======================================================== */
 
+/* Tüm dp içeriğini sarar */
+.dp {
+  display: flex;
+  flex-direction: column;
+  flex: 1 1 auto;
+  min-height: 0;
+  background: #0b0d14;
+}
+
+/* Skor ile keypad arasındaki boşluk doldurucu */
+.dp-gap { flex: 1 1 auto; }
+
 /* İsim satırı — 2 kolon: her biri [leg-big | isim-center] */
+/* Boyutlar: mockup 380px genişlikte tasarlandı.
+   vw değerleri = px / 380 × 100
+   Sonuç: 380px'te mockup ile birebir, 760px'te 2× büyük — aynı proporsiyon */
+
 .dp-names {
   display: grid;
   grid-template-columns: 1fr 1fr;
@@ -841,23 +858,19 @@ body.board-page #root.board-screen {
 }
 
 .dp-name-col {
-  padding: 7px 9px;
+  padding: 2.1vw 2.6vw;
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 6px;
+  gap: 1.6vw;
   border-top: 3px solid transparent;
   background: #0f1220;
 }
 
-.dp-name-col.active {
-  border-top-color: #ff3860;
-  background: #140a10;
-}
+.dp-name-col.active { border-top-color: #ff3860; background: #140a10; }
 
-/* Leg sayısı — büyük, kenarda */
 .dp-leg-big {
-  font-size: clamp(22px, 3.5vmin, 34px);
+  font-size: clamp(22px, 7.4vw, 60px);
   font-weight: 900;
   line-height: 1;
   color: #2a2e42;
@@ -865,112 +878,83 @@ body.board-page #root.board-screen {
   font-variant-numeric: tabular-nums;
 }
 
-.dp-name-col.active .dp-leg-big {
-  color: #ff3860;
-}
+.dp-name-col.active .dp-leg-big { color: #ff3860; }
 
-/* İsim + ortalama — ortada */
-.dp-name-center {
-  flex: 1;
-  text-align: center;
-  min-width: 0;
-}
+.dp-name-center { flex: 1; text-align: center; min-width: 0; }
 
 .dp-pname {
-  font-size: clamp(12px, 1.8vmin, 16px);
+  font-size: clamp(12px, 3.7vw, 28px);
   font-weight: 500;
   color: #e2e8f0;
-  margin-bottom: 2px;
+  margin-bottom: 0.8vw;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
 }
 
-.dp-name-col.active .dp-pname {
-  color: #ff3860;
-}
+.dp-name-col.active .dp-pname { color: #ff3860; }
 
-.dp-meta {
-  display: flex;
-  justify-content: center;
-  gap: 8px;
-}
+.dp-meta { display: flex; justify-content: center; gap: 2.6vw; }
+.dp-meta span   { font-size: clamp(9px,  2.6vw, 20px); color: #4a5568; }
+.dp-meta strong { font-size: clamp(10px, 2.9vw, 22px); color: #8892b0; }
 
-.dp-meta span {
-  font-size: clamp(9px, 1.1vmin, 11px);
-  color: #4a5568;
-}
-
-.dp-meta strong {
-  color: #8892b0;
-  font-size: clamp(10px, 1.2vmin, 12px);
-}
-
-/* Skor alanı — ekranın geri kalanını doldurur */
+/* Skor alanı */
 .dp-scores {
   display: grid;
-  grid-template-columns: 1fr clamp(18px, 2.8vmin, 26px) 1fr;
+  grid-template-columns: 1fr clamp(18px, 7.4vw, 36px) 1fr;
   border-bottom: 1px solid #1e2336;
-  flex: 1 1 auto;
-  min-height: 0;
+  flex: 0 0 auto;
 }
 
 .dp-score-col {
-  padding: 10px 9px;
+  padding: 2.1vw 2.6vw;
   display: flex;
   flex-direction: column;
   align-items: center;
+  min-height: clamp(100px, 34.2vw, 260px);
 }
 
 .dp-score-col.active   { background: #140a10; }
 .dp-score-col:not(.active) { background: #0f1220; }
 
-/* Orta sütun — ok sayıları (3, 6, 9...) */
 .dp-middle {
   background: #0d0f1c;
   display: flex;
   flex-direction: column;
   align-items: center;
   justify-content: flex-start;
-  padding-top: clamp(40px, 6vh, 72px);
+  padding-top: clamp(38px, 12.6vw, 96px);
   border-left: 1px solid #1e2336;
   border-right: 1px solid #1e2336;
 }
 
 .dp-visit-num {
-  font-size: clamp(9px, 1.1vmin, 11px);
+  font-size: clamp(9px, 2.6vw, 20px);
   color: #2a2e42;
+  line-height: 2.1;
   font-weight: 500;
-  line-height: 2.2;
   font-variant-numeric: tabular-nums;
 }
 
-/* Kalan skor rakamı — vh bazlı, ekrana göre büyür */
 .dp-rem {
-  font-size: clamp(2.5rem, 7vh, 6rem);
+  font-size: clamp(32px, 10vw, 80px);
   font-weight: 900;
   line-height: 1;
-  letter-spacing: -0.03em;
-  margin-bottom: 6px;
+  letter-spacing: -0.05em;
+  margin-bottom: clamp(4px, 1.3vw, 10px);
   font-variant-numeric: tabular-nums;
 }
 
 .dp-score-col.active .dp-rem       { color: #ff3860; }
 .dp-score-col:not(.active) .dp-rem { color: #4a5568; }
 
-/* Atış geçmişi */
-.dp-throws {
-  display: flex;
-  flex-direction: column;
-  gap: 1px;
-  width: 100%;
-}
+.dp-throws { display: flex; flex-direction: column; gap: 1px; width: 100%; }
 
 .dp-throw {
-  font-size: clamp(11px, 1.6vmin, 15px);
+  font-size: clamp(11px, 3.2vw, 24px);
   color: #4a5568;
   text-align: center;
-  line-height: 2.2;
+  line-height: 2.1;
   font-variant-numeric: tabular-nums;
 }
 
@@ -980,28 +964,25 @@ body.board-page #root.board-screen {
 /* Keypad — içeriğe göre boyutlanır, alta yapışık */
 .dp-keypad {
   background: #0b0d14;
-  padding: 5px 5px max(env(safe-area-inset-bottom, 0px), 8px);
+  padding: 1.8vw 1.8vw max(env(safe-area-inset-bottom, 0px), 4.2vw);
   flex: 0 0 auto;
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
 }
 
-/* Üst satır: [Geri Al | giriş | Gönder] */
 .dp-top {
   display: grid;
   grid-template-columns: 1fr 1.6fr 1fr;
-  gap: 4px;
+  gap: clamp(3px, 1.3vw, 10px);
+  margin-bottom: clamp(3px, 1.3vw, 10px);
 }
 
 .dp-undo {
   background: #1a1e2d;
   border: 1px solid #2a2e42;
   border-radius: 7px;
-  padding: clamp(7px, 1.3vh, 12px) 0;
+  padding: clamp(6px, 1.84vw, 14px) 0;
   text-align: center;
   color: #8892b0;
-  font-size: clamp(11px, 1.4vmin, 14px);
+  font-size: clamp(11px, 3.2vw, 24px);
   cursor: pointer;
   touch-action: manipulation;
   user-select: none;
@@ -1011,9 +992,9 @@ body.board-page #root.board-screen {
   background: #111526;
   border: 1.5px solid #2a2e42;
   border-radius: 7px;
-  padding: clamp(7px, 1.3vh, 12px);
+  padding: clamp(6px, 1.84vw, 14px);
   text-align: center;
-  font-size: clamp(18px, 3vh, 30px);
+  font-size: clamp(18px, 5.3vw, 40px);
   font-weight: 500;
   color: #fff;
   font-variant-numeric: tabular-nums;
@@ -1022,11 +1003,11 @@ body.board-page #root.board-screen {
 .dp-gon {
   background: #ff3860;
   border-radius: 7px;
-  padding: clamp(7px, 1.3vh, 12px) 0;
+  padding: clamp(6px, 1.84vw, 14px) 0;
   text-align: center;
   color: #000;
-  font-size: clamp(11px, 1.4vmin, 14px);
-  font-weight: 600;
+  font-size: clamp(11px, 3.2vw, 24px);
+  font-weight: 500;
   cursor: pointer;
   touch-action: manipulation;
   user-select: none;
@@ -1035,26 +1016,22 @@ body.board-page #root.board-screen {
 .dp-undo:active { background: #2a2e42; }
 .dp-gon:active  { filter: brightness(0.88); }
 
-/* Ana keypad: [quick-sol | numpad | quick-sağ] */
 .dp-main {
   display: grid;
-  grid-template-columns: clamp(28px, 4vmin, 38px) 1fr clamp(28px, 4vmin, 38px);
-  gap: 4px;
+  grid-template-columns: clamp(26px, 8.9vw, 52px) 1fr clamp(26px, 8.9vw, 52px);
+  gap: clamp(3px, 1.3vw, 10px);
 }
 
-.dp-quick {
-  display: flex;
-  flex-direction: column;
-  gap: 3px;
-}
+.dp-quick { display: flex; flex-direction: column; gap: clamp(2px, 0.8vw, 5px); }
 
 .dp-qbtn {
   flex: 1;
   background: #1a1e2d;
   border: 1px solid #2a2e42;
   border-radius: 5px;
+  padding: clamp(3px, 1.05vw, 8px) 0;
   text-align: center;
-  font-size: clamp(10px, 1.3vmin, 13px);
+  font-size: clamp(10px, 2.9vw, 22px);
   color: #8892b0;
   cursor: pointer;
   touch-action: manipulation;
@@ -1066,20 +1043,19 @@ body.board-page #root.board-screen {
 
 .dp-qbtn:active { background: #2a2e42; }
 
-/* Numpad grid — içeriğe göre boyutlanır */
 .dp-grid {
   display: grid;
   grid-template-columns: repeat(3, 1fr);
-  gap: 3px;
+  gap: clamp(2px, 0.8vw, 5px);
 }
 
 .dp-key {
   background: #1a1e2d;
   border: 1px solid #2a2e42;
   border-radius: 5px;
-  padding: clamp(10px, 2vh, 18px) 0;
+  padding: clamp(7px, 1.84vw, 14px) 0;
   text-align: center;
-  font-size: clamp(15px, 2.2vmin, 22px);
+  font-size: clamp(13px, 3.95vw, 30px);
   color: #e2e8f0;
   cursor: pointer;
   touch-action: manipulation;
@@ -1093,10 +1069,9 @@ body.board-page #root.board-screen {
   background: #2d1020;
   border-color: #5a1f35;
   color: #ff6b8a;
-  font-size: clamp(10px, 1.3vmin, 13px);
+  font-size: clamp(9px, 2.6vw, 20px);
 }
 
-/* Android/iOS gezinme çubuğu güvenli alan */
 .dp-safe {
   background: #0b0d14;
   height: max(env(safe-area-inset-bottom, 0px), 6px);

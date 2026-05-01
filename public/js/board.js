@@ -319,59 +319,63 @@ function renderMatch() {
       ${headerRight}
     </div>
 
-    <div class="dp-names">
-      <div class="dp-name-col${isTurn1 ? ' active' : ''}">
-        <div class="dp-leg-big">${legs1}</div>
-        <div class="dp-name-center">
-          <div class="dp-pname">${e1}</div>
-          <div class="dp-meta"><span>Ort <strong>${avg1}</strong>${showSets ? ` · Set <strong>${m.p1_sets || 0}</strong>` : ''}</span></div>
+    <div class="dp">
+      <div class="dp-names">
+        <div class="dp-name-col${isTurn1 ? ' active' : ''}">
+          <div class="dp-leg-big">${legs1}</div>
+          <div class="dp-name-center">
+            <div class="dp-pname">${e1}</div>
+            <div class="dp-meta"><span>Ort <strong>${avg1}</strong>${showSets ? ` · Set <strong>${m.p1_sets || 0}</strong>` : ''}</span></div>
+          </div>
+        </div>
+        <div class="dp-name-col${!isTurn1 ? ' active' : ''}" style="flex-direction:row-reverse;">
+          <div class="dp-leg-big">${legs2}</div>
+          <div class="dp-name-center">
+            <div class="dp-pname">${e2}</div>
+            <div class="dp-meta"><span>Ort <strong>${avg2}</strong>${showSets ? ` · Set <strong>${m.p2_sets || 0}</strong>` : ''}</span></div>
+          </div>
         </div>
       </div>
-      <div class="dp-name-col${!isTurn1 ? ' active' : ''}" style="flex-direction:row-reverse;">
-        <div class="dp-leg-big">${legs2}</div>
-        <div class="dp-name-center">
-          <div class="dp-pname">${e2}</div>
-          <div class="dp-meta"><span>Ort <strong>${avg2}</strong>${showSets ? ` · Set <strong>${m.p2_sets || 0}</strong>` : ''}</span></div>
-        </div>
-      </div>
-    </div>
 
-    <div class="dp-scores">
-      <div class="dp-score-col${isTurn1 ? ' active' : ''}">
-        <div class="dp-rem">${rem1}</div>
-        <div class="dp-throws">${buildThrows(vis1)}</div>
+      <div class="dp-scores">
+        <div class="dp-score-col${isTurn1 ? ' active' : ''}">
+          <div class="dp-rem">${rem1}</div>
+          <div class="dp-throws">${buildThrows(vis1)}</div>
+        </div>
+        <div class="dp-middle">${visitNums}</div>
+        <div class="dp-score-col${!isTurn1 ? ' active' : ''}">
+          <div class="dp-rem">${rem2}</div>
+          <div class="dp-throws">${buildThrows(vis2)}</div>
+        </div>
       </div>
-      <div class="dp-middle">${visitNums}</div>
-      <div class="dp-score-col${!isTurn1 ? ' active' : ''}">
-        <div class="dp-rem">${rem2}</div>
-        <div class="dp-throws">${buildThrows(vis2)}</div>
-      </div>
-    </div>
 
-    ${isReadonly ? '' : `
-    <div class="dp-keypad">
-      <div class="dp-top">
-        <div class="dp-undo" onclick="undoThrow()">Geri Al</div>
-        <div class="dp-inp" id="keypad-input">${currentInput || '0'}</div>
-        <div class="dp-gon" onclick="submitScore()">Gönder ▶</div>
+      <div class="dp-gap"></div>
+
+      ${isReadonly ? '' : `
+      <div class="dp-keypad">
+        <div class="dp-top">
+          <div class="dp-undo" onclick="undoThrow()">Geri Al</div>
+          <div class="dp-inp" id="keypad-input">${currentInput || '0'}</div>
+          <div class="dp-gon" onclick="submitScore()">Gönder ▶</div>
+        </div>
+        <div class="dp-main">
+          <div class="dp-quick">
+            ${[26,40,41,43,45].map(s => `<div class="dp-qbtn" onclick="setScore(${s})">${s}</div>`).join('')}
+          </div>
+          <div class="dp-grid">
+            ${[1,2,3,4,5,6,7,8,9].map(n => `<div class="dp-key" onclick="addDigit('${n}')">${n}</div>`).join('')}
+            <div class="dp-key c" onclick="clearInput()">C</div>
+            <div class="dp-key" onclick="addDigit('0')">0</div>
+            <div class="dp-key bust" onclick="setScore(0)">Bust</div>
+          </div>
+          <div class="dp-quick">
+            ${[60,81,85,100,140].map(s => `<div class="dp-qbtn" onclick="setScore(${s})">${s}</div>`).join('')}
+          </div>
+        </div>
       </div>
-      <div class="dp-main">
-        <div class="dp-quick">
-          ${[26,40,41,43,45].map(s => `<div class="dp-qbtn" onclick="setScore(${s})">${s}</div>`).join('')}
-        </div>
-        <div class="dp-grid">
-          ${[1,2,3,4,5,6,7,8,9].map(n => `<div class="dp-key" onclick="addDigit('${n}')">${n}</div>`).join('')}
-          <div class="dp-key c" onclick="clearInput()">C</div>
-          <div class="dp-key" onclick="addDigit('0')">0</div>
-          <div class="dp-key bust" onclick="setScore(0)">Bust</div>
-        </div>
-        <div class="dp-quick">
-          ${[60,81,85,100,140].map(s => `<div class="dp-qbtn" onclick="setScore(${s})">${s}</div>`).join('')}
-        </div>
-      </div>
+      <div class="dp-safe"></div>
+      `}
     </div>
-    <div class="dp-safe"></div>
-    `}
   `;
 }
 
