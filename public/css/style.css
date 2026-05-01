@@ -391,83 +391,81 @@ body.board-page #root.board-screen {
   color: var(--text-dim);
 }
 
-/* Visit geçmişi paneli */
-.history-panel {
+/* İki oyuncu yan yana paneli */
+.match-panels {
   flex: 1 1 auto;
-  display: flex;
-  flex-direction: column;
-  background: var(--surface);
-  border: 1px solid var(--border);
-  border-radius: clamp(12px, 1.5vmin, 16px);
-  overflow: hidden;
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: clamp(0.5rem, 1.2vmin, 1rem);
   min-height: 0;
 }
-.history-header {
-  display: grid;
-  grid-template-columns: 1fr auto 1fr;
-  gap: 0.5rem;
-  padding: clamp(0.4rem, 1vmin, 0.75rem) clamp(0.6rem, 1.4vmin, 1rem);
-  background: var(--bg);
-  border-bottom: 1px solid var(--border);
-  align-items: center;
-}
-.history-player {
+.match-pane {
+  background: var(--surface);
+  border: 2px solid var(--border);
+  border-radius: clamp(12px, 1.5vmin, 16px);
   display: flex;
-  align-items: center;
-  gap: clamp(0.4rem, 1vmin, 0.75rem);
+  flex-direction: column;
+  padding: clamp(0.5rem, 1.2vmin, 1rem);
+  overflow: hidden;
+  transition: border-color 0.2s, box-shadow 0.2s;
 }
-.history-player:last-child { justify-content: flex-end; }
-.history-player.history-active .history-rem { color: var(--accent); }
-.history-name {
+.match-pane.active {
+  border-color: var(--accent);
+  box-shadow: 0 0 30px rgba(255,56,96,0.15);
+}
+.pane-name {
+  font-size: clamp(0.8rem, 2vmin, 1.1rem);
+  font-weight: 700;
+  color: var(--text-dim);
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  margin-bottom: clamp(0.1rem, 0.3vmin, 0.25rem);
+}
+.match-pane.active .pane-name { color: var(--accent); }
+.pane-legs {
   font-size: clamp(0.75rem, 1.8vmin, 1rem);
   font-weight: 600;
   color: var(--text-dim);
-  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
-  max-width: clamp(80px, 18vw, 180px);
+  margin-bottom: clamp(0.1rem, 0.3vmin, 0.2rem);
 }
-.history-rem {
-  font-size: clamp(1.4rem, 4vmin, 2.8rem);
+.pane-sets { font-size: 0.85em; opacity: 0.7; }
+.pane-rem {
+  font-size: clamp(2.8rem, 10vmin, 7rem);
   font-weight: 900;
-  font-variant-numeric: tabular-nums;
-  color: var(--text);
   line-height: 1;
+  letter-spacing: -0.03em;
+  font-variant-numeric: tabular-nums;
+  background: linear-gradient(135deg, var(--accent-2), var(--accent-3));
+  -webkit-background-clip: text;
+  background-clip: text;
+  -webkit-text-fill-color: transparent;
+  margin-bottom: clamp(0.2rem, 0.6vmin, 0.5rem);
 }
-.history-center-head {
-  font-size: clamp(0.6rem, 1.2vmin, 0.75rem);
-  color: var(--text-dim);
-  text-transform: uppercase;
-  letter-spacing: 0.08em;
-  text-align: center;
+.match-pane.active .pane-rem {
+  background: linear-gradient(135deg, var(--accent), var(--accent-3));
+  -webkit-background-clip: text;
+  background-clip: text;
 }
-.history-rows {
+.pane-history {
   flex: 1 1 auto;
   overflow-y: auto;
   display: flex;
   flex-direction: column;
   justify-content: flex-end;
-  padding: clamp(0.2rem, 0.6vmin, 0.4rem) 0;
+  border-top: 1px solid var(--border);
+  padding-top: clamp(0.2rem, 0.5vmin, 0.4rem);
+  gap: clamp(0.1rem, 0.3vmin, 0.2rem);
 }
-.visit-row {
-  display: grid;
-  grid-template-columns: 1fr clamp(28px, 5vmin, 44px) 1fr;
-  align-items: center;
-  padding: clamp(0.15rem, 0.4vmin, 0.3rem) clamp(0.6rem, 1.4vmin, 1rem);
-}
-.visit-score {
-  font-size: clamp(0.95rem, 2.4vmin, 1.5rem);
+.visit-item {
+  font-size: clamp(1rem, 2.6vmin, 1.6rem);
   font-weight: 700;
   font-variant-numeric: tabular-nums;
   color: var(--text-dim);
+  padding: clamp(0.05rem, 0.2vmin, 0.1rem) 0;
 }
-.visit-row:first-child .visit-score { color: var(--text-dim); }
-.visit-score.visit-last { color: var(--accent-2); font-size: clamp(1.1rem, 2.8vmin, 1.75rem); }
-.visit-num {
-  text-align: center;
-  font-size: clamp(0.65rem, 1.3vmin, 0.82rem);
-  color: var(--text-dim);
-  opacity: 0.5;
+.visit-item.visit-last {
+  font-size: clamp(1.3rem, 3.5vmin, 2.2rem);
+  color: var(--accent-2);
 }
-.visit-row:nth-child(even) { background: rgba(255,255,255,0.025); }
 
 /* Yeni keypad layout */
 .keypad-top-row {
@@ -914,9 +912,9 @@ body.board-page #root.board-screen {
     font-size: clamp(0.9rem, 2.2vmin, 1.3rem);
     min-height: clamp(44px, 9vmin, 68px);
   }
-  /* History panel tablet */
-  .history-rem { font-size: clamp(1.6rem, 5vmin, 3.2rem); }
-  .history-name { font-size: clamp(0.7rem, 1.6vmin, 0.9rem); }
-  .visit-score { font-size: clamp(1rem, 2.6vmin, 1.6rem); }
-  .visit-score.visit-last { font-size: clamp(1.15rem, 3vmin, 1.9rem); }
+  /* Oyuncu panelleri tablet */
+  .pane-rem { font-size: clamp(3rem, 11vmin, 7rem); }
+  .pane-name { font-size: clamp(0.75rem, 1.8vmin, 1rem); }
+  .visit-item { font-size: clamp(1.05rem, 2.8vmin, 1.7rem); }
+  .visit-item.visit-last { font-size: clamp(1.3rem, 3.8vmin, 2.4rem); }
 }

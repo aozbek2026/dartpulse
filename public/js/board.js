@@ -236,35 +236,21 @@ function renderMatch() {
   );
   const visits1 = legThrows.filter(t => t.player_slot === 1);
   const visits2 = legThrows.filter(t => t.player_slot === 2);
-  const maxVisits = Math.max(visits1.length, visits2.length, 4);
-  const SHOW = 6; // görünecek satır sayısı
-  const visitsToShow = Math.min(maxVisits, SHOW);
-  const start1 = Math.max(0, visits1.length - SHOW);
-  const start2 = Math.max(0, visits2.length - SHOW);
-  const vis1 = visits1.slice(start1);
-  const vis2 = visits2.slice(start2);
+  const SHOW = 5;
+  const vis1 = visits1.slice(-SHOW);
+  const vis2 = visits2.slice(-SHOW);
 
-  let historyRows = '';
-  for (let i = 0; i < visitsToShow; i++) {
-    const t1 = vis1[i];
-    const t2 = vis2[i];
-    const visitNum = (start1 + i + 1);
-    const isLastP1 = t1 && i === vis1.length - 1 && isTurn1 === false;
-    const isLastP2 = t2 && i === vis2.length - 1 && isTurn1 === true;
-    historyRows += `
-      <div class="visit-row">
-        <div class="visit-score ${isLastP1 ? 'visit-last' : ''}">${t1 ? (t1.bust ? '<span style="color:var(--danger)">Bust</span>' : t1.score) : ''}</div>
-        <div class="visit-num">${t1 || t2 ? visitNum : ''}</div>
-        <div class="visit-score ${isLastP2 ? 'visit-last' : ''}">${t2 ? (t2.bust ? '<span style="color:var(--danger)">Bust</span>' : t2.score) : ''}</div>
-      </div>`;
-  }
+  const renderVisitList = (visits, isLast) => visits.map((t, i) => {
+    const isLatest = i === visits.length - 1 && isLast;
+    const txt = t.bust ? `<span style="color:var(--danger)">Bust</span>` : t.score;
+    return `<div class="visit-item ${isLatest ? 'visit-last' : ''}">${txt}</div>`;
+  }).join('') || `<div class="visit-item" style="color:var(--text-dim);opacity:0.4;">—</div>`;
 
   root.innerHTML = `
     <div class="board-header">
       <div>
-        <div class="board-name">${currentBoard.name}</div>
+        <div class="board-name">${currentBoard.name} · ${m.round_label || ('Leg ' + m.current_leg)}${m.current_set > 1 ? ` · Set ${m.current_set}` : ''}</div>
         <div class="match-info">
-          ${m.round_label || ''} · Leg ${m.current_leg}${m.current_set > 1 ? ` · Set ${m.current_set}` : ''} ·
           Sıra: <strong>${isTurn1 ? e1 : e2}</strong>
           ${scorer ? ` · ✍️ ${scorer}` : ''}
         </div>
@@ -272,35 +258,26 @@ function renderMatch() {
       <a href="/board.html" class="btn secondary">Board değiştir</a>
     </div>
 
-    <div class="leg-banner">
-      <div class="leg-banner-label">LEG</div>
-      <div class="leg-banner-side ${isTurn1 ? 'active' : ''}">
-        <div class="leg-banner-name">${e1}</div>
-        <div class="leg-banner-num">${m.p1_legs}</div>
-        ${showSets ? `<div class="leg-banner-sets">Set: <strong>${m.p1_sets}</strong></div>` : ''}
-      </div>
-      <div class="leg-banner-sep">—</div>
-      <div class="leg-banner-side ${!isTurn1 ? 'active' : ''}">
-        <div class="leg-banner-name">${e2}</div>
-        <div class="leg-banner-num">${m.p2_legs}</div>
-        ${showSets ? `<div class="leg-banner-sets">Set: <strong>${m.p2_sets}</strong></div>` : ''}
-      </div>
-    </div>
-
-    <div class="history-panel">
-      <div class="history-header">
-        <div class="history-player ${isTurn1 ? 'history-active' : ''}">
-          <span class="history-name">${e1}</span>
-          <span class="history-rem">${rem1}</span>
+    <div class="match-panels">
+      <div class="match-pane ${isTurn1 ? 'active' : ''}">
+        <div class="pane-name">${e1}</div>
+        <div class="pane-legs">
+          ${m.p1_legs}${showSets ? ` <span class="pane-sets">/ ${m.p1_sets} set</span>` : ''}
         </div>
-        <div class="history-center-head">Visit</div>
-        <div class="history-player ${!isTurn1 ? 'history-active' : ''}" style="text-align:right;">
-          <span class="history-rem">${rem2}</span>
-          <span class="history-name">${e2}</span>
+        <div class="pane-rem">${rem1}</div>
+        <div class="pane-history">
+          ${renderVisitList(vis1, !isTurn1)}
         </div>
       </div>
-      <div class="history-rows">
-        ${historyRows || '<div class="visit-row"><div class="visit-score" style="color:var(--text-dim);font-size:0.85rem;">—</div><div class="visit-num"></div><div class="visit-score" style="color:var(--text-dim);font-size:0.85rem;">—</div></div>'}
+      <div class="match-pane ${!isTurn1 ? 'active' : ''}">
+        <div class="pane-name">${e2}</div>
+        <div class="pane-legs">
+          ${m.p2_legs}${showSets ? ` <span class="pane-sets">/ ${m.p2_sets} set</span>` : ''}
+        </div>
+        <div class="pane-rem">${rem2}</div>
+        <div class="pane-history">
+          ${renderVisitList(vis2, isTurn1)}
+        </div>
       </div>
     </div>
 
