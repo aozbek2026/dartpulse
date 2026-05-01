@@ -40,7 +40,7 @@ async function addPlayer() {
 }
 
 async function deletePlayer(id) {
-  if (!confirm('Silinsin mi?')) return;
+  if (!await showOrgConfirm('Silinsin mi?', 'Sil', 'İptal')) return;
   await api.del('/api/players/' + id);
 }
 
@@ -71,7 +71,7 @@ async function addBoard() {
   document.getElementById('board-name').value = '';
 }
 async function deleteBoard(id) {
-  if (!confirm('Silinsin mi?')) return;
+  if (!await showOrgConfirm('Silinsin mi?', 'Sil', 'İptal')) return;
   await api.del('/api/boards/' + id);
 }
 
@@ -552,20 +552,35 @@ async function createTournament() {
 
 // ---- Tournament controls ----
 async function startTournament(id) {
-  // Board atanmamışsa uyar
+  let msg = 'Turnuvayı başlatmak istediğinizden emin misiniz?';
   if (state.boards.length === 0) {
-    const devam = confirm(
-      '⚠️ Henüz hiç board eklenmemiş!\n\n' +
-      'Maçlar board olmadan oynanamaz. ' +
-      '"Boards" sekmesinden board ekledikten sonra başlatmanı öneririz.\n\n' +
-      'Yine de şimdi başlatmak istiyor musun?'
-    );
-    if (!devam) return;
-  } else if (!confirm('Turnuvayı başlat?')) return;
-
+    msg = '⚠️ Henüz hiç board eklenmemiş!\n\nMaçlar board olmadan oynanamaz. "Board\'lar" sekmesinden board ekledikten sonra başlatmanı öneririz.\n\nYine de şimdi başlatmak istiyor musun?';
+  }
+  const devam = await showOrgConfirm(msg, 'Başlat', 'İptal');
+  if (!devam) return;
   const res = await api.post(`/api/tournaments/${id}/start`, {});
   if (res.error) return toast('Hata: ' + res.error);
   toast('Turnuva başladı');
+}
+
+function showOrgConfirm(message, okLabel = 'Evet', cancelLabel = 'İptal') {
+  return new Promise((resolve) => {
+    const overlay = document.createElement('div');
+    overlay.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,0.6);display:flex;align-items:center;justify-content:center;z-index:9999;padding:1rem;';
+    overlay.innerHTML = `
+      <div style="background:var(--surface);border:1px solid var(--border);border-radius:16px;padding:2rem;max-width:420px;width:100%;">
+        <div style="font-size:1rem;line-height:1.5;margin-bottom:1.5rem;white-space:pre-line;">${message}</div>
+        <div style="display:flex;gap:0.75rem;justify-content:flex-end;">
+          <button id="oc-no" style="padding:0.65rem 1.25rem;border-radius:8px;border:1px solid var(--border);background:var(--surface-2);color:var(--text);font-size:0.95rem;cursor:pointer;">${cancelLabel}</button>
+          <button id="oc-yes" style="padding:0.65rem 1.25rem;border-radius:8px;border:none;background:var(--accent);color:#000;font-size:0.95rem;font-weight:700;cursor:pointer;">${okLabel}</button>
+        </div>
+      </div>`;
+    document.body.appendChild(overlay);
+    const close = (val) => { overlay.remove(); resolve(val); };
+    overlay.querySelector('#oc-yes').onclick = () => close(true);
+    overlay.querySelector('#oc-no').onclick = () => close(false);
+    overlay.addEventListener('click', (e) => { if (e.target === overlay) close(false); });
+  });
 }
 // Turnuva ayarları modalı (sadece draft)
 function showTournamentSettings(id) {
@@ -685,7 +700,7 @@ function showTournamentStats(id) {
 }
 
 async function deleteTournament(id) {
-  if (!confirm('Turnuva silinsin mi? Tüm maçlar/skorlar kaybolur.')) return;
+  if (!await showOrgConfirm('Turnuva silinsin mi?\nTüm maçlar ve skorlar kaybolur.', 'Sil', 'İptal')) return;
   await api.del('/api/tournaments/' + id);
 }
 
