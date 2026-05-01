@@ -828,217 +828,309 @@ body.board-page #root.board-screen {
 }
 
 /* ========================================================
-   YENİ BOARD LAYOUT — dp-* sınıfları
-   Üst isim bölümü + leg sayısı, orta skor+geçmiş grid,
-   yan quick butonlar, Android safe-area strip.
+   YENİ BOARD LAYOUT v2 — dp-* sınıfları
+   Mutabık kalınan board_layout_v2.html mockup'ı ile birebir.
    ======================================================== */
 
-/* Üst bar: [leg#] [isim+ort] [isim+ort] [leg#] */
+/* İsim satırı — 2 kolon: her biri [leg-big | isim-center] */
 .dp-names {
   display: grid;
-  grid-template-columns: clamp(2rem, 7.5vmin, 4rem) 1fr 1fr clamp(2rem, 7.5vmin, 4rem);
-  align-items: center;
-  gap: clamp(0.25rem, 0.7vmin, 0.5rem);
-  padding: clamp(0.35rem, 1vmin, 0.65rem) clamp(0.4rem, 1.2vmin, 0.85rem);
-  background: var(--surface);
-  border: 1px solid var(--border);
-  border-radius: clamp(10px, 1.4vmin, 16px);
+  grid-template-columns: 1fr 1fr;
+  border-bottom: 1px solid #1e2336;
   flex: 0 0 auto;
 }
-.dp-legnum {
-  font-size: clamp(2rem, 7.5vmin, 4.8rem);
+
+.dp-name-col {
+  padding: clamp(6px, 1.2vmin, 10px) clamp(8px, 1.8vmin, 12px);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: clamp(4px, 1vmin, 8px);
+  border-top: 3px solid transparent;
+  background: #0f1220;
+}
+
+.dp-name-col.active {
+  border-top-color: #ff3860;
+  background: #140a10;
+}
+
+/* Leg sayısı — büyük, kenarda */
+.dp-leg-big {
+  font-size: clamp(1.6rem, 6.5vmin, 3rem);
   font-weight: 900;
-  text-align: center;
   line-height: 1;
-  letter-spacing: -0.04em;
+  color: #2a2e42;
+  flex-shrink: 0;
   font-variant-numeric: tabular-nums;
-  color: var(--text-dim);
 }
-.dp-legnum.dp-leg-active {
-  background: linear-gradient(135deg, var(--accent), var(--accent-3));
-  -webkit-background-clip: text; background-clip: text; -webkit-text-fill-color: transparent;
+
+.dp-name-col.active .dp-leg-big {
+  color: #ff3860;
 }
-.dp-pinfo {
+
+/* İsim + ortalama — ortada */
+.dp-name-center {
+  flex: 1;
   text-align: center;
-  padding: clamp(0.1rem, 0.35vmin, 0.25rem) clamp(0.2rem, 0.5vmin, 0.35rem);
-  border-radius: 8px;
-  transition: background 0.2s;
+  min-width: 0;
 }
-.dp-pinfo.dp-pinfo-active { background: rgba(255, 56, 96, 0.07); }
+
 .dp-pname {
-  font-size: clamp(1rem, 2.9vmin, 1.8rem);
-  font-weight: 700;
-  line-height: 1.1;
+  font-size: clamp(0.8rem, 2.2vmin, 1.2rem);
+  font-weight: 500;
+  color: #e2e8f0;
+  margin-bottom: 3px;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
 }
-.dp-pinfo.dp-pinfo-active .dp-pname { color: var(--accent); }
-.dp-pavg {
-  font-size: clamp(0.58rem, 1.4vmin, 0.82rem);
-  color: var(--text-dim);
-  margin-top: 0.1rem;
+
+.dp-name-col.active .dp-pname {
+  color: #ff3860;
 }
 
-/* Orta bölüm: [quick-sol] [dp-scores] [quick-sağ] */
-.dp-mid {
-  flex: 1 1 auto;
-  display: grid;
-  grid-template-columns: clamp(34px, 6.8vmin, 52px) 1fr clamp(34px, 6.8vmin, 52px);
-  gap: clamp(0.25rem, 0.7vmin, 0.5rem);
-  min-height: 0;
+.dp-meta {
+  display: flex;
+  justify-content: center;
+  gap: 10px;
 }
-.dp-mid.dp-mid-full { grid-template-columns: 1fr; }
 
-/* Skor grid — düz grid: her satır = sol-skor | ok-sayısı | sağ-skor */
+.dp-meta span {
+  font-size: clamp(0.55rem, 1.2vmin, 0.75rem);
+  color: #4a5568;
+}
+
+.dp-meta strong {
+  color: #8892b0;
+  font-size: clamp(0.6rem, 1.3vmin, 0.8rem);
+}
+
+/* Skor alanı — 3 kolon: sol-skor | ok-sayıları | sağ-skor */
 .dp-scores {
   display: grid;
-  grid-template-columns: 1fr clamp(20px, 4vmin, 32px) 1fr;
-  align-content: start;
-  background: var(--surface);
-  border: 1px solid var(--border);
-  border-radius: clamp(10px, 1.4vmin, 16px);
+  grid-template-columns: 1fr clamp(18px, 3.5vmin, 28px) 1fr;
+  border-bottom: 1px solid #1e2336;
+  flex: 1 1 auto;
   overflow: hidden;
-  min-height: 0;
 }
 
-/* Kalan skor satırı */
-.dps-rem {
-  padding: clamp(0.4rem, 1.2vmin, 0.8rem) clamp(0.45rem, 1.2vmin, 0.8rem) clamp(0.2rem, 0.5vmin, 0.35rem);
-  font-size: clamp(2.4rem, 9.5vmin, 6.2rem);
+.dp-score-col {
+  padding: clamp(6px, 1.2vmin, 10px) clamp(8px, 1.8vmin, 12px);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  min-height: clamp(90px, 20vmin, 145px);
+}
+
+.dp-score-col.active   { background: #140a10; }
+.dp-score-col:not(.active) { background: #0f1220; }
+
+/* Orta sütun — ok sayıları (3, 6, 9...) */
+.dp-middle {
+  background: #0d0f1c;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: flex-start;
+  padding-top: clamp(34px, 7.5vmin, 54px); /* kalan-skor yüksekliği kadar boşluk */
+  border-left: 1px solid #1e2336;
+  border-right: 1px solid #1e2336;
+}
+
+.dp-visit-num {
+  font-size: clamp(0.5rem, 1.1vmin, 0.68rem);
+  color: #2a2e42;
+  font-weight: 500;
+  line-height: 2.1;
+  font-variant-numeric: tabular-nums;
+}
+
+/* Kalan skor rakamı */
+.dp-rem {
+  font-size: clamp(1.8rem, 7.5vmin, 4.5rem);
   font-weight: 900;
   line-height: 1;
-  letter-spacing: -0.04em;
+  letter-spacing: -0.03em;
+  margin-bottom: clamp(4px, 0.9vmin, 6px);
   font-variant-numeric: tabular-nums;
-  background-image: linear-gradient(135deg, var(--accent-2), var(--accent-3));
-  -webkit-background-clip: text; background-clip: text; -webkit-text-fill-color: transparent;
-  background-color: transparent;
-  border-bottom: 1px solid var(--border);
-}
-.dps-rem.dps-r { text-align: right; }
-.dps-rem.dps-active {
-  background-image: linear-gradient(135deg, var(--accent), var(--accent-3));
-  background-color: rgba(255, 56, 96, 0.05);
-}
-/* Orta ayraç hücresi (kalan skor satırında) */
-.dps-sep {
-  border-bottom: 1px solid var(--border);
-  background-color: transparent;
 }
 
-/* Visit satırları */
-.dps-v {
-  padding: clamp(0.08rem, 0.3vmin, 0.2rem) clamp(0.45rem, 1.2vmin, 0.8rem);
-  font-size: clamp(0.9rem, 2.3vmin, 1.4rem);
-  font-weight: 700;
-  font-variant-numeric: tabular-nums;
-  color: var(--text-dim);
-  line-height: 1.4;
+.dp-score-col.active .dp-rem       { color: #ff3860; }
+.dp-score-col:not(.active) .dp-rem { color: #4a5568; }
+
+/* Atış geçmişi listesi */
+.dp-throws {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  width: 100%;
 }
-.dps-v.dps-r { text-align: right; }
-.dps-v.dps-vlast { color: var(--accent-2); font-size: clamp(1rem, 2.6vmin, 1.55rem); }
 
-/* Aktif oyuncu kolonu vurgusu */
-.dp-scores[data-active="1"] .dps-rem.dps-l { background-color: rgba(255, 56, 96, 0.05); }
-.dp-scores[data-active="1"] .dps-v.dps-l { background-color: rgba(255, 56, 96, 0.03); }
-.dp-scores[data-active="1"] .dps-v.dps-l.dps-vlast { color: var(--accent); }
-.dp-scores[data-active="2"] .dps-rem.dps-r { background-color: rgba(255, 56, 96, 0.05); }
-.dp-scores[data-active="2"] .dps-v.dps-r { background-color: rgba(255, 56, 96, 0.03); }
-.dp-scores[data-active="2"] .dps-v.dps-r.dps-vlast { color: var(--accent); }
-
-/* Ok sayısı sütunu (3, 6, 9 …) */
-.dps-n {
+.dp-throw {
+  font-size: clamp(0.7rem, 1.7vmin, 1rem);
+  color: #4a5568;
   text-align: center;
-  font-size: clamp(0.52rem, 1.05vmin, 0.68rem);
-  color: var(--text-dim);
-  opacity: 0.4;
-  padding: clamp(0.08rem, 0.3vmin, 0.2rem) 0;
-  line-height: 1.4;
+  line-height: 2.1;
   font-variant-numeric: tabular-nums;
 }
 
-/* Bust yazısı */
-.bust-txt { color: var(--danger); }
+.dp-throw.last { color: #00d4ff; font-weight: 500; }
+.dp-throw.bust { color: #ef4444; }
 
-/* Android/iPhone gezinme çubuğu safe area */
-.dp-safearea {
+/* Keypad bölümü */
+.dp-keypad {
+  background: #0b0d14;
+  padding: clamp(5px, 1.1vmin, 8px) clamp(5px, 1.1vmin, 8px) clamp(10px, 2vmin, 16px);
+  flex: 0 0 auto;
+}
+
+/* Üst satır: [Geri Al | giriş | Gönder] */
+.dp-top {
+  display: grid;
+  grid-template-columns: 1fr 1.6fr 1fr;
+  gap: clamp(3px, 0.8vmin, 5px);
+  margin-bottom: clamp(3px, 0.8vmin, 5px);
+}
+
+.dp-undo {
+  background: #1a1e2d;
+  border: 1px solid #2a2e42;
+  border-radius: 7px;
+  padding: clamp(5px, 1.3vmin, 8px) 0;
+  text-align: center;
+  color: #8892b0;
+  font-size: clamp(0.65rem, 1.7vmin, 0.92rem);
+  cursor: pointer;
+  touch-action: manipulation;
+  user-select: none;
+}
+
+.dp-inp {
+  background: #111526;
+  border: 1.5px solid #2a2e42;
+  border-radius: 7px;
+  padding: clamp(5px, 1.3vmin, 8px);
+  text-align: center;
+  font-size: clamp(1.1rem, 3.8vmin, 2rem);
+  font-weight: 500;
+  color: #fff;
+  font-variant-numeric: tabular-nums;
+}
+
+.dp-gon {
+  background: #ff3860;
+  border-radius: 7px;
+  padding: clamp(5px, 1.3vmin, 8px) 0;
+  text-align: center;
+  color: #000;
+  font-size: clamp(0.65rem, 1.7vmin, 0.92rem);
+  font-weight: 600;
+  cursor: pointer;
+  touch-action: manipulation;
+  user-select: none;
+}
+
+.dp-undo:active { background: #2a2e42; }
+.dp-gon:active  { filter: brightness(0.88); }
+
+/* Ana keypad: [quick-sol | numpad | quick-sağ] */
+.dp-main {
+  display: grid;
+  grid-template-columns: clamp(26px, 5.2vmin, 38px) 1fr clamp(26px, 5.2vmin, 38px);
+  gap: clamp(3px, 0.8vmin, 5px);
+}
+
+.dp-quick {
+  display: flex;
+  flex-direction: column;
+  gap: clamp(2px, 0.5vmin, 3px);
+}
+
+.dp-qbtn {
+  flex: 1;
+  background: #1a1e2d;
+  border: 1px solid #2a2e42;
+  border-radius: 5px;
+  text-align: center;
+  font-size: clamp(0.58rem, 1.4vmin, 0.82rem);
+  color: #8892b0;
+  cursor: pointer;
+  touch-action: manipulation;
+  user-select: none;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.dp-qbtn:active { background: #2a2e42; }
+
+.dp-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: clamp(2px, 0.6vmin, 4px);
+}
+
+.dp-key {
+  background: #1a1e2d;
+  border: 1px solid #2a2e42;
+  border-radius: 5px;
+  padding: clamp(6px, 1.7vmin, 10px) 0;
+  text-align: center;
+  font-size: clamp(0.9rem, 2.5vmin, 1.45rem);
+  color: #e2e8f0;
+  cursor: pointer;
+  touch-action: manipulation;
+  user-select: none;
+}
+
+.dp-key:active  { background: #2a2e42; }
+.dp-key.c       { color: #f6ad55; }
+
+.dp-key.bust {
+  background: #2d1020;
+  border-color: #5a1f35;
+  color: #ff6b8a;
+  font-size: clamp(0.65rem, 1.5vmin, 0.85rem);
+}
+
+/* Android/iOS gezinme çubuğu güvenli alan */
+.dp-safe {
+  background: #0b0d14;
   height: max(env(safe-area-inset-bottom, 0px), 6px);
   flex: 0 0 auto;
 }
 
 /* ========================================================
    Tablet board ekranı — her iki yön, tüm tablet boyutları
-   Hedef: oyuncu kutu kısa ama rakam büyük, keypad kolay basılır,
-          leg banner göze çarpar.
    ======================================================== */
 @media (max-width: 1100px) {
 
-  /* Genel board çerçevesi — dar gap, az padding */
+  /* Genel board çerçevesi */
   .board-screen { gap: clamp(0.2rem, 0.6vmin, 0.45rem); padding: clamp(0.2rem, 0.6vmin, 0.45rem); }
 
-  /* Board header — çok ince tut */
+  /* Board header */
   .board-header { padding: clamp(0.25rem, 0.6vmin, 0.5rem) clamp(0.4rem, 1vmin, 0.8rem); }
-  .board-header .board-name { font-size: clamp(0.82rem, 1.9vmin, 1.05rem); }
-  .board-header .match-info { font-size: clamp(0.58rem, 1.2vmin, 0.75rem); }
+  .board-header .board-name  { font-size: clamp(0.82rem, 1.9vmin, 1.05rem); }
+  .board-header .match-info  { font-size: clamp(0.58rem, 1.2vmin, 0.75rem); }
 
-  /* ---- Oyuncu panelleri: kutu kısa, kalan rakam büyük ---- */
+  /* Oyuncu panelleri (eski layout — pre/post ekranları için) */
   .player-panel { padding: clamp(0.3rem, 0.7vmin, 0.5rem) clamp(0.4rem, 1vmin, 0.7rem); }
   .player-name  { font-size: clamp(0.82rem, 2vmin, 1.1rem); margin-bottom: 0.05rem; }
   .player-sub   { font-size: clamp(0.55rem, 1.1vmin, 0.7rem); margin-bottom: 0.1rem; }
-  /* Kalan skor rakamı — büyük, ekranı doldursun */
-  .score-display {
-    font-size: clamp(3.2rem, 11vmin, 7rem);
-    margin: clamp(0.05rem, 0.2vmin, 0.2rem) 0;
-  }
-  /* İstatistik satırı — küçük, yer kaplasın */
+  .score-display { font-size: clamp(3.2rem, 11vmin, 7rem); margin: clamp(0.05rem, 0.2vmin, 0.2rem) 0; }
   .player-stats { gap: clamp(0.2rem, 0.6vmin, 0.5rem); margin-top: 0.2rem; }
   .stat { min-width: clamp(36px, 5vmin, 52px); }
-  .stat .label { font-size: clamp(0.5rem, 0.95vmin, 0.62rem); }
-  .stat .value { font-size: clamp(0.72rem, 1.4vmin, 0.95rem); }
+  .stat .label  { font-size: clamp(0.5rem, 0.95vmin, 0.62rem); }
+  .stat .value  { font-size: clamp(0.72rem, 1.4vmin, 0.95rem); }
 
-  /* ---- Leg banner — büyük rakamlar, geniş kutu ---- */
-  .leg-banner { padding: clamp(0.5rem, 1.2vmin, 1rem) clamp(0.6rem, 1.6vmin, 1.3rem); }
-  .leg-banner-num {
-    font-size: clamp(3.2rem, 10vmin, 8.5rem);
-    line-height: 0.9;
-  }
+  /* Leg banner */
+  .leg-banner     { padding: clamp(0.5rem, 1.2vmin, 1rem) clamp(0.6rem, 1.6vmin, 1.3rem); }
+  .leg-banner-num { font-size: clamp(3.2rem, 10vmin, 8.5rem); line-height: 0.9; }
   .leg-banner-name { font-size: clamp(0.85rem, 2vmin, 1.1rem); }
   .leg-banner-sep  { font-size: clamp(2rem, 6.5vmin, 5rem); }
 
-  /* ---- Keypad — büyük butonlar, kolay basılır ---- */
-  .keypad { padding: clamp(0.35rem, 0.9vmin, 0.7rem); }
-  .keypad-input {
-    font-size: clamp(1.5rem, 4vmin, 2.4rem);
-    padding: clamp(0.3rem, 0.7vmin, 0.55rem);
-    margin-bottom: 0;
-  }
-  .keypad-top-row { gap: clamp(0.25rem, 0.6vmin, 0.5rem); margin-bottom: clamp(0.25rem, 0.6vmin, 0.5rem); }
-  .keypad-undo, .keypad-enter {
-    padding: clamp(0.5rem, 1.3vmin, 0.9rem);
-    font-size: clamp(0.8rem, 1.9vmin, 1.1rem);
-  }
-  .keypad-main { gap: clamp(0.25rem, 0.6vmin, 0.5rem); }
-  .keypad-grid { gap: clamp(0.3rem, 0.7vmin, 0.55rem); }
-  .keypad-grid button {
-    padding: clamp(0.85rem, 2.4vmin, 1.7rem);
-    font-size: clamp(1.15rem, 3vmin, 1.9rem);
-    min-height: 54px;
-  }
-  .quick-btn {
-    font-size: clamp(0.9rem, 2.2vmin, 1.3rem);
-    min-height: clamp(44px, 9vmin, 68px);
-  }
-  /* Visit geçmişi tablet */
-  .visit-score { font-size: clamp(1rem, 2.6vmin, 1.6rem); }
+  /* Visit geçmişi (eski history-panel) */
+  .visit-score      { font-size: clamp(1rem, 2.6vmin, 1.6rem); }
   .visit-score.visit-last { font-size: clamp(1.2rem, 3.2vmin, 2rem); }
-
-  /* dp-* tablet kompakt */
-  .dp-names { gap: clamp(0.2rem, 0.5vmin, 0.4rem); padding: clamp(0.25rem, 0.7vmin, 0.5rem) clamp(0.3rem, 0.9vmin, 0.65rem); }
-  .dp-legnum { font-size: clamp(2rem, 8vmin, 5rem); }
-  .dp-pname { font-size: clamp(0.9rem, 2.8vmin, 1.6rem); }
-  .dp-pavg { font-size: clamp(0.52rem, 1.3vmin, 0.75rem); }
-  .dp-mid { gap: clamp(0.2rem, 0.5vmin, 0.4rem); }
-  .dps-rem { font-size: clamp(2.4rem, 10vmin, 6.5rem); }
-  .dps-v { font-size: clamp(0.88rem, 2.4vmin, 1.45rem); }
-  .dps-v.dps-vlast { font-size: clamp(1rem, 2.8vmin, 1.65rem); }
 }

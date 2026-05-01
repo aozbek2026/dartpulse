@@ -282,24 +282,23 @@ function renderMatch() {
   );
   const visits1 = legThrows.filter(t => t.player_slot === 1);
   const visits2 = legThrows.filter(t => t.player_slot === 2);
-  const SHOW = 8;
+  const SHOW = 6;
   const vis1 = visits1.slice(-SHOW);
   const vis2 = visits2.slice(-SHOW);
-  const visCount = Math.max(vis1.length, vis2.length, 3);
+  const visCount = Math.max(vis1.length, vis2.length, 0);
   const visOffset = Math.max(visits1.length, visits2.length) - visCount;
 
-  // Skor grid satırları — kalan skor kutularının içine
-  let scoreRows = '';
+  // Her oyuncu için throw satırları — son atış "last" class'ı alır
+  const buildThrows = (visits) => visits.map((v, i) => {
+    const isLast = i === visits.length - 1;
+    const cls = v.bust ? ' bust' : (isLast ? ' last' : '');
+    return `<div class="dp-throw${cls}">${v.bust ? 'Bust' : v.score}</div>`;
+  }).join('');
+
+  // Orta sütun ok sayıları (3, 6, 9 ...)
+  let visitNums = '';
   for (let i = 0; i < visCount; i++) {
-    const t1 = vis1[i];
-    const t2 = vis2[i];
-    const isLastP1 = t1 && i === vis1.length - 1 && !isTurn1;
-    const isLastP2 = t2 && i === vis2.length - 1 && isTurn1;
-    const dartNum = (visOffset + i + 1) * 3; // 3, 6, 9, 12 ...
-    scoreRows += `
-      <div class="dps-v dps-l${isLastP1 ? ' dps-vlast' : ''}">${t1 ? (t1.bust ? '<span class="bust-txt">Bust</span>' : t1.score) : ''}</div>
-      <div class="dps-n">${(t1 || t2) ? dartNum : ''}</div>
-      <div class="dps-v dps-r${isLastP2 ? ' dps-vlast' : ''}">${t2 ? (t2.bust ? '<span class="bust-txt">Bust</span>' : t2.score) : ''}</div>`;
+    visitNums += `<div class="dp-visit-num">${(visOffset + i + 1) * 3}</div>`;
   }
 
   const boardName = isReadonly ? '👁 Canlı İzleme' : currentBoard.name;
@@ -321,44 +320,57 @@ function renderMatch() {
     </div>
 
     <div class="dp-names">
-      <div class="dp-legnum${isTurn1 ? ' dp-leg-active' : ''}">${legs1}</div>
-      <div class="dp-pinfo${isTurn1 ? ' dp-pinfo-active' : ''}">
-        <div class="dp-pname">${e1}</div>
-        <div class="dp-pavg">Ort. ${avg1}${showSets ? ` · Set ${m.p1_sets || 0}` : ''}</div>
+      <div class="dp-name-col${isTurn1 ? ' active' : ''}">
+        <div class="dp-leg-big">${legs1}</div>
+        <div class="dp-name-center">
+          <div class="dp-pname">${e1}</div>
+          <div class="dp-meta"><span>Ort <strong>${avg1}</strong>${showSets ? ` · Set <strong>${m.p1_sets || 0}</strong>` : ''}</span></div>
+        </div>
       </div>
-      <div class="dp-pinfo dp-pinfo-r${!isTurn1 ? ' dp-pinfo-active' : ''}">
-        <div class="dp-pname">${e2}</div>
-        <div class="dp-pavg">Ort. ${avg2}${showSets ? ` · Set ${m.p2_sets || 0}` : ''}</div>
+      <div class="dp-name-col${!isTurn1 ? ' active' : ''}" style="flex-direction:row-reverse;">
+        <div class="dp-leg-big">${legs2}</div>
+        <div class="dp-name-center">
+          <div class="dp-pname">${e2}</div>
+          <div class="dp-meta"><span>Ort <strong>${avg2}</strong>${showSets ? ` · Set <strong>${m.p2_sets || 0}</strong>` : ''}</span></div>
+        </div>
       </div>
-      <div class="dp-legnum dp-legnum-r${!isTurn1 ? ' dp-leg-active' : ''}">${legs2}</div>
     </div>
 
-    <div class="dp-mid${isReadonly ? ' dp-mid-full' : ''}">
-      ${isReadonly ? '' : `<div class="quick-side">${[26,40,41,43,45].map(s => `<button class="quick-btn" onclick="setScore(${s})">${s}</button>`).join('')}</div>`}
-      <div class="dp-scores" data-active="${isTurn1 ? '1' : '2'}">
-        <div class="dps-rem dps-l${isTurn1 ? ' dps-active' : ''}">${rem1}</div>
-        <div class="dps-sep"></div>
-        <div class="dps-rem dps-r${!isTurn1 ? ' dps-active' : ''}">${rem2}</div>
-        ${scoreRows}
+    <div class="dp-scores">
+      <div class="dp-score-col${isTurn1 ? ' active' : ''}">
+        <div class="dp-rem">${rem1}</div>
+        <div class="dp-throws">${buildThrows(vis1)}</div>
       </div>
-      ${isReadonly ? '' : `<div class="quick-side">${[60,81,85,100,140].map(s => `<button class="quick-btn" onclick="setScore(${s})">${s}</button>`).join('')}</div>`}
+      <div class="dp-middle">${visitNums}</div>
+      <div class="dp-score-col${!isTurn1 ? ' active' : ''}">
+        <div class="dp-rem">${rem2}</div>
+        <div class="dp-throws">${buildThrows(vis2)}</div>
+      </div>
     </div>
 
     ${isReadonly ? '' : `
-    <div class="keypad">
-      <div class="keypad-top-row">
-        <button class="keypad-undo" onclick="undoThrow()">↶ Undo</button>
-        <div class="keypad-input" id="keypad-input">${currentInput || '0'}</div>
-        <button class="keypad-enter" onclick="submitScore()">Gönder ▶</button>
+    <div class="dp-keypad">
+      <div class="dp-top">
+        <div class="dp-undo" onclick="undoThrow()">Geri Al</div>
+        <div class="dp-inp" id="keypad-input">${currentInput || '0'}</div>
+        <div class="dp-gon" onclick="submitScore()">Gönder ▶</div>
       </div>
-      <div class="keypad-grid">
-        ${[1,2,3,4,5,6,7,8,9].map(n => `<button onclick="addDigit('${n}')">${n}</button>`).join('')}
-        <button class="action" onclick="clearInput()">C</button>
-        <button onclick="addDigit('0')">0</button>
-        <button class="action bust-btn" onclick="setScore(0)">Bust</button>
+      <div class="dp-main">
+        <div class="dp-quick">
+          ${[26,40,41,43,45].map(s => `<div class="dp-qbtn" onclick="setScore(${s})">${s}</div>`).join('')}
+        </div>
+        <div class="dp-grid">
+          ${[1,2,3,4,5,6,7,8,9].map(n => `<div class="dp-key" onclick="addDigit('${n}')">${n}</div>`).join('')}
+          <div class="dp-key c" onclick="clearInput()">C</div>
+          <div class="dp-key" onclick="addDigit('0')">0</div>
+          <div class="dp-key bust" onclick="setScore(0)">Bust</div>
+        </div>
+        <div class="dp-quick">
+          ${[60,81,85,100,140].map(s => `<div class="dp-qbtn" onclick="setScore(${s})">${s}</div>`).join('')}
+        </div>
       </div>
     </div>
-    <div class="dp-safearea"></div>
+    <div class="dp-safe"></div>
     `}
   `;
 }
