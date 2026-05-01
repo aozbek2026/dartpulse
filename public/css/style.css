@@ -828,6 +828,145 @@ body.board-page #root.board-screen {
 }
 
 /* ========================================================
+   YENİ BOARD LAYOUT — dp-* sınıfları
+   Üst isim bölümü + leg sayısı, orta skor+geçmiş grid,
+   yan quick butonlar, Android safe-area strip.
+   ======================================================== */
+
+/* Üst bar: [leg#] [isim+ort] [isim+ort] [leg#] */
+.dp-names {
+  display: grid;
+  grid-template-columns: clamp(2rem, 7.5vmin, 4rem) 1fr 1fr clamp(2rem, 7.5vmin, 4rem);
+  align-items: center;
+  gap: clamp(0.25rem, 0.7vmin, 0.5rem);
+  padding: clamp(0.35rem, 1vmin, 0.65rem) clamp(0.4rem, 1.2vmin, 0.85rem);
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: clamp(10px, 1.4vmin, 16px);
+  flex: 0 0 auto;
+}
+.dp-legnum {
+  font-size: clamp(2rem, 7.5vmin, 4.8rem);
+  font-weight: 900;
+  text-align: center;
+  line-height: 1;
+  letter-spacing: -0.04em;
+  font-variant-numeric: tabular-nums;
+  color: var(--text-dim);
+}
+.dp-legnum.dp-leg-active {
+  background: linear-gradient(135deg, var(--accent), var(--accent-3));
+  -webkit-background-clip: text; background-clip: text; -webkit-text-fill-color: transparent;
+}
+.dp-pinfo {
+  text-align: center;
+  padding: clamp(0.1rem, 0.35vmin, 0.25rem) clamp(0.2rem, 0.5vmin, 0.35rem);
+  border-radius: 8px;
+  transition: background 0.2s;
+}
+.dp-pinfo.dp-pinfo-active { background: rgba(255, 56, 96, 0.07); }
+.dp-pname {
+  font-size: clamp(1rem, 2.9vmin, 1.8rem);
+  font-weight: 700;
+  line-height: 1.1;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.dp-pinfo.dp-pinfo-active .dp-pname { color: var(--accent); }
+.dp-pavg {
+  font-size: clamp(0.58rem, 1.4vmin, 0.82rem);
+  color: var(--text-dim);
+  margin-top: 0.1rem;
+}
+
+/* Orta bölüm: [quick-sol] [dp-scores] [quick-sağ] */
+.dp-mid {
+  flex: 1 1 auto;
+  display: grid;
+  grid-template-columns: clamp(34px, 6.8vmin, 52px) 1fr clamp(34px, 6.8vmin, 52px);
+  gap: clamp(0.25rem, 0.7vmin, 0.5rem);
+  min-height: 0;
+}
+.dp-mid.dp-mid-full { grid-template-columns: 1fr; }
+
+/* Skor grid — düz grid: her satır = sol-skor | ok-sayısı | sağ-skor */
+.dp-scores {
+  display: grid;
+  grid-template-columns: 1fr clamp(20px, 4vmin, 32px) 1fr;
+  align-content: start;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: clamp(10px, 1.4vmin, 16px);
+  overflow: hidden;
+  min-height: 0;
+}
+
+/* Kalan skor satırı */
+.dps-rem {
+  padding: clamp(0.4rem, 1.2vmin, 0.8rem) clamp(0.45rem, 1.2vmin, 0.8rem) clamp(0.2rem, 0.5vmin, 0.35rem);
+  font-size: clamp(2.4rem, 9.5vmin, 6.2rem);
+  font-weight: 900;
+  line-height: 1;
+  letter-spacing: -0.04em;
+  font-variant-numeric: tabular-nums;
+  background-image: linear-gradient(135deg, var(--accent-2), var(--accent-3));
+  -webkit-background-clip: text; background-clip: text; -webkit-text-fill-color: transparent;
+  background-color: transparent;
+  border-bottom: 1px solid var(--border);
+}
+.dps-rem.dps-r { text-align: right; }
+.dps-rem.dps-active {
+  background-image: linear-gradient(135deg, var(--accent), var(--accent-3));
+  background-color: rgba(255, 56, 96, 0.05);
+}
+/* Orta ayraç hücresi (kalan skor satırında) */
+.dps-sep {
+  border-bottom: 1px solid var(--border);
+  background-color: transparent;
+}
+
+/* Visit satırları */
+.dps-v {
+  padding: clamp(0.08rem, 0.3vmin, 0.2rem) clamp(0.45rem, 1.2vmin, 0.8rem);
+  font-size: clamp(0.9rem, 2.3vmin, 1.4rem);
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  color: var(--text-dim);
+  line-height: 1.4;
+}
+.dps-v.dps-r { text-align: right; }
+.dps-v.dps-vlast { color: var(--accent-2); font-size: clamp(1rem, 2.6vmin, 1.55rem); }
+
+/* Aktif oyuncu kolonu vurgusu */
+.dp-scores[data-active="1"] .dps-rem.dps-l { background-color: rgba(255, 56, 96, 0.05); }
+.dp-scores[data-active="1"] .dps-v.dps-l { background-color: rgba(255, 56, 96, 0.03); }
+.dp-scores[data-active="1"] .dps-v.dps-l.dps-vlast { color: var(--accent); }
+.dp-scores[data-active="2"] .dps-rem.dps-r { background-color: rgba(255, 56, 96, 0.05); }
+.dp-scores[data-active="2"] .dps-v.dps-r { background-color: rgba(255, 56, 96, 0.03); }
+.dp-scores[data-active="2"] .dps-v.dps-r.dps-vlast { color: var(--accent); }
+
+/* Ok sayısı sütunu (3, 6, 9 …) */
+.dps-n {
+  text-align: center;
+  font-size: clamp(0.52rem, 1.05vmin, 0.68rem);
+  color: var(--text-dim);
+  opacity: 0.4;
+  padding: clamp(0.08rem, 0.3vmin, 0.2rem) 0;
+  line-height: 1.4;
+  font-variant-numeric: tabular-nums;
+}
+
+/* Bust yazısı */
+.bust-txt { color: var(--danger); }
+
+/* Android/iPhone gezinme çubuğu safe area */
+.dp-safearea {
+  height: max(env(safe-area-inset-bottom, 0px), 6px);
+  flex: 0 0 auto;
+}
+
+/* ========================================================
    Tablet board ekranı — her iki yön, tüm tablet boyutları
    Hedef: oyuncu kutu kısa ama rakam büyük, keypad kolay basılır,
           leg banner göze çarpar.
@@ -892,4 +1031,14 @@ body.board-page #root.board-screen {
   /* Visit geçmişi tablet */
   .visit-score { font-size: clamp(1rem, 2.6vmin, 1.6rem); }
   .visit-score.visit-last { font-size: clamp(1.2rem, 3.2vmin, 2rem); }
+
+  /* dp-* tablet kompakt */
+  .dp-names { gap: clamp(0.2rem, 0.5vmin, 0.4rem); padding: clamp(0.25rem, 0.7vmin, 0.5rem) clamp(0.3rem, 0.9vmin, 0.65rem); }
+  .dp-legnum { font-size: clamp(2rem, 8vmin, 5rem); }
+  .dp-pname { font-size: clamp(0.9rem, 2.8vmin, 1.6rem); }
+  .dp-pavg { font-size: clamp(0.52rem, 1.3vmin, 0.75rem); }
+  .dp-mid { gap: clamp(0.2rem, 0.5vmin, 0.4rem); }
+  .dps-rem { font-size: clamp(2.4rem, 10vmin, 6.5rem); }
+  .dps-v { font-size: clamp(0.88rem, 2.4vmin, 1.45rem); }
+  .dps-v.dps-vlast { font-size: clamp(1rem, 2.8vmin, 1.65rem); }
 }

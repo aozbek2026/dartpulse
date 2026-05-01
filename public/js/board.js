@@ -269,30 +269,37 @@ function renderMatch() {
   const isTurn1 = m.current_turn === 1;
   const showSets = (m.sets_to_win || 1) > 1;
 
+  const stats1 = m.stats?.find(s => s.player_slot === 1) || {};
+  const stats2 = m.stats?.find(s => s.player_slot === 2) || {};
+  const avg1 = avg(stats1).toFixed(1);
+  const avg2 = avg(stats2).toFixed(1);
+  const legs1 = m.p1_legs || 0;
+  const legs2 = m.p2_legs || 0;
+
   // Aktif leg throw geçmişi
   const legThrows = (m.throws || []).filter(t =>
     t.leg_index === m.current_leg && t.set_index === (m.current_set || 1)
   );
   const visits1 = legThrows.filter(t => t.player_slot === 1);
   const visits2 = legThrows.filter(t => t.player_slot === 2);
-  const SHOW = 6;
+  const SHOW = 8;
   const vis1 = visits1.slice(-SHOW);
   const vis2 = visits2.slice(-SHOW);
   const visCount = Math.max(vis1.length, vis2.length, 3);
+  const visOffset = Math.max(visits1.length, visits2.length) - visCount;
 
-  let historyRows = '';
+  // Skor grid satırları — kalan skor kutularının içine
+  let scoreRows = '';
   for (let i = 0; i < visCount; i++) {
     const t1 = vis1[i];
     const t2 = vis2[i];
     const isLastP1 = t1 && i === vis1.length - 1 && !isTurn1;
     const isLastP2 = t2 && i === vis2.length - 1 && isTurn1;
-    const visitNum = Math.max(visits1.length, visits2.length) - visCount + i + 1;
-    historyRows += `
-      <div class="visit-row">
-        <div class="visit-score ${isLastP1 ? 'visit-last' : ''}">${t1 ? (t1.bust ? '<span style="color:var(--danger)">Bust</span>' : t1.score) : ''}</div>
-        <div class="visit-num">${t1 || t2 ? visitNum : ''}</div>
-        <div class="visit-score visit-score-r ${isLastP2 ? 'visit-last' : ''}">${t2 ? (t2.bust ? '<span style="color:var(--danger)">Bust</span>' : t2.score) : ''}</div>
-      </div>`;
+    const dartNum = (visOffset + i + 1) * 3; // 3, 6, 9, 12 ...
+    scoreRows += `
+      <div class="dps-v dps-l${isLastP1 ? ' dps-vlast' : ''}">${t1 ? (t1.bust ? '<span class="bust-txt">Bust</span>' : t1.score) : ''}</div>
+      <div class="dps-n">${(t1 || t2) ? dartNum : ''}</div>
+      <div class="dps-v dps-r${isLastP2 ? ' dps-vlast' : ''}">${t2 ? (t2.bust ? '<span class="bust-txt">Bust</span>' : t2.score) : ''}</div>`;
   }
 
   const boardName = isReadonly ? '👁 Canlı İzleme' : currentBoard.name;
@@ -313,15 +320,28 @@ function renderMatch() {
       ${headerRight}
     </div>
 
-    <div class="match-display">
-      ${renderPlayer(e1, rem1, m.p1_legs, m.p1_sets, isTurn1, m, showSets)}
-      ${renderPlayer(e2, rem2, m.p2_legs, m.p2_sets, !isTurn1, m, showSets)}
+    <div class="dp-names">
+      <div class="dp-legnum${isTurn1 ? ' dp-leg-active' : ''}">${legs1}</div>
+      <div class="dp-pinfo${isTurn1 ? ' dp-pinfo-active' : ''}">
+        <div class="dp-pname">${e1}</div>
+        <div class="dp-pavg">Ort. ${avg1}${showSets ? ` · Set ${m.p1_sets || 0}` : ''}</div>
+      </div>
+      <div class="dp-pinfo dp-pinfo-r${!isTurn1 ? ' dp-pinfo-active' : ''}">
+        <div class="dp-pname">${e2}</div>
+        <div class="dp-pavg">Ort. ${avg2}${showSets ? ` · Set ${m.p2_sets || 0}` : ''}</div>
+      </div>
+      <div class="dp-legnum dp-legnum-r${!isTurn1 ? ' dp-leg-active' : ''}">${legs2}</div>
     </div>
 
-    <div class="history-panel">
-      <div class="history-rows">
-        ${historyRows || '<div class="visit-row" style="opacity:0.3;"><div class="visit-score">—</div><div class="visit-num"></div><div class="visit-score">—</div></div>'}
+    <div class="dp-mid${isReadonly ? ' dp-mid-full' : ''}">
+      ${isReadonly ? '' : `<div class="quick-side">${[26,40,41,43,45].map(s => `<button class="quick-btn" onclick="setScore(${s})">${s}</button>`).join('')}</div>`}
+      <div class="dp-scores" data-active="${isTurn1 ? '1' : '2'}">
+        <div class="dps-rem dps-l${isTurn1 ? ' dps-active' : ''}">${rem1}</div>
+        <div class="dps-sep"></div>
+        <div class="dps-rem dps-r${!isTurn1 ? ' dps-active' : ''}">${rem2}</div>
+        ${scoreRows}
       </div>
+      ${isReadonly ? '' : `<div class="quick-side">${[60,81,85,100,140].map(s => `<button class="quick-btn" onclick="setScore(${s})">${s}</button>`).join('')}</div>`}
     </div>
 
     ${isReadonly ? '' : `
@@ -331,21 +351,14 @@ function renderMatch() {
         <div class="keypad-input" id="keypad-input">${currentInput || '0'}</div>
         <button class="keypad-enter" onclick="submitScore()">Gönder ▶</button>
       </div>
-      <div class="keypad-main">
-        <div class="quick-side">
-          ${[26, 40, 41, 43].map(s => `<button class="quick-btn" onclick="setScore(${s})">${s}</button>`).join('')}
-        </div>
-        <div class="keypad-grid">
-          ${[1,2,3,4,5,6,7,8,9].map(n => `<button onclick="addDigit('${n}')">${n}</button>`).join('')}
-          <button class="action" onclick="clearInput()">C</button>
-          <button onclick="addDigit('0')">0</button>
-          <button class="action bust-btn" onclick="setScore(0)">Bust</button>
-        </div>
-        <div class="quick-side">
-          ${[45, 60, 81, 85].map(s => `<button class="quick-btn" onclick="setScore(${s})">${s}</button>`).join('')}
-        </div>
+      <div class="keypad-grid">
+        ${[1,2,3,4,5,6,7,8,9].map(n => `<button onclick="addDigit('${n}')">${n}</button>`).join('')}
+        <button class="action" onclick="clearInput()">C</button>
+        <button onclick="addDigit('0')">0</button>
+        <button class="action bust-btn" onclick="setScore(0)">Bust</button>
       </div>
     </div>
+    <div class="dp-safearea"></div>
     `}
   `;
 }
