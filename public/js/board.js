@@ -348,6 +348,8 @@ function renderMatch() {
       </div>
     </div>
 
+    <div style="flex:1 1 auto;"></div>
+
     ${isReadonly ? '' : `
     <div class="dp-keypad">
       <div class="dp-top">
