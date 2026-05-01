@@ -223,15 +223,41 @@ function renderMatch() {
   const rem1 = m.p1_leg_score ?? startScore;
   const rem2 = m.p2_leg_score ?? startScore;
 
-  const stats1 = m.stats?.find(s => s.player_slot === 1) || {};
-  const stats2 = m.stats?.find(s => s.player_slot === 2) || {};
-
   const e1 = entryLabel(m.entry1);
   const e2 = entryLabel(m.entry2);
   const scorer = m.scorer ? entryLabel(m.scorer) : null;
 
   const isTurn1 = m.current_turn === 1;
   const showSets = (m.sets_to_win || 1) > 1;
+
+  // Aktif leg throw geçmişi
+  const legThrows = (m.throws || []).filter(t =>
+    t.leg_index === m.current_leg && t.set_index === (m.current_set || 1)
+  );
+  const visits1 = legThrows.filter(t => t.player_slot === 1);
+  const visits2 = legThrows.filter(t => t.player_slot === 2);
+  const maxVisits = Math.max(visits1.length, visits2.length, 4);
+  const SHOW = 6; // görünecek satır sayısı
+  const visitsToShow = Math.min(maxVisits, SHOW);
+  const start1 = Math.max(0, visits1.length - SHOW);
+  const start2 = Math.max(0, visits2.length - SHOW);
+  const vis1 = visits1.slice(start1);
+  const vis2 = visits2.slice(start2);
+
+  let historyRows = '';
+  for (let i = 0; i < visitsToShow; i++) {
+    const t1 = vis1[i];
+    const t2 = vis2[i];
+    const visitNum = (start1 + i + 1);
+    const isLastP1 = t1 && i === vis1.length - 1 && isTurn1 === false;
+    const isLastP2 = t2 && i === vis2.length - 1 && isTurn1 === true;
+    historyRows += `
+      <div class="visit-row">
+        <div class="visit-score ${isLastP1 ? 'visit-last' : ''}">${t1 ? (t1.bust ? '<span style="color:var(--danger)">Bust</span>' : t1.score) : ''}</div>
+        <div class="visit-num">${t1 || t2 ? visitNum : ''}</div>
+        <div class="visit-score ${isLastP2 ? 'visit-last' : ''}">${t2 ? (t2.bust ? '<span style="color:var(--danger)">Bust</span>' : t2.score) : ''}</div>
+      </div>`;
+  }
 
   root.innerHTML = `
     <div class="board-header">
@@ -261,44 +287,42 @@ function renderMatch() {
       </div>
     </div>
 
-    <div class="match-display">
-      ${renderPlayer(e1, rem1, stats1, isTurn1, m, 1)}
-      ${renderPlayer(e2, rem2, stats2, !isTurn1, m, 2)}
+    <div class="history-panel">
+      <div class="history-header">
+        <div class="history-player ${isTurn1 ? 'history-active' : ''}">
+          <span class="history-name">${e1}</span>
+          <span class="history-rem">${rem1}</span>
+        </div>
+        <div class="history-center-head">Visit</div>
+        <div class="history-player ${!isTurn1 ? 'history-active' : ''}" style="text-align:right;">
+          <span class="history-rem">${rem2}</span>
+          <span class="history-name">${e2}</span>
+        </div>
+      </div>
+      <div class="history-rows">
+        ${historyRows || '<div class="visit-row"><div class="visit-score" style="color:var(--text-dim);font-size:0.85rem;">—</div><div class="visit-num"></div><div class="visit-score" style="color:var(--text-dim);font-size:0.85rem;">—</div></div>'}
+      </div>
     </div>
 
     <div class="keypad">
-      <div class="keypad-input" id="keypad-input">${currentInput || '0'}</div>
-      <div class="keypad-grid">
-        ${[1,2,3,4,5,6,7,8,9].map(n => `<button onclick="addDigit('${n}')">${n}</button>`).join('')}
-        <button class="action" onclick="clearInput()">C</button>
-        <button onclick="addDigit('0')">0</button>
-        <button class="action" onclick="undoThrow()">↶ Undo</button>
-        <button class="submit" onclick="submitScore()">Skor Gönder (${currentInput || '0'})</button>
+      <div class="keypad-top-row">
+        <button class="keypad-undo" onclick="undoThrow()">↶ Undo</button>
+        <div class="keypad-input" id="keypad-input">${currentInput || '0'}</div>
+        <button class="keypad-enter" onclick="submitScore()">Gönder ▶</button>
       </div>
-      <div style="margin-top: 0.75rem; text-align: center; color: var(--text-dim); font-size: 0.85rem;">
-        Hızlı: ${[41, 45, 60, 80, 81, 85, 100, 140].map(s =>
-          `<button class="icon" style="margin: 0 0.15rem;" onclick="setScore(${s})">${s}</button>`
-        ).join('')}
-        <button class="icon" style="margin: 0 0.15rem;" onclick="setScore(26)">26</button>
-        <button class="icon" style="margin: 0 0.15rem; background: var(--danger); color: white;" onclick="setScore(0)">Bust/0</button>
-      </div>
-    </div>
-  `;
-}
-
-function renderPlayer(name, remaining, stats, active, m, slot) {
-  const isCricket = m.game_mode === 'cricket';
-  return `
-    <div class="player-panel ${active ? 'active' : ''}">
-      <div class="player-name">${name}</div>
-      <div class="player-sub">${isCricket ? 'Puan' : 'Kalan'}</div>
-      <div class="score-display">${remaining}</div>
-      <div class="player-stats">
-        <div class="stat"><div class="label">Ortalama</div><div class="value">${avg(stats).toFixed(1)}</div></div>
-        <div class="stat"><div class="label">100+</div><div class="value">${stats.tons || 0}</div></div>
-        <div class="stat"><div class="label">140+</div><div class="value">${stats.ton_plus || 0}</div></div>
-        <div class="stat"><div class="label">180</div><div class="value">${stats.one_eighty || 0}</div></div>
-        <div class="stat"><div class="label">Best CO</div><div class="value">${stats.best_checkout || 0}</div></div>
+      <div class="keypad-main">
+        <div class="quick-side">
+          ${[26, 40, 41, 43].map(s => `<button class="quick-btn" onclick="setScore(${s})">${s}</button>`).join('')}
+        </div>
+        <div class="keypad-grid">
+          ${[1,2,3,4,5,6,7,8,9].map(n => `<button onclick="addDigit('${n}')">${n}</button>`).join('')}
+          <button class="action" onclick="clearInput()">C</button>
+          <button onclick="addDigit('0')">0</button>
+          <button class="action bust-btn" onclick="setScore(0)">Bust</button>
+        </div>
+        <div class="quick-side">
+          ${[45, 60, 81, 85].map(s => `<button class="quick-btn" onclick="setScore(${s})">${s}</button>`).join('')}
+        </div>
       </div>
     </div>
   `;
@@ -449,6 +473,9 @@ async function submitScore() {
   const res = await api.post(`/api/matches/${currentMatch.id}/throw`, body);
   if (res.error) return toast('Hata: ' + res.error);
   currentInput = '';
+  // Flash efekti — kalan skor kutusuna kısa parıltı
+  const inputEl = document.getElementById('keypad-input');
+  if (inputEl) { inputEl.classList.remove('score-flash'); void inputEl.offsetWidth; inputEl.classList.add('score-flash'); }
   if (res.bust) toast('Bust!');
   // Leg bitti ama maç bitmediyse → mini özet modalı göster ve onay bekle.
   // (Maç tamamlandıysa zaten post-match ekranı açılıyor; ayrıca özet vermiyoruz.)
@@ -569,9 +596,32 @@ function legSummarySide(name, p, isWinner) {
 
 async function undoThrow() {
   if (!currentMatch) return;
+  const confirmed = await showConfirm('Son atışı geri almak istediğinizden emin misiniz?');
+  if (!confirmed) return;
   const res = await api.post(`/api/matches/${currentMatch.id}/undo`, {});
   if (res.error) toast('Hata: ' + res.error);
   else toast('Son atış geri alındı');
+}
+
+function showConfirm(message) {
+  return new Promise((resolve) => {
+    const overlay = document.createElement('div');
+    overlay.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,0.75);display:flex;align-items:center;justify-content:center;z-index:9999;padding:1.5rem;';
+    overlay.innerHTML = `
+      <div style="background:var(--surface);border:1px solid var(--border);border-radius:16px;padding:2rem;max-width:380px;width:100%;text-align:center;">
+        <div style="font-size:1.1rem;font-weight:600;margin-bottom:1.5rem;">${message}</div>
+        <div style="display:flex;gap:1rem;justify-content:center;">
+          <button id="confirm-no" style="flex:1;padding:0.85rem;border-radius:10px;border:1px solid var(--border);background:var(--surface-2);color:var(--text);font-size:1rem;cursor:pointer;">İptal</button>
+          <button id="confirm-yes" style="flex:1;padding:0.85rem;border-radius:10px;border:none;background:var(--danger);color:white;font-size:1rem;font-weight:700;cursor:pointer;">Geri Al</button>
+        </div>
+      </div>
+    `;
+    document.body.appendChild(overlay);
+    const close = (val) => { overlay.remove(); resolve(val); };
+    overlay.querySelector('#confirm-yes').onclick = () => close(true);
+    overlay.querySelector('#confirm-no').onclick = () => close(false);
+    overlay.addEventListener('click', (e) => { if (e.target === overlay) close(false); });
+  });
 }
 
 // ---- Utils ----
