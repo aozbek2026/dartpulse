@@ -7,6 +7,10 @@ let watchFlashKeys = new Set(); // Flash animasyonu için kalan skor key'leri
 let watchPrevScores = {}; // Önceki kalan skorlar (flash tetiklemek için)
 let watchLastThrows = {}; // Son atılan skor { fk: score }
 
+function parseCfg(json) {
+  try { return json ? JSON.parse(json) : {}; } catch { return {}; }
+}
+
 socket.on('state', (s) => {
   state = s;
   render();
@@ -84,6 +88,46 @@ function buildStandings(t) {
   return rows;
 }
 
+// ========== Grup sıralaması hesaplaması (RR grup aşaması) ==========
+function buildGroupStandings(t, stageMatches) {
+  const groupIndices = [...new Set(stageMatches.map(m => m.group_index).filter(g => g != null))].sort((a, b) => a - b);
+  const result = {};
+  for (const gi of groupIndices) {
+    const groupMatches = stageMatches.filter(m => m.group_index === gi);
+    const entryIds = new Set();
+    for (const m of groupMatches) {
+      if (m.entry1_id) entryIds.add(m.entry1_id);
+      if (m.entry2_id) entryIds.add(m.entry2_id);
+    }
+    const stats = {};
+    for (const eid of entryIds) {
+      const entry = t.entries.find(e => e.id === eid) || null;
+      stats[eid] = { entry, matches_played: 0, matches_won: 0, legs_for: 0, legs_against: 0 };
+    }
+    for (const m of groupMatches) {
+      if (m.status !== 'finished' || !m.entry1_id || !m.entry2_id) continue;
+      const a = stats[m.entry1_id], b = stats[m.entry2_id];
+      if (a) {
+        a.matches_played++;
+        a.legs_for += m.p1_legs || 0; a.legs_against += m.p2_legs || 0;
+        if (m.winner_entry_id === m.entry1_id) a.matches_won++;
+      }
+      if (b) {
+        b.matches_played++;
+        b.legs_for += m.p2_legs || 0; b.legs_against += m.p1_legs || 0;
+        if (m.winner_entry_id === m.entry2_id) b.matches_won++;
+      }
+    }
+    const rows = Object.values(stats).map(s => ({
+      ...s,
+      leg_diff: s.legs_for - s.legs_against,
+    }));
+    rows.sort((a, b) => b.matches_won - a.matches_won || b.leg_diff - a.leg_diff);
+    result[gi] = rows;
+  }
+  return result;
+}
+
 // ========== Render: Canlı ==========
 function renderLive() {
   const host = document.getElementById('live-host');
@@ -142,14 +186,68 @@ function renderStandings() {
     return;
   }
   host.innerHTML = tourns.map(t => {
+    const statusChip = `<span class="chip ${t.status === 'finished' ? 'success' : 'live'}">${t.status === 'finished' ? 'TAMAM' : 'DEVAM'}</span>`;
+    // RR grup aşaması var mı kontrol et
+    const rrStage = t.stages.find(s => s.format === 'round_robin');
+    if (rrStage) {
+      const cfg = parseCfg(rrStage.config_json);
+      const rrMatches = t.matches.filter(m => m.stage_id === rrStage.id);
+      if (cfg.group_size && cfg.group_size > 0) {
+        // Grup sıralamaları
+        const groupStandings = buildGroupStandings(t, rrMatches);
+        const groupIndices = Object.keys(groupStandings).map(Number).sort((a, b) => a - b);
+        return `
+          <div class="card">
+            <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:0.85rem;">
+              <h4 style="margin:0;">${t.name}</h4>${statusChip}
+            </div>
+            ${groupIndices.map(gi => {
+              const rows = groupStandings[gi];
+              const gLabel = String.fromCharCode(65 + gi) + ' Grubu';
+              return `
+                <div style="margin-bottom:1.2rem;">
+                  <div style="font-size:0.72rem;font-weight:600;color:var(--text-dim);text-transform:uppercase;letter-spacing:0.07em;margin-bottom:0.45rem;padding-bottom:0.3rem;border-bottom:1px solid var(--border);">${gLabel}</div>
+                  <table class="standings-table">
+                    <thead>
+                      <tr>
+                        <th>#</th><th>Oyuncu</th>
+                        <th class="num">O</th><th class="num">G</th><th class="num">M</th>
+                        <th class="num">Leg</th><th class="num">±</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      ${rows.length === 0
+                        ? '<tr><td colspan="7" class="empty">Henüz veri yok</td></tr>'
+                        : rows.map((r, i) => {
+                            const rank = i + 1;
+                            const pillCls = rank === 1 ? 'gold' : rank === 2 ? 'silver' : rank === 3 ? 'bronze' : '';
+                            return `
+                              <tr class="rank-${rank}">
+                                <td><span class="rank-pill ${pillCls}">${rank}</span></td>
+                                <td><strong>${entryLabel(r.entry)}</strong></td>
+                                <td class="num">${r.matches_played}</td>
+                                <td class="num">${r.matches_won}</td>
+                                <td class="num">${r.matches_played - r.matches_won}</td>
+                                <td class="num">${r.legs_for}-${r.legs_against}</td>
+                                <td class="num">${r.leg_diff > 0 ? '+' : ''}${r.leg_diff}</td>
+                              </tr>
+                            `;
+                          }).join('')}
+                    </tbody>
+                  </table>
+                </div>
+              `;
+            }).join('')}
+          </div>
+        `;
+      }
+    }
+    // Elim veya tek-grup RR — orijinal geniş tablo
     const rows = buildStandings(t);
     return `
       <div class="card">
         <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom: 0.85rem;">
-          <h4 style="margin: 0;">${t.name}</h4>
-          <span class="chip ${t.status === 'finished' ? 'success' : 'live'}">
-            ${t.status === 'finished' ? 'TAMAM' : 'DEVAM'}
-          </span>
+          <h4 style="margin: 0;">${t.name}</h4>${statusChip}
         </div>
         <table class="standings-table">
           <thead>
@@ -168,15 +266,13 @@ function renderStandings() {
               : rows.map((r, i) => {
                   const rank = i + 1;
                   const pillCls = rank === 1 ? 'gold' : rank === 2 ? 'silver' : rank === 3 ? 'bronze' : '';
-                  const ml = r.matches_won;
-                  const lo = r.matches_played - r.matches_won;
                   return `
                     <tr class="rank-${rank}">
                       <td><span class="rank-pill ${pillCls}">${rank}</span></td>
                       <td><strong>${entryLabel(r.entry)}</strong></td>
                       <td class="num">${r.matches_played}</td>
-                      <td class="num">${ml}</td>
-                      <td class="num">${lo}</td>
+                      <td class="num">${r.matches_won}</td>
+                      <td class="num">${r.matches_played - r.matches_won}</td>
                       <td class="num">${r.legs_for}-${r.legs_against}</td>
                       <td class="num">${r.leg_diff > 0 ? '+' : ''}${r.leg_diff}</td>
                       <td class="num"><strong>${r.average_3dart.toFixed(2)}</strong></td>
@@ -315,12 +411,53 @@ function renderBracketMatch(m) {
 }
 
 function renderRR(stage, matches) {
-  // Bracket sekmesinde RR için minik özet — esas tablo Klasman bölümünde
+  const cfg = parseCfg(stage.config_json);
+  const hasGroups = cfg.group_size && cfg.group_size > 0;
   const totalMatches = matches.length;
   const finished = matches.filter(m => m.status === 'finished').length;
+
+  const stageHeader = `
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:0.7rem;">
+      <h4 style="color:var(--text-dim);font-size:0.78rem;text-transform:uppercase;letter-spacing:0.05em;margin:0;">${formatLabel(stage.format)}</h4>
+      <span style="font-size:0.82rem;color:var(--text-dim);">${finished}/${totalMatches} maç tamamlandı</span>
+    </div>
+  `;
+
+  if (!hasGroups) {
+    // Tek-grup RR
+    return `
+      <div style="margin-top:0.5rem;">
+        ${stageHeader}
+        <div class="bracket">
+          <div class="bracket-round">
+            <h4>Round Robin</h4>
+            ${matches.map(m => renderBracketMatch(m)).join('')}
+          </div>
+        </div>
+      </div>
+    `;
+  }
+
+  // Çok-grup RR: her grubu ayrı sütunda göster
+  const groupIndices = [...new Set(matches.map(m => m.group_index).filter(g => g != null))].sort((a, b) => a - b);
   return `
-    <div style="color: var(--text-dim); font-size: 0.88rem; padding: 0.5rem 0;">
-      Round-robin · ${finished}/${totalMatches} maç tamamlandı
+    <div style="margin-top:0.5rem;">
+      ${stageHeader}
+      <div style="display:flex;flex-wrap:wrap;gap:1rem;align-items:flex-start;">
+        ${groupIndices.map(gi => {
+          const gMatches = matches.filter(m => m.group_index === gi);
+          const gLabel = String.fromCharCode(65 + gi) + ' Grubu';
+          const gFin = gMatches.filter(m => m.status === 'finished').length;
+          return `
+            <div style="flex:1 1 260px;min-width:0;">
+              <div style="font-size:0.7rem;color:var(--text-dim);text-transform:uppercase;letter-spacing:0.06em;margin-bottom:0.4rem;padding:0.2rem 0.5rem;background:var(--surface-2);border-radius:4px;display:inline-block;">
+                ${gLabel} · ${gFin}/${gMatches.length} maç
+              </div>
+              ${gMatches.map(m => renderBracketMatch(m)).join('')}
+            </div>
+          `;
+        }).join('')}
+      </div>
     </div>
   `;
 }
@@ -388,11 +525,19 @@ function renderMatches() {
               : `${m.p1_legs}-${m.p2_legs}`;
             const score = m.status === 'pending' ? '—' : setLeg;
 
-            const turLabel = ({
-              winners: 'WB R', losers: 'LB R', final: 'GF', group: 'Grup', rr: 'RR',
-            })[m.bracket] || 'R';
-            const turText = m.bracket === 'final' ? 'GF' :
-              m.round ? `${turLabel}${m.round}` : '';
+            let turText = '';
+            if (m.bracket === 'final') {
+              turText = 'GF';
+            } else if (m.bracket === 'rr' || m.bracket === 'group') {
+              const gLetter = m.group_index != null ? String.fromCharCode(65 + m.group_index) + ' Grubu' : 'RR';
+              turText = m.round ? `${gLetter} R${m.round}` : gLetter;
+            } else if (m.bracket === 'winners') {
+              turText = `WB R${m.round}`;
+            } else if (m.bracket === 'losers') {
+              turText = `LB R${m.round}`;
+            } else if (m.round) {
+              turText = `R${m.round}`;
+            }
 
             return `
               <tr>

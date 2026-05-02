@@ -87,6 +87,30 @@ function renderStagesWizard() {
   const primary = s0.format;
   const secondary = s1?.format || 'single_elim';
   const qcount = s0.qualifier_count || '';
+  const groupSize = s0.config?.group_size || '';
+
+  // Önizleme hesapla
+  let groupPreview = '';
+  let qualifierPreview = '';
+  if (primary === 'round_robin' && groupSize >= 2) {
+    const entryCount = _entryCountForStage(0);
+    if (entryCount > 0) {
+      const gc = Math.ceil(entryCount / groupSize);
+      const floorSz = Math.floor(entryCount / gc);
+      const extraGc = entryCount % gc;
+      const sizeDesc = extraGc > 0
+        ? `${gc} grup (${extraGc}×${floorSz + 1} kişi, ${gc - extraGc}×${floorSz} kişi)`
+        : `${gc} grup × ${floorSz} kişi`;
+      groupPreview = `<div style="font-size:0.82rem;color:var(--accent-2);margin-top:0.3rem;">→ ${sizeDesc}</div>`;
+      if (qcount) {
+        const total = +qcount;
+        const directPG = Math.floor(total / gc);
+        const lucky = total - gc * directPG;
+        const luckyTxt = lucky > 0 ? ` + ${lucky} lucky loser` : '';
+        qualifierPreview = `<div style="font-size:0.82rem;color:var(--accent-2);margin-top:0.3rem;">→ ${gc}×${directPG} direkt${luckyTxt} = ${total} kişi</div>`;
+      }
+    }
+  }
 
   host.innerHTML = `
     <div class="grid cols-2" style="gap: 0.75rem;">
@@ -95,27 +119,34 @@ function renderStagesWizard() {
         <select id="wiz-primary" style="width: 100%;" onchange="wizSetPrimary(this.value)">
           <option value="single_elim" ${primary === 'single_elim' ? 'selected' : ''}>Tek eleme (single elimination)</option>
           <option value="double_elim" ${primary === 'double_elim' ? 'selected' : ''}>Çift eleme (double elimination)</option>
-          <option value="round_robin" ${primary === 'round_robin' ? 'selected' : ''}>Round-robin (grup maçları)</option>
+          <option value="round_robin" ${primary === 'round_robin' ? 'selected' : ''}>Grup aşaması (round-robin)</option>
         </select>
       </div>
       ${primary === 'round_robin' ? `
         <div>
-          <label>Her gruptan kaç kişi üst tura çıksın?</label>
-          <input type="number" id="wiz-qcount" min="1" value="${qcount}" placeholder="örn: 2"
-            oninput="wizSetQualifierCount(this.value)" style="width: 100%;" />
+          <label>Grup başına kaç oyuncu?</label>
+          <input type="number" id="wiz-gsize" min="2" max="20" value="${groupSize}"
+            placeholder="örn: 4" oninput="wizSetGroupSize(this.value)" style="width: 100%;" />
+          ${groupPreview}
         </div>
       ` : '<div></div>'}
     </div>
 
     ${primary === 'round_robin' ? `
-      <div style="margin-top: 0.75rem; padding: 0.75rem; background: var(--bg-2, rgba(255,255,255,0.03)); border-radius: 8px;">
-        <label style="color: var(--text-dim); font-size: 0.88rem;">
-          Gruplar bittikten sonra → sıradaki aşama
-        </label>
-        <select id="wiz-secondary" style="width: 100%; margin-top: 0.35rem;" onchange="wizSetSecondary(this.value)">
-          <option value="single_elim" ${secondary === 'single_elim' ? 'selected' : ''}>Tek eleme (single elimination)</option>
-          <option value="double_elim" ${secondary === 'double_elim' ? 'selected' : ''}>Çift eleme (double elimination)</option>
-        </select>
+      <div class="grid cols-2" style="gap: 0.75rem; margin-top: 0.75rem;">
+        <div>
+          <label>Toplam kaç oyuncu üst tura çıksın?</label>
+          <input type="number" id="wiz-qcount" min="1" value="${qcount}" placeholder="örn: 8"
+            oninput="wizSetQualifierCount(this.value)" style="width: 100%;" />
+          ${qualifierPreview}
+        </div>
+        <div>
+          <label>Sıradaki aşama</label>
+          <select id="wiz-secondary" style="width: 100%;" onchange="wizSetSecondary(this.value)">
+            <option value="single_elim" ${secondary === 'single_elim' ? 'selected' : ''}>Tek eleme</option>
+            <option value="double_elim" ${secondary === 'double_elim' ? 'selected' : ''}>Çift eleme</option>
+          </select>
+        </div>
       </div>
     ` : ''}
   `;
@@ -123,11 +154,11 @@ function renderStagesWizard() {
 
 function wizSetPrimary(val) {
   if (val === 'round_robin') {
-    // RR + elim (default: single)
     const qcount = stagesDraft[0]?.qualifier_count || null;
+    const groupSize = stagesDraft[0]?.config?.group_size || null;
     const secondary = stagesDraft[1]?.format || 'single_elim';
     stagesDraft = [
-      { format: 'round_robin', qualifier_count: qcount, config: {} },
+      { format: 'round_robin', qualifier_count: qcount, config: { group_size: groupSize } },
       { format: secondary, qualifier_count: null, config: {} },
     ];
   } else {
@@ -137,9 +168,18 @@ function wizSetPrimary(val) {
   renderStagesDraft();
   renderRoundOverridesPanel();
 }
+function wizSetGroupSize(val) {
+  const n = val ? +val : null;
+  if (!stagesDraft[0]) return;
+  if (!stagesDraft[0].config) stagesDraft[0].config = {};
+  stagesDraft[0].config.group_size = (n && n >= 2) ? n : null;
+  renderStagesWizard();
+  renderStagesDraft();
+}
 function wizSetQualifierCount(val) {
   const n = val ? +val : null;
   if (stagesDraft[0]) stagesDraft[0].qualifier_count = (n && n >= 1) ? n : null;
+  renderStagesWizard();
   renderStagesDraft();
   renderRoundOverridesPanel();
 }

@@ -374,45 +374,156 @@ function buildDoubleElim(common, entryIds) {
 
 // Round robin -------------------------------------------------------
 function buildRoundRobin(common, entryIds) {
-  // Circle method for round robin
-  const players = [...entryIds];
-  if (players.length % 2 === 1) players.push(null); // bye
-  const n = players.length;
-  const rounds = n - 1;
+  // Grup konfigürasyonunu oku
+  const stage = db.stageById(common.stage_id);
+  let rrCfg = {};
+  try { rrCfg = stage.config_json ? JSON.parse(stage.config_json) : {}; } catch (_) {}
+
+  const totalPlayers = entryIds.length;
+  const groupSize = (rrCfg.group_size && rrCfg.group_size >= 2) ? rrCfg.group_size : totalPlayers;
+  const groupCount = Math.ceil(totalPlayers / groupSize);
+
+  // Oyuncuları gruplara dağıt (mümkün olduğunca eşit)
+  // Örn: 14 oyuncu, 4'lük grup → groupCount=4 → [4,4,3,3]
+  const floorSize = Math.floor(totalPlayers / groupCount);
+  const extraCount = totalPlayers % groupCount; // ilk extraCount grup floorSize+1 oyuncu alır
+  const groups = [];
+  let pi = 0;
+  for (let g = 0; g < groupCount; g++) {
+    const size = g < extraCount ? floorSize + 1 : floorSize;
+    groups.push(entryIds.slice(pi, pi + size));
+    pi += size;
+  }
+
+  // Her grup için circle method ile maçları oluştur
   let matchIndex = 0;
-  for (let r = 0; r < rounds; r++) {
-    for (let i = 0; i < n / 2; i++) {
-      const e1 = players[i];
-      const e2 = players[n - 1 - i];
-      if (!e1 || !e2) continue; // bye
-      const m = _createMatch(common, {
-        ...common,
-        bracket: 'rr',
-        round: r + 1,
-        match_index: matchIndex++,
-        entry1_id: e1,
-        entry2_id: e2,
-        status: 'ready',
-      });
+  for (let g = 0; g < groups.length; g++) {
+    const players = [...groups[g]];
+    if (players.length % 2 === 1) players.push(null); // bye
+    const rounds = players.length - 1;
+    for (let r = 0; r < rounds; r++) {
+      for (let i = 0; i < players.length / 2; i++) {
+        const e1 = players[i];
+        const e2 = players[players.length - 1 - i];
+        if (!e1 || !e2) continue;
+        _createMatch(common, {
+          ...common,
+          bracket: 'rr',
+          round: r + 1,
+          match_index: matchIndex++,
+          entry1_id: e1,
+          entry2_id: e2,
+          status: 'ready',
+          group_index: g,
+        });
+      }
+      // rotate (keep first fixed)
+      const fixed = players[0];
+      const rest = players.slice(1);
+      rest.unshift(rest.pop());
+      players.splice(0, players.length, fixed, ...rest);
     }
-    // rotate (keep first fixed)
-    const fixed = players[0];
-    const rest = players.slice(1);
-    rest.unshift(rest.pop());
-    players.splice(0, players.length, fixed, ...rest);
   }
 }
 
 // --- Stage qualifiers for multi-stage progression ---
 function computeStageQualifiers(stage, stageMatches) {
   if (stage.format === 'round_robin') {
-    const table = computeRRStandings(stageMatches);
-    const count = stage.qualifier_count || Math.ceil(table.length / 2);
-    return table.slice(0, count).map(row => row.entryId);
+    let rrCfg = {};
+    try { rrCfg = stage.config_json ? JSON.parse(stage.config_json) : {}; } catch (_) {}
+    const totalQualifiers = stage.qualifier_count;
+
+    if (rrCfg.group_size) {
+      // Grup aşaması: her gruptan direkt çıkanlar + lucky loser'lar
+      const standingsByGroup = computeRRStandingsByGroup(stageMatches);
+      const groupIndices = Object.keys(standingsByGroup).map(Number).sort((a, b) => a - b);
+      const groupCount = groupIndices.length;
+
+      if (!totalQualifiers) {
+        // Fallback: her gruptan ilk yarısı
+        return groupIndices.flatMap(g =>
+          standingsByGroup[g].slice(0, Math.ceil(standingsByGroup[g].length / 2)).map(r => r.entryId)
+        );
+      }
+
+      const directPerGroup = Math.floor(totalQualifiers / groupCount);
+      const luckyLoserCount = totalQualifiers - groupCount * directPerGroup;
+
+      const directQualifiers = [];
+      const luckyLoserCandidates = [];
+
+      for (const g of groupIndices) {
+        const standings = standingsByGroup[g];
+        for (let i = 0; i < standings.length; i++) {
+          if (i < directPerGroup) {
+            directQualifiers.push(standings[i]);
+          } else if (i === directPerGroup && luckyLoserCount > 0) {
+            luckyLoserCandidates.push(standings[i]);
+          }
+        }
+      }
+
+      // Lucky loser'ları puana göre sırala
+      luckyLoserCandidates.sort((a, b) =>
+        b.points - a.points ||
+        (b.legsFor - b.legsAgainst) - (a.legsFor - a.legsAgainst) ||
+        b.legsFor - a.legsFor
+      );
+
+      return [
+        ...directQualifiers.map(r => r.entryId),
+        ...luckyLoserCandidates.slice(0, luckyLoserCount).map(r => r.entryId),
+      ];
+    } else {
+      // Tek grup (eski davranış)
+      const table = computeRRStandings(stageMatches);
+      const count = totalQualifiers || Math.ceil(table.length / 2);
+      return table.slice(0, count).map(row => row.entryId);
+    }
   }
-  // For elim stages, winner is the champion - usually that's the end, but return the winner
-  const final = stageMatches.find(m => m.bracket === 'final' || m.bracket === 'winners' && m.round === maxRound(stageMatches));
+  // Elim aşaması
+  const final = stageMatches.find(m => m.bracket === 'final' || (m.bracket === 'winners' && m.round === maxRound(stageMatches)));
   return final?.winner_entry_id ? [final.winner_entry_id] : [];
+}
+
+// Per-grup sıralama tablosu: { groupIndex → [{ entryId, W, L, legsFor, legsAgainst, points }] }
+function computeRRStandingsByGroup(matches) {
+  const groups = {};
+  // Tüm entry'leri gruplarına kaydet (bitmemiş maçlar dahil)
+  for (const m of matches) {
+    const g = m.group_index ?? 0;
+    if (!groups[g]) groups[g] = {};
+    for (const eid of [m.entry1_id, m.entry2_id]) {
+      if (eid && !groups[g][eid]) {
+        groups[g][eid] = { entryId: eid, W: 0, L: 0, legsFor: 0, legsAgainst: 0, points: 0 };
+      }
+    }
+  }
+  // Biten maçları işle
+  for (const m of matches) {
+    if (m.status !== 'finished') continue;
+    const g = m.group_index ?? 0;
+    for (const slot of [1, 2]) {
+      const eid = slot === 1 ? m.entry1_id : m.entry2_id;
+      if (!eid || !groups[g]?.[eid]) continue;
+      const legsFor = slot === 1 ? (m.p1_legs || 0) : (m.p2_legs || 0);
+      const legsAgainst = slot === 1 ? (m.p2_legs || 0) : (m.p1_legs || 0);
+      groups[g][eid].legsFor += legsFor;
+      groups[g][eid].legsAgainst += legsAgainst;
+      if (m.winner_entry_id === eid) { groups[g][eid].W++; groups[g][eid].points += 3; }
+      else { groups[g][eid].L++; }
+    }
+  }
+  // Her grubu sırala
+  const result = {};
+  for (const [g, table] of Object.entries(groups)) {
+    result[+g] = Object.values(table).sort((a, b) =>
+      b.points - a.points ||
+      (b.legsFor - b.legsAgainst) - (a.legsFor - a.legsAgainst) ||
+      b.legsFor - a.legsFor
+    );
+  }
+  return result;
 }
 
 function computeRRStandings(matches) {
@@ -506,7 +617,8 @@ function maxRound(matches) {
 function roundLabel(match, options = {}) {
   if (!match) return '';
   if (match.bracket === 'rr' || match.bracket === 'group') {
-    return `Grup Maçı — Round ${match.round}`;
+    const groupLetter = match.group_index != null ? ` — ${String.fromCharCode(65 + match.group_index)} Grubu` : '';
+    return `Grup Maçı${groupLetter} — Round ${match.round}`;
   }
   if (match.bracket === 'final' && options.format === 'double_elim') {
     return 'Büyük Final';
