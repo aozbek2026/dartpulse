@@ -100,8 +100,21 @@
   .edit-btn { background: transparent; border: 1px solid var(--border, rgba(255,255,255,0.12)); color: var(--text-dim); border-radius: 6px; padding: 0.25rem 0.5rem; cursor: pointer; font-size: 0.78rem; }
   .edit-btn:hover { color: var(--text); }
 
-  .add-match-row { display: flex; gap: 0.5rem; margin-top: 0.5rem; flex-wrap: wrap; }
-  .add-match-row input { flex: 1; min-width: 120px; }
+  .tm-add-row { display: flex; gap: 0.5rem; margin-top: 0.5rem; flex-wrap: wrap; align-items: flex-start; }
+  .tm-add-row input { flex: 1; min-width: 120px; }
+
+  .player-chip {
+    display: inline-block;
+    background: var(--bg-2, rgba(255,255,255,0.08));
+    border: 1px solid var(--border, rgba(255,255,255,0.12));
+    border-radius: 20px;
+    padding: 0.2rem 0.6rem;
+    font-size: 0.8rem;
+    cursor: pointer;
+    transition: background 0.15s;
+    user-select: none;
+  }
+  .player-chip:hover { background: var(--accent); color: #fff; border-color: var(--accent); }
 
   .phase-toggle { display: flex; align-items: center; gap: 0.5rem; font-size: 0.82rem; color: var(--text-dim); }
   .phase-settings { display: flex; flex-wrap: wrap; gap: 0.5rem; margin-bottom: 0.5rem; font-size: 0.82rem; }
@@ -159,6 +172,13 @@
     <section class="tab" id="tab-events">
       <h2>Takım Maçları</h2>
       <p class="subtitle">Aktif ve tamamlanmış takım maçları.</p>
+      <div class="card" style="margin-bottom:0.75rem;padding:0.75rem 1rem;">
+        <div style="font-size:0.8rem;font-weight:600;color:var(--text-dim);margin-bottom:0.4rem;">
+          👥 Oyuncu Havuzu <span style="font-weight:400">(tıkla → kopyala veya odaktaki alana yaz)</span>
+        </div>
+        <div id="player-pool-panel" style="display:flex;flex-wrap:wrap;gap:0.3rem;"></div>
+      </div>
+
       <div id="events-list">
         <p style="color:var(--text-dim)">Yükleniyor…</p>
       </div>
