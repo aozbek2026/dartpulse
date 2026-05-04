@@ -153,7 +153,7 @@ function esc(s) { return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;'
 
 // ── Aksiyonlar ───────────────────────────────────────────────────────────────
 
-async function createEvent() {
+async function submitNewEvent() {
   const name = document.getElementById('ne-name').value.trim();
   const t1 = document.getElementById('ne-t1').value.trim();
   const t2 = document.getElementById('ne-t2').value.trim();
