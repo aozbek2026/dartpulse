@@ -242,6 +242,21 @@ app.post('/api/matches/:id/begin', (req, res) => {
     const s2 = req.body?.p2_sub_turn;
     if (s1 === 1 || s1 === 2) patch.p1_sub_turn = s1;
     if (s2 === 1 || s2 === 2) patch.p2_sub_turn = s2;
+    // Cricket / FB Cezalı: state'i başlat
+    const tour = db.tournamentById(m.tournament_id);
+    if (tour?.game_mode === 'cricket' && !m.cricket_state_json) {
+      patch.cricket_state_json = JSON.stringify(engine.initCricketState());
+    }
+    if (tour?.game_mode === 'cricket_fb_cezali' && !m.cricket_state_json) {
+      let cfg = {};
+      try { cfg = tour.config_json ? JSON.parse(tour.config_json) : {}; } catch {}
+      patch.cricket_state_json = JSON.stringify(engine.initFBCezaliState(cfg.include_low !== false));
+    }
+    if (tour?.game_mode === 'cricket_fb_karambol' && !m.cricket_state_json) {
+      let cfg = {};
+      try { cfg = tour.config_json ? JSON.parse(tour.config_json) : {}; } catch {}
+      patch.cricket_state_json = JSON.stringify(engine.initKarambolState(cfg.include_low !== false));
+    }
     db.updateMatch(id, patch);
     if (m.board_id) {
       io.to(`board:${m.board_id}`).emit('board:state', {
@@ -251,6 +266,69 @@ app.post('/api/matches/:id/begin', (req, res) => {
     }
     broadcastState();
     res.json({ ok: true });
+  } catch (e) {
+    res.status(400).json({ error: e.message });
+  }
+});
+
+// Cricket: bir visit (3 ok) kaydı — hits: {20: 2, 19: 1, ...}
+app.post('/api/matches/:id/cricket-throw', (req, res) => {
+  try {
+    const id = +req.params.id;
+    const { playerSlot, hits } = req.body;
+    if (!hits || typeof hits !== 'object') return res.status(400).json({ error: 'hits gerekli' });
+    const result = engine.recordCricketVisit(id, playerSlot, hits);
+    const m = db.matchById(id);
+    if (m?.board_id) {
+      io.to(`board:${m.board_id}`).emit('board:state', {
+        board: db.boardById(m.board_id),
+        match: m,
+      });
+    }
+    broadcastState();
+    res.json(result);
+  } catch (e) {
+    res.status(400).json({ error: e.message });
+  }
+});
+
+// Cricket Full Board Cezalı: bir visit kaydı — allocation: { marks: {target: count}, score: N }
+app.post('/api/matches/:id/fb-cezali-throw', (req, res) => {
+  try {
+    const id = +req.params.id;
+    const { playerSlot, allocation } = req.body;
+    if (!allocation || typeof allocation !== 'object') return res.status(400).json({ error: 'allocation gerekli' });
+    const result = engine.recordFBCezaliVisit(id, playerSlot, allocation);
+    const m = db.matchById(id);
+    if (m?.board_id) {
+      io.to(`board:${m.board_id}`).emit('board:state', {
+        board: db.boardById(m.board_id),
+        match: m,
+      });
+    }
+    broadcastState();
+    res.json(result);
+  } catch (e) {
+    res.status(400).json({ error: e.message });
+  }
+});
+
+// Cricket Full Board Karambol: bir visit kaydı — allocation: { marks: {target: count} }
+app.post('/api/matches/:id/karambol-throw', (req, res) => {
+  try {
+    const id = +req.params.id;
+    const { playerSlot, allocation } = req.body;
+    if (!allocation || typeof allocation !== 'object') return res.status(400).json({ error: 'allocation gerekli' });
+    const result = engine.recordKarambolVisit(id, playerSlot, allocation);
+    const m = db.matchById(id);
+    if (m?.board_id) {
+      io.to(`board:${m.board_id}`).emit('board:state', {
+        board: db.boardById(m.board_id),
+        match: m,
+      });
+    }
+    broadcastState();
+    res.json(result);
   } catch (e) {
     res.status(400).json({ error: e.message });
   }
@@ -439,6 +517,178 @@ io.on('connection', (socket) => {
       match: board.current_match_id ? db.matchById(board.current_match_id) : null,
     });
   });
+});
+
+// ─── Team Events ────────────────────────────────────────────────────────────
+
+// Tüm takım maçlarını listele
+app.get('/api/team-events', auth.requireAuth, (req, res) => {
+  const events = db.allTeamEvents(req.session.userId);
+  // her event için aşama özetini ekle
+  const out = events.map(ev => {
+    const phases = db.phasesForEvent(ev.id).map(ph => ({
+      ...ph,
+      matches: db.matchesForPhase(ph.id),
+    }));
+    return { ...ev, phases };
+  });
+  res.json(out);
+});
+
+// Yeni takım maçı oluştur
+app.post('/api/team-events', auth.requireAuth, (req, res) => {
+  const { name, team1_name, team2_name, phases } = req.body;
+  if (!name || !team1_name || !team2_name) {
+    return res.status(400).json({ error: 'name, team1_name, team2_name zorunlu' });
+  }
+  const ev = db.createTeamEvent({ user_id: req.session.userId, name, team1_name, team2_name });
+
+  // Varsayılan 3 aşamayı oluştur (disabled=0 ile gelebilir)
+  const defaultPhases = phases || [
+    { phase_type: 'singles', phase_order: 1, enabled: 1, point_value: 1,
+      match_count: 0, legs_to_win: 3, sets_to_win: 1, game_mode: '501' },
+    { phase_type: 'beer', phase_order: 2, enabled: 1, point_value: 1,
+      match_count: 1, legs_to_win: 1, sets_to_win: 1, game_mode: '1001' },
+    { phase_type: 'doubles', phase_order: 3, enabled: 0, point_value: 1,
+      match_count: 0, legs_to_win: 3, sets_to_win: 1, game_mode: '501' },
+  ];
+  for (const ph of defaultPhases) {
+    db.createTeamPhase({ ...ph, team_event_id: ev.id, user_id: req.session.userId });
+  }
+
+  const full = { ...ev, phases: db.phasesForEvent(ev.id).map(ph => ({ ...ph, matches: [] })) };
+  io.emit('team:update', full);
+  res.json(full);
+});
+
+// Tek takım maçı getir
+app.get('/api/team-events/:id', auth.requireAuth, (req, res) => {
+  const ev = db.teamEventById(+req.params.id);
+  if (!ev || ev.user_id !== req.session.userId) return res.status(404).json({ error: 'bulunamadı' });
+  const phases = db.phasesForEvent(ev.id).map(ph => ({ ...ph, matches: db.matchesForPhase(ph.id) }));
+  res.json({ ...ev, phases });
+});
+
+// Takım maçı güncelle (isim, statü vb.)
+app.patch('/api/team-events/:id', auth.requireAuth, (req, res) => {
+  const ev = db.teamEventById(+req.params.id);
+  if (!ev || ev.user_id !== req.session.userId) return res.status(404).json({ error: 'bulunamadı' });
+  db.updateTeamEvent(ev.id, req.body);
+  const updated = db.teamEventById(ev.id);
+  const phases = db.phasesForEvent(ev.id).map(ph => ({ ...ph, matches: db.matchesForPhase(ph.id) }));
+  io.emit('team:update', { ...updated, phases });
+  res.json({ ...updated, phases });
+});
+
+// Takım maçı sil
+app.delete('/api/team-events/:id', auth.requireAuth, (req, res) => {
+  const ev = db.teamEventById(+req.params.id);
+  if (!ev || ev.user_id !== req.session.userId) return res.status(404).json({ error: 'bulunamadı' });
+  db.deleteTeamEvent(ev.id);
+  io.emit('team:deleted', { id: ev.id });
+  res.json({ ok: true });
+});
+
+// Aşama güncelle (etkin/devre dışı, puan değeri, oyun modu vb.)
+app.patch('/api/team-phases/:id', auth.requireAuth, (req, res) => {
+  const ph = db.teamPhaseById(+req.params.id);
+  if (!ph) return res.status(404).json({ error: 'bulunamadı' });
+  const ev = db.teamEventById(ph.team_event_id);
+  if (!ev || ev.user_id !== req.session.userId) return res.status(403).json({ error: 'yetkisiz' });
+  db.updateTeamPhase(ph.id, req.body);
+  const updated = db.teamPhaseById(ph.id);
+  const phases = db.phasesForEvent(ev.id).map(p => ({ ...p, matches: db.matchesForPhase(p.id) }));
+  io.emit('team:update', { ...ev, phases });
+  res.json({ ...ev, phases });
+});
+
+// Aşamaya maç ekle
+app.post('/api/team-phases/:id/matches', auth.requireAuth, (req, res) => {
+  const ph = db.teamPhaseById(+req.params.id);
+  if (!ph) return res.status(404).json({ error: 'bulunamadı' });
+  const ev = db.teamEventById(ph.team_event_id);
+  if (!ev || ev.user_id !== req.session.userId) return res.status(403).json({ error: 'yetkisiz' });
+
+  const existing = db.matchesForPhase(ph.id);
+  const nextOrder = existing.length + 1;
+  const pm = db.createTeamPhaseMatch({
+    ...req.body,
+    team_phase_id: ph.id,
+    user_id: req.session.userId,
+    match_order: nextOrder,
+  });
+  // match_count güncelle
+  db.updateTeamPhase(ph.id, { match_count: nextOrder });
+
+  const phases = db.phasesForEvent(ev.id).map(p => ({ ...p, matches: db.matchesForPhase(p.id) }));
+  io.emit('team:update', { ...ev, phases });
+  res.json(pm);
+});
+
+// Toplu maç ekleme (liste ile)
+app.post('/api/team-phases/:id/matches/bulk', auth.requireAuth, (req, res) => {
+  const ph = db.teamPhaseById(+req.params.id);
+  if (!ph) return res.status(404).json({ error: 'bulunamadı' });
+  const ev = db.teamEventById(ph.team_event_id);
+  if (!ev || ev.user_id !== req.session.userId) return res.status(403).json({ error: 'yetkisiz' });
+
+  // Önce mevcut maçları sil, sonra yeniden ekle
+  const existing = db.matchesForPhase(ph.id);
+  for (const m of existing) db.deleteTeamPhaseMatch(m.id);
+
+  const matchList = req.body.matches || [];
+  for (let i = 0; i < matchList.length; i++) {
+    db.createTeamPhaseMatch({
+      ...matchList[i],
+      team_phase_id: ph.id,
+      user_id: req.session.userId,
+      match_order: i + 1,
+    });
+  }
+  db.updateTeamPhase(ph.id, { match_count: matchList.length });
+
+  const phases = db.phasesForEvent(ev.id).map(p => ({ ...p, matches: db.matchesForPhase(p.id) }));
+  io.emit('team:update', { ...ev, phases });
+  res.json({ ok: true, count: matchList.length });
+});
+
+// Bireysel maç sonucu güncelle
+app.patch('/api/team-phase-matches/:id', auth.requireAuth, (req, res) => {
+  const pm = db.teamPhaseMatchById(+req.params.id);
+  if (!pm) return res.status(404).json({ error: 'bulunamadı' });
+  const ph = db.teamPhaseById(pm.team_phase_id);
+  const ev = db.teamEventById(ph.team_event_id);
+  if (!ev || ev.user_id !== req.session.userId) return res.status(403).json({ error: 'yetkisiz' });
+
+  db.updateTeamPhaseMatch(pm.id, req.body);
+
+  // Sonuç girildiyse maç biter
+  if (req.body.winner_slot !== undefined) {
+    const status = req.body.winner_slot ? 'finished' : 'pending';
+    db.updateTeamPhaseMatch(pm.id, { status });
+  }
+
+  // Takım puanlarını yeniden hesapla
+  db.recalcTeamScores(ev.id);
+  const updatedEv = db.teamEventById(ev.id);
+  const phases = db.phasesForEvent(ev.id).map(p => ({ ...p, matches: db.matchesForPhase(p.id) }));
+  io.emit('team:update', { ...updatedEv, phases });
+  res.json({ ok: true });
+});
+
+// Bireysel maç sil
+app.delete('/api/team-phase-matches/:id', auth.requireAuth, (req, res) => {
+  const pm = db.teamPhaseMatchById(+req.params.id);
+  if (!pm) return res.status(404).json({ error: 'bulunamadı' });
+  const ph = db.teamPhaseById(pm.team_phase_id);
+  const ev = db.teamEventById(ph.team_event_id);
+  if (!ev || ev.user_id !== req.session.userId) return res.status(403).json({ error: 'yetkisiz' });
+  db.deleteTeamPhaseMatch(pm.id);
+  db.recalcTeamScores(ev.id);
+  const updatedEv = db.teamEventById(ev.id);
+  const phases = db.phasesForEvent(ev.id).map(p => ({ ...p, matches: db.matchesForPhase(p.id) }));
+  io.emit('team:update', { ...updatedEv, phases });
+  res.json({ ok: true });
 });
 
 // --- Start ---

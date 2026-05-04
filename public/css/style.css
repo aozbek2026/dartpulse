@@ -1094,6 +1094,215 @@ body.board-page #root.board-screen {
 }
 
 /* ========================================================
+   Cricket board ekranı
+   ======================================================== */
+
+/* Ana sarmalayıcı — board-screen içinde büyür */
+.cr-wrap {
+  flex: 1 1 0;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  gap: clamp(4px, 1vmin, 10px);
+  padding: clamp(4px, 1vmin, 10px);
+}
+
+/* Üst skor bandı: iki oyuncu yan yana */
+.cr-scores {
+  display: flex;
+  gap: clamp(4px, 1vmin, 8px);
+  flex: 0 0 auto;
+}
+
+.cr-score-col {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  background: #141723;
+  border: 2px solid #2a2e42;
+  border-radius: 8px;
+  padding: clamp(4px, 1.2vmin, 12px) clamp(6px, 1.5vmin, 16px);
+  transition: border-color 0.2s, background 0.2s;
+}
+.cr-score-col.cr-active {
+  border-color: var(--accent);
+  background: #1a1d2e;
+}
+
+.cr-name {
+  font-size: clamp(11px, 2.8vmin, 20px);
+  color: #a0aec0;
+  font-weight: 600;
+  text-align: center;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 100%;
+}
+.cr-score-col.cr-active .cr-name { color: #e2e8f0; }
+
+.cr-pts {
+  font-size: clamp(28px, 8vmin, 64px);
+  font-weight: 900;
+  color: #e2e8f0;
+  line-height: 1;
+}
+.cr-score-col.cr-active .cr-pts { color: var(--accent); }
+
+.cr-legs {
+  font-size: clamp(9px, 2vmin, 14px);
+  color: #718096;
+  margin-top: 2px;
+}
+
+/* Cricket tablo (sütun: marks-sol | sayı | marks-sağ) */
+.cr-table {
+  flex: 1 1 0;
+  width: 100%;
+  border-collapse: collapse;
+  table-layout: fixed;
+}
+
+.cr-table tbody { display: table-row-group; }
+
+.cr-row {
+  border-bottom: 1px solid #1e2236;
+  transition: background 0.15s;
+}
+.cr-row-done {
+  opacity: 0.38;
+}
+
+.cr-cell {
+  width: 38%;
+  text-align: center;
+  vertical-align: middle;
+  padding: clamp(2px, 0.7vmin, 6px) clamp(4px, 1vmin, 10px);
+  font-size: clamp(16px, 4.5vmin, 36px);
+  line-height: 1;
+}
+.cr-num {
+  width: 24%;
+  text-align: center;
+  vertical-align: middle;
+  font-size: clamp(13px, 3.5vmin, 26px);
+  font-weight: 700;
+  color: #cbd5e0;
+  position: relative;
+}
+
+/* Mark göstergeler */
+.cr-mark-empty { color: #3a3f58; font-size: 0.9em; }
+.cr-mark        { color: #718096; }
+.cr-mark.cr-mark-act { color: var(--accent); text-shadow: 0 0 8px var(--accent); }
+.cr-mark.cr-mark-closed { color: #48bb78; }
+
+/* Bekleyen işaret (visit gönderilmedi) */
+.cr-pending {
+  position: absolute;
+  top: 0; right: 2px;
+  font-size: clamp(9px, 2vmin, 14px);
+  color: #f6ad55;
+  font-weight: 900;
+}
+
+/* Girdi bölgesi: butonlar + aksiyon satırı */
+.cr-input {
+  flex: 0 0 auto;
+  display: flex;
+  flex-direction: column;
+  gap: clamp(4px, 1vmin, 8px);
+}
+
+.cr-btns {
+  display: grid;
+  grid-template-columns: repeat(7, 1fr);
+  gap: clamp(3px, 0.8vmin, 6px);
+}
+
+.cr-btn {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  background: #1a1d2e;
+  border: 2px solid #2a2e42;
+  border-radius: 8px;
+  padding: clamp(6px, 1.8vmin, 14px) clamp(2px, 0.5vmin, 6px);
+  cursor: pointer;
+  user-select: none;
+  -webkit-tap-highlight-color: transparent;
+  transition: background 0.12s, border-color 0.12s;
+  min-height: clamp(44px, 12vmin, 80px);
+}
+.cr-btn:active { background: #2a2e42; }
+
+.cr-btn.cr-btn-sel {
+  border-color: var(--accent);
+  background: #1f2240;
+}
+.cr-btn.cr-btn-ok {
+  border-color: #48bb78;
+  background: #1a2e20;
+  opacity: 0.7;
+  pointer-events: none;
+}
+
+.cr-btn-num {
+  font-size: clamp(13px, 3.2vmin, 24px);
+  font-weight: 700;
+  color: #e2e8f0;
+}
+.cr-btn.cr-btn-sel .cr-btn-num { color: var(--accent); }
+
+.cr-btn-mark {
+  font-size: clamp(11px, 2.6vmin, 20px);
+  color: var(--accent);
+  line-height: 1;
+}
+.cr-btn.cr-btn-ok .cr-btn-mark { color: #48bb78; }
+
+.cr-actions {
+  display: flex;
+  gap: clamp(4px, 1vmin, 8px);
+}
+
+/* FB Cezalı: dinamik grid (15 hedef → 2 satır) */
+.fb-btns {
+  grid-template-columns: repeat(8, 1fr); /* override JS inline */
+}
+
+/* Puan giriş satırı */
+.fb-score-row {
+  display: flex;
+  align-items: center;
+  gap: clamp(6px, 1.5vmin, 12px);
+  background: #141723;
+  border: 1px solid #2a2e42;
+  border-radius: 8px;
+  padding: clamp(4px, 1vmin, 8px) clamp(8px, 2vmin, 14px);
+}
+.fb-score-label {
+  font-size: clamp(11px, 2.6vmin, 18px);
+  color: #a0aec0;
+  font-weight: 600;
+  flex: 0 0 auto;
+}
+.fb-score-input {
+  flex: 1;
+  background: transparent;
+  border: none;
+  outline: none;
+  color: #f6c90e;
+  font-size: clamp(16px, 4vmin, 28px);
+  font-weight: 700;
+  text-align: right;
+  width: 100%;
+}
+.fb-score-input::placeholder { color: #3a3f58; }
+
+/* ========================================================
    Tablet board ekranı — her iki yön, tüm tablet boyutları
    ======================================================== */
 @media (max-width: 1100px) {

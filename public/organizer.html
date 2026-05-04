@@ -20,7 +20,8 @@
       <a href="#new-tournament" class="tab-link" data-tab="new-tournament">Yeni Turnuva</a>
       <a href="#tournaments" class="tab-link" data-tab="tournaments">Turnuvalar</a>
       <a href="#past-tournaments" class="tab-link" data-tab="past-tournaments">Geçmiş</a>
-      <a href="/viewer.html" target="_blank" style="margin-top: 1rem; color: var(--accent-2);">📺 İzleyici aç ↗</a>
+      <a href="/team.html" style="margin-top: 1rem; color: var(--accent-2);">🏆 Takım Maçı ↗</a>
+      <a href="/viewer.html" target="_blank" style="margin-top: 0.25rem; color: var(--accent-2);">📺 İzleyici aç ↗</a>
     </nav>
   </aside>
 
@@ -110,12 +111,20 @@
           </div>
           <div>
             <label>Oyun modu</label>
-            <select id="t-mode" style="width: 100%;">
+            <select id="t-mode" style="width: 100%;" onchange="onGameModeChange(this.value)">
               <option value="501">501 Double-out</option>
               <option value="701">701 Double-out</option>
               <option value="1001">1001 Double-out</option>
               <option value="cricket">Cricket</option>
+              <option value="cricket_fb_cezali">Cricket Full Board Cezalı</option>
+              <option value="cricket_fb_karambol">Cricket Full Board Karambol</option>
             </select>
+          </div>
+          <div id="fb-options" style="display:none;">
+            <label style="display:flex;align-items:center;gap:0.5rem;cursor:pointer;">
+              <input type="checkbox" id="t-include-low" checked />
+              10 ve 11 dahil edilsin
+            </label>
           </div>
           <div>
             <label>Takım modu</label>

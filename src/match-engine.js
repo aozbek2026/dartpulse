@@ -3,6 +3,114 @@ const db = require('./db');
 
 const START_SCORES = { '501': 501, '701': 701, '1001': 1001 };
 
+// ---- Cricket sabitleri ----
+const CRICKET_NUMBERS = [20, 19, 18, 17, 16, 15, 25];
+function initCricketState() {
+  const marks = {};
+  for (const n of CRICKET_NUMBERS) marks[n] = { p1: 0, p2: 0 };
+  return { marks, p1_score: 0, p2_score: 0 };
+}
+function parseCricketState(json) {
+  try { return json ? JSON.parse(json) : null; } catch { return null; }
+}
+
+// ---- Cricket Full Board Cezalı sabitleri ----
+// Hedefler: sayılar (10-20 + 25/Bull) + DOUBLE + TRIPLE + HOUSE
+// includeLow: 10 ve 11 dahil mi
+const FB_NUMBERS = [20, 19, 18, 17, 16, 15, 14, 13, 12, 25]; // 25 = Bull
+const FB_NUMBERS_LOW = [11, 10];                               // opsiyonel
+const FB_SPECIALS = ['D', 'T', 'H'];                           // Double, Triple, House
+
+function fbTargets(includeLow) {
+  const nums = includeLow ? [...FB_NUMBERS, ...FB_NUMBERS_LOW] : [...FB_NUMBERS];
+  return [...nums, ...FB_SPECIALS];
+}
+
+function initFBCezaliState(includeLow) {
+  const marks = {};
+  for (const t of fbTargets(includeLow)) marks[String(t)] = { p1: 0, p2: 0 };
+  return { marks, p1_score: 0, p2_score: 0, include_low: !!includeLow };
+}
+
+// allocation: { marks: { '20': 2, 'D': 1, ... }, score: 40 }
+function recordFBCezaliVisit(matchId, playerSlot, allocation) {
+  const match = db.matchById(matchId);
+  if (!match) throw new Error('Maç bulunamadı');
+  if (match.status !== 'live') throw new Error('Maç başlamadı');
+  if (playerSlot !== match.current_turn) throw new Error('Sıra diğer oyuncuda');
+
+  const pKey = `p${playerSlot}`;
+  const oppKey = playerSlot === 1 ? 'p2' : 'p1';
+
+  let state = parseCricketState(match.cricket_state_json) || initFBCezaliState(false);
+  const targets = fbTargets(state.include_low);
+
+  // Mark ekle
+  const marksAlloc = allocation.marks || {};
+  for (const [target, count] of Object.entries(marksAlloc)) {
+    if (!targets.map(String).includes(String(target))) continue;
+    const key = String(target);
+    if (!state.marks[key]) state.marks[key] = { p1: 0, p2: 0 };
+    const current = state.marks[key][pKey] || 0;
+    state.marks[key][pKey] = Math.min(3, current + (count || 0));
+  }
+
+  // Puan ekle (sadece rakip ilgili hedefi kapatmamışsa geçerli — honor system)
+  const addScore = Math.max(0, +(allocation.score) || 0);
+  if (addScore > 0) {
+    state[`${pKey}_score`] = (state[`${pKey}_score`] || 0) + addScore;
+  }
+
+  // Kazanma: tüm hedefler kapalı (>= 3 mark) VE skor >= rakip
+  const allClosed = targets.every(t => (state.marks[String(t)]?.[pKey] || 0) >= 3);
+  const myScore   = state[`${pKey}_score`] || 0;
+  const oppScore  = state[`${oppKey}_score`] || 0;
+  const won = allClosed && myScore >= oppScore;
+
+  db.updateMatch(matchId, { cricket_state_json: JSON.stringify(state) });
+
+  const result = { matchFinished: false, legFinished: false };
+
+  if (won) {
+    result.legFinished = true;
+    result.legSummary = {
+      winner_slot: playerSlot,
+      is_cricket: true,
+      p1: { total: state.p1_score, avg: 0 },
+      p2: { total: state.p2_score, avg: 0 },
+      checkout: null,
+    };
+    finishLeg(matchId, playerSlot);
+    const updated = db.matchById(matchId);
+    if (updated.status === 'finished') {
+      result.matchFinished = true;
+    } else {
+      // Yeni leg: state sıfırla (include_low koruyarak)
+      db.updateMatch(matchId, {
+        cricket_state_json: JSON.stringify(initFBCezaliState(state.include_low)),
+      });
+      result.legSummary.next_leg   = updated.current_leg;
+      result.legSummary.p1_legs    = updated.p1_legs;
+      result.legSummary.p2_legs    = updated.p2_legs;
+      result.legSummary.p1_sets    = updated.p1_sets;
+      result.legSummary.p2_sets    = updated.p2_sets;
+    }
+  } else {
+    // Sıra değiştir
+    const nextTurn = playerSlot === 1 ? 2 : 1;
+    const turnUpdate = { current_turn: nextTurn };
+    // Doubles sub_turn
+    const entry1 = match.entry1_id ? db.entryById(match.entry1_id) : null;
+    if (entry1 && entry1.player2_id) {
+      const subCol = `p${playerSlot}_sub_turn`;
+      turnUpdate[subCol] = (match[subCol] === 1) ? 2 : 1;
+    }
+    db.updateMatch(matchId, turnUpdate);
+  }
+
+  return result;
+}
+
 // Kullanıcı bir el (3 dart toplamı) girdiğinde çağrılır.
 // finishDarts: leg'i bitiren visit'te kaç ok atıldığı (1, 2 veya 3) — sadece checkout'ta anlamlı.
 // Sağlanmazsa varsayılan 3 (eski davranış). 3-ok ortalaması ve leg-başına-dart hesabı buna göre düzelir.
@@ -202,8 +310,10 @@ function finishLeg(matchId, winnerSlot) {
   update.current_leg = (match.current_leg || 1) + 1;
   update.starter_slot = newStarter;
   update.current_turn = newStarter;
-  update.p1_leg_score = startScore;
-  update.p2_leg_score = startScore;
+  if (startScore !== undefined) {
+    update.p1_leg_score = startScore;
+    update.p2_leg_score = startScore;
+  }
   // Doubles: yeni leg'de her takım player1'den başlar
   update.p1_sub_turn = 1;
   update.p2_sub_turn = 1;
@@ -211,44 +321,71 @@ function finishLeg(matchId, winnerSlot) {
   db.updateMatch(matchId, update);
 }
 
-function recordCricketThrow(match, playerSlot, score, tournament) {
-  // For cricket, score input represents points scored this turn (positive integer)
-  // Simplified: we just add points, first to reach target wins (configurable), or we use turns-based
-  // To keep it simple but functional: Cricket mode uses score as a running point total.
-  // A proper cricket needs per-number marks - out of scope for MVP.
-  // We'll store score as "points" and end leg when a player reaches config target (default 500).
-  const remCol = playerSlot === 1 ? 'p1_leg_score' : 'p2_leg_score';
-  const currentPoints = match[remCol] ?? 0;
-  const newPoints = currentPoints + score;
-  const target = 500;
+// Gerçek cricket visit kaydı: hits = {20: 2, 19: 1, ...}
+function recordCricketVisit(matchId, playerSlot, hits) {
+  const match = db.matchById(matchId);
+  if (!match) throw new Error('Maç bulunamadı');
+  if (match.status !== 'live') throw new Error('Maç başlamadı');
+  if (playerSlot !== match.current_turn) throw new Error('Sıra diğer oyuncuda');
 
-  db.addThrow({
-    match_id: match.id,
-    leg_index: match.current_leg,
-    set_index: match.current_set,
-    player_slot: playerSlot,
-    score,
-    remaining_after: newPoints,
-    bust: 0,
-    is_finish: newPoints >= target ? 1 : 0,
-  });
-  db.updateStats(match.id, playerSlot, {
-    total_score: score,
-    darts_thrown: 3,
-    turns: 1,
-  });
-  db.updateMatch(match.id, { [remCol]: newPoints });
+  const pKey = `p${playerSlot}`;
+  const oppKey = playerSlot === 1 ? 'p2' : 'p1';
 
-  const result = { matchFinished: false, legFinished: false, bust: false, isFinish: false };
-  if (newPoints >= target) {
-    result.legFinished = true;
-    result.isFinish = true;
-    finishLeg(match.id, playerSlot);
-    const updated = db.matchById(match.id);
-    if (updated.status === 'finished') result.matchFinished = true;
-  } else {
-    db.updateMatch(match.id, { current_turn: playerSlot === 1 ? 2 : 1 });
+  let state = parseCricketState(match.cricket_state_json) || initCricketState();
+  let scored = 0;
+
+  for (const [numStr, markCount] of Object.entries(hits)) {
+    const num = +numStr;
+    if (!CRICKET_NUMBERS.includes(num) || !markCount || markCount < 1) continue;
+
+    const myMarks = state.marks[num][pKey] || 0;
+    const oppMarks = state.marks[num][oppKey] || 0;
+    const newMarks = myMarks + markCount;
+    state.marks[num][pKey] = newMarks;
+
+    // Kapatıldıktan fazla atışlar → rakip kapatmamışsa puan
+    if (oppMarks < 3) {
+      const scoringMarks = Math.max(0, newMarks - 3) - Math.max(0, myMarks - 3);
+      scored += scoringMarks * num; // BULL (25) da 25 puan
+    }
   }
+
+  if (scored > 0) state[`${pKey}_score`] = (state[`${pKey}_score`] || 0) + scored;
+
+  // Kazanma: tüm sayılar kapalı VE skor >= rakip
+  const allClosed = CRICKET_NUMBERS.every(n => (state.marks[n][pKey] || 0) >= 3);
+  const myScore = state[`${pKey}_score`] || 0;
+  const oppScore = state[`${oppKey}_score`] || 0;
+  const won = allClosed && myScore >= oppScore;
+
+  db.updateMatch(matchId, { cricket_state_json: JSON.stringify(state) });
+
+  const result = { matchFinished: false, legFinished: false };
+
+  if (won) {
+    result.legFinished = true;
+    result.legSummary = {
+      winner_slot: playerSlot,
+      is_cricket: true,
+      p1: { total: state.p1_score, avg: 0, hi180: 0, hi140: 0, hi100: 0 },
+      p2: { total: state.p2_score, avg: 0, hi180: 0, hi140: 0, hi100: 0 },
+      checkout: null,
+    };
+    finishLeg(matchId, playerSlot);
+    const updated = db.matchById(matchId);
+    if (updated.status === 'finished') {
+      result.matchFinished = true;
+    } else {
+      // Yeni leg: cricket state sıfırla
+      db.updateMatch(matchId, { cricket_state_json: JSON.stringify(initCricketState()) });
+      result.legSummary.next_leg = updated.current_leg;
+      result.legSummary.p1_legs = updated.p1_legs;
+      result.legSummary.p2_legs = updated.p2_legs;
+    }
+  } else {
+    db.updateMatch(matchId, { current_turn: playerSlot === 1 ? 2 : 1 });
+  }
+
   return result;
 }
 
@@ -301,4 +438,80 @@ function average(stats) {
   return (stats.total_score / stats.darts_thrown) * 3;
 }
 
-module.exports = { recordThrow, undoLastThrow, average };
+
+// ---- Cricket Full Board Karambol ----
+// Cezalı ile aynı hedefler, fark: puan yok, tüm tahtanın D/T/H'ı geçerli (honor system),
+// kazanma = tüm hedefleri ilk kapatan (skor karşılaştırması yok).
+function initKarambolState(includeLow) {
+  const marks = {};
+  for (const t of fbTargets(includeLow)) marks[String(t)] = { p1: 0, p2: 0 };
+  return { marks, include_low: !!includeLow };
+}
+
+// allocation: { marks: { 'D': 1, '20': 2, ... } }  — score alanı yok
+function recordKarambolVisit(matchId, playerSlot, allocation) {
+  const match = db.matchById(matchId);
+  if (!match) throw new Error('Maç bulunamadı');
+  if (match.status !== 'live') throw new Error('Maç başlamadı');
+  if (playerSlot !== match.current_turn) throw new Error('Sıra diğer oyuncuda');
+
+  const pKey = `p${playerSlot}`;
+
+  let state = parseCricketState(match.cricket_state_json) || initKarambolState(false);
+  const targets = fbTargets(state.include_low);
+
+  // Mark ekle
+  const marksAlloc = allocation.marks || {};
+  for (const [target, count] of Object.entries(marksAlloc)) {
+    if (!targets.map(String).includes(String(target))) continue;
+    const key = String(target);
+    if (!state.marks[key]) state.marks[key] = { p1: 0, p2: 0 };
+    const current = state.marks[key][pKey] || 0;
+    state.marks[key][pKey] = Math.min(3, current + (count || 0));
+  }
+
+  // Kazanma: tüm hedefler kapalı — skor karşılaştırması yok
+  const allClosed = targets.every(t => (state.marks[String(t)]?.[pKey] || 0) >= 3);
+
+  db.updateMatch(matchId, { cricket_state_json: JSON.stringify(state) });
+
+  const result = { matchFinished: false, legFinished: false };
+
+  if (allClosed) {
+    result.legFinished = true;
+    result.legSummary = {
+      winner_slot: playerSlot,
+      is_cricket: true,
+      p1: { total: 0, avg: 0 },
+      p2: { total: 0, avg: 0 },
+      checkout: null,
+    };
+    finishLeg(matchId, playerSlot);
+    const updated = db.matchById(matchId);
+    if (updated.status === 'finished') {
+      result.matchFinished = true;
+    } else {
+      db.updateMatch(matchId, {
+        cricket_state_json: JSON.stringify(initKarambolState(state.include_low)),
+      });
+      result.legSummary.next_leg = updated.current_leg;
+      result.legSummary.p1_legs = updated.p1_legs;
+      result.legSummary.p2_legs = updated.p2_legs;
+      result.legSummary.p1_sets = updated.p1_sets;
+      result.legSummary.p2_sets = updated.p2_sets;
+    }
+  } else {
+    const nextTurn = playerSlot === 1 ? 2 : 1;
+    const turnUpdate = { current_turn: nextTurn };
+    const entry1 = match.entry1_id ? db.entryById(match.entry1_id) : null;
+    if (entry1 && entry1.player2_id) {
+      const subCol = `p${playerSlot}_sub_turn`;
+      turnUpdate[subCol] = (match[subCol] === 1) ? 2 : 1;
+    }
+    db.updateMatch(matchId, turnUpdate);
+  }
+
+  return result;
+}
+
+module.exports = { recordThrow, undoLastThrow, average, recordCricketVisit, initCricketState, recordFBCezaliVisit, initFBCezaliState, fbTargets, recordKarambolVisit, initKarambolState };

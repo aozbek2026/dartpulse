@@ -128,6 +128,56 @@ function init() {
       applied_at TEXT DEFAULT CURRENT_TIMESTAMP
     );
 
+    CREATE TABLE IF NOT EXISTS team_events (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      user_id INTEGER,
+      name TEXT NOT NULL,
+      team1_name TEXT NOT NULL,
+      team2_name TEXT NOT NULL,
+      status TEXT DEFAULT 'draft',     -- draft | running | finished
+      team1_score REAL DEFAULT 0,
+      team2_score REAL DEFAULT 0,
+      created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+      FOREIGN KEY(user_id) REFERENCES users(id) ON DELETE CASCADE
+    );
+
+    CREATE TABLE IF NOT EXISTS team_phases (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      team_event_id INTEGER NOT NULL,
+      user_id INTEGER,
+      phase_type TEXT NOT NULL,         -- 'singles' | 'beer' | 'doubles'
+      phase_order INTEGER NOT NULL,     -- 1, 2, 3
+      enabled INTEGER DEFAULT 1,
+      point_value REAL DEFAULT 1,       -- her maç galibi kazanır (beer'de toplam)
+      match_count INTEGER DEFAULT 0,    -- kaç 1v1 / çift eşleşmesi
+      legs_to_win INTEGER DEFAULT 3,
+      sets_to_win INTEGER DEFAULT 1,
+      game_mode TEXT DEFAULT '501',
+      game_config_json TEXT,
+      status TEXT DEFAULT 'pending',    -- pending | running | finished
+      FOREIGN KEY(team_event_id) REFERENCES team_events(id) ON DELETE CASCADE
+    );
+
+    CREATE TABLE IF NOT EXISTS team_phase_matches (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      team_phase_id INTEGER NOT NULL,
+      user_id INTEGER,
+      match_order INTEGER NOT NULL,
+      team1_player TEXT,                -- serbest metin (oyuncu adı)
+      team2_player TEXT,
+      game_mode TEXT DEFAULT '501',
+      legs_to_win INTEGER DEFAULT 3,
+      sets_to_win INTEGER DEFAULT 1,
+      game_config_json TEXT,
+      winner_slot INTEGER,              -- 1 | 2 | null
+      team1_legs INTEGER DEFAULT 0,
+      team2_legs INTEGER DEFAULT 0,
+      walkover INTEGER DEFAULT 0,       -- 1 = hükmen
+      status TEXT DEFAULT 'pending',    -- pending | live | finished
+      match_id INTEGER,                 -- board maçına bağlı ise FK
+      FOREIGN KEY(team_phase_id) REFERENCES team_phases(id) ON DELETE CASCADE
+    );
+
     CREATE TABLE IF NOT EXISTS match_stats (
       match_id INTEGER NOT NULL,
       player_slot INTEGER NOT NULL,
@@ -631,6 +681,124 @@ function walkoverMatch(matchId, winnerSlot) {
   return db.prepare('SELECT * FROM matches WHERE id = ?').get(matchId);
 }
 
+// --- Team Events ---
+function createTeamEvent(data) {
+  const info = db.prepare(`
+    INSERT INTO team_events (user_id, name, team1_name, team2_name)
+    VALUES (?, ?, ?, ?)
+  `).run(data.user_id || null, data.name, data.team1_name, data.team2_name);
+  return db.prepare('SELECT * FROM team_events WHERE id = ?').get(info.lastInsertRowid);
+}
+function allTeamEvents(userId = null) {
+  if (userId == null) return db.prepare('SELECT * FROM team_events ORDER BY id DESC').all();
+  return db.prepare('SELECT * FROM team_events WHERE user_id = ? ORDER BY id DESC').all(userId);
+}
+function teamEventById(id) {
+  return db.prepare('SELECT * FROM team_events WHERE id = ?').get(id);
+}
+function updateTeamEvent(id, fields) {
+  const allowed = ['name', 'team1_name', 'team2_name', 'status', 'team1_score', 'team2_score'];
+  const keys = Object.keys(fields).filter(k => allowed.includes(k));
+  if (!keys.length) return;
+  const sql = `UPDATE team_events SET ${keys.map(k => `${k} = ?`).join(', ')} WHERE id = ?`;
+  db.prepare(sql).run(...keys.map(k => fields[k]), id);
+}
+function deleteTeamEvent(id) {
+  db.prepare('DELETE FROM team_events WHERE id = ?').run(id);
+}
+
+// --- Team Phases ---
+function createTeamPhase(data) {
+  const info = db.prepare(`
+    INSERT INTO team_phases
+    (team_event_id, user_id, phase_type, phase_order, enabled, point_value,
+     match_count, legs_to_win, sets_to_win, game_mode, game_config_json)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+  `).run(
+    data.team_event_id, data.user_id || null,
+    data.phase_type, data.phase_order,
+    data.enabled !== undefined ? data.enabled : 1,
+    data.point_value !== undefined ? data.point_value : 1,
+    data.match_count || 0,
+    data.legs_to_win || 3,
+    data.sets_to_win || 1,
+    data.game_mode || '501',
+    data.game_config_json || null
+  );
+  return db.prepare('SELECT * FROM team_phases WHERE id = ?').get(info.lastInsertRowid);
+}
+function phasesForEvent(teamEventId) {
+  return db.prepare('SELECT * FROM team_phases WHERE team_event_id = ? ORDER BY phase_order').all(teamEventId);
+}
+function teamPhaseById(id) {
+  return db.prepare('SELECT * FROM team_phases WHERE id = ?').get(id);
+}
+function updateTeamPhase(id, fields) {
+  const allowed = ['enabled', 'point_value', 'match_count', 'legs_to_win', 'sets_to_win',
+                   'game_mode', 'game_config_json', 'status'];
+  const keys = Object.keys(fields).filter(k => allowed.includes(k));
+  if (!keys.length) return;
+  const sql = `UPDATE team_phases SET ${keys.map(k => `${k} = ?`).join(', ')} WHERE id = ?`;
+  db.prepare(sql).run(...keys.map(k => fields[k]), id);
+}
+
+// --- Team Phase Matches ---
+function createTeamPhaseMatch(data) {
+  const info = db.prepare(`
+    INSERT INTO team_phase_matches
+    (team_phase_id, user_id, match_order, team1_player, team2_player,
+     game_mode, legs_to_win, sets_to_win, game_config_json, walkover)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+  `).run(
+    data.team_phase_id, data.user_id || null,
+    data.match_order, data.team1_player || null, data.team2_player || null,
+    data.game_mode || '501',
+    data.legs_to_win || 3,
+    data.sets_to_win || 1,
+    data.game_config_json || null,
+    data.walkover ? 1 : 0
+  );
+  return db.prepare('SELECT * FROM team_phase_matches WHERE id = ?').get(info.lastInsertRowid);
+}
+function matchesForPhase(teamPhaseId) {
+  return db.prepare(
+    'SELECT * FROM team_phase_matches WHERE team_phase_id = ? ORDER BY match_order'
+  ).all(teamPhaseId);
+}
+function teamPhaseMatchById(id) {
+  return db.prepare('SELECT * FROM team_phase_matches WHERE id = ?').get(id);
+}
+function updateTeamPhaseMatch(id, fields) {
+  const allowed = ['team1_player', 'team2_player', 'game_mode', 'legs_to_win', 'sets_to_win',
+                   'game_config_json', 'winner_slot', 'team1_legs', 'team2_legs',
+                   'walkover', 'status', 'match_id'];
+  const keys = Object.keys(fields).filter(k => allowed.includes(k));
+  if (!keys.length) return;
+  const sql = `UPDATE team_phase_matches SET ${keys.map(k => `${k} = ?`).join(', ')} WHERE id = ?`;
+  db.prepare(sql).run(...keys.map(k => fields[k]), id);
+}
+function deleteTeamPhaseMatch(id) {
+  db.prepare('DELETE FROM team_phase_matches WHERE id = ?').run(id);
+}
+
+// Takım maçı puanlarını yeniden hesapla (tüm bitmiş phase maçlarından)
+function recalcTeamScores(teamEventId) {
+  const phases = phasesForEvent(teamEventId);
+  let t1 = 0, t2 = 0;
+  for (const ph of phases) {
+    if (!ph.enabled) continue;
+    const phMatches = matchesForPhase(ph.id);
+    for (const pm of phMatches) {
+      if (pm.status === 'finished' && pm.winner_slot) {
+        if (pm.winner_slot === 1) t1 += ph.point_value;
+        else t2 += ph.point_value;
+      }
+    }
+  }
+  updateTeamEvent(teamEventId, { team1_score: t1, team2_score: t2 });
+  return { team1_score: t1, team2_score: t2 };
+}
+
 // Turnuva bitince board'ları serbest bırak (veri silmeden)
 function clearUserBoards(userId) {
   if (!userId) return;
@@ -652,4 +820,8 @@ module.exports = {
   addThrow, throwsForMatch, lastThrow, deleteThrow,
   getStats, updateStats, statsForMatch, tournamentPlayerReport,
   resetAll,
+  createTeamEvent, allTeamEvents, teamEventById, updateTeamEvent, deleteTeamEvent,
+  createTeamPhase, phasesForEvent, teamPhaseById, updateTeamPhase,
+  createTeamPhaseMatch, matchesForPhase, teamPhaseMatchById, updateTeamPhaseMatch,
+  deleteTeamPhaseMatch, recalcTeamScores,
 };

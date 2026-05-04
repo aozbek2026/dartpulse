@@ -112,6 +112,63 @@ Server `server.js` içinde, client tarafları `board.js`/`viewer.js`/`tv.js`/`or
 ### 7. JSON config saklama
 Şema değişikliği gerektirmeyen ek ayarlar `stages.config_json` (TEXT, JSON parse) içinde. Örnek: `round_overrides`. Yeni opsiyonel ayarları buraya ekle, kolon açma.
 
+## Oyun modları
+
+### Mevcut (uygulanmış)
+- **501 / 701 / 1001**: Standart X01. Double'la bitirme zorunlu. `game_mode` değerleri: `'501'`, `'701'`, `'1001'`.
+- **Cricket**: Klasik cricket. Hedefler: 15, 16, 17, 18, 19, 20, Bull (25). Her hedef 3 mark'ta kapanır. Rakip açıkken puan yazılır. Tüm hedefler kapalı + skor ≥ rakip → kazanır.
+
+### Planlanmış (henüz uygulanmamış)
+
+#### Cricket Full Board Cezalı
+Standart cricket'in genişletilmiş versiyonu. Hedefler: 10-20, Bull, DOUBLE, TRIPLE, HOUSE (isteğe göre 10-11 çıkarılabilir). Her dart'ın nereye yazılacağını oyuncu seçer:
+- Single N → N'e 1 mark
+- Double N → N'e 2 mark **veya** DOUBLE hedefine 1 mark **veya** puan (2×N)
+- Triple N → N'e 3 mark **veya** TRIPLE hedefine 1 mark **veya** puan (3×N)
+- Double Bull (50) → Bull'a 1 mark **veya** DOUBLE'a 1 mark
+- HOUSE → 3 dart aynı segmentte ise (double/triple dahil) HOUSE'a 1 mark **veya** 3 dartın toplam puanı
+- Puan yazma: hedef kapalıysa ve rakip açıksa, o atışın değeri rakibe karşı yazılır
+- Kazanma: tüm hedefler kapalı + skor ≥ rakip
+
+#### Cricket Full Board Karambol
+Aynı hedef seti ama puan yazma yok. Fark: tahtanın tamamı geçerli (T7 → TRIPLE, D3 → DOUBLE, küçük sayı segmentleri HOUSE için geçerli). Kazanma: tüm hedefleri ilk kapatan kazanır.
+
+**UI notu:** Her iki Full Board modu, dart dart giriş + allocation seçimi gerektiriyor (visit toplamı yetmez). Standart cricket UI'ından farklı ekran tasarımı gerekecek.
+
+**Doubles desteği:** Tüm oyun modları (501/701/1001, Cricket, Full Board Cezalı, Karambol) iki kişilik takımlar halinde oynanabilir. Mevcut doubles altyapısı (p1_sub_turn / p2_sub_turn, leg başı oyuncu seçimi) cricket modlarına da uygulanacak.
+
+
+## Takım Maçı / Lig formatı (planlanmış, henüz uygulanmamış)
+
+Ana sayfada ayrı bir "Takım Maçı" bölümü olacak. Mevcut bireysel turnuva sisteminden bağımsız.
+
+Bir takım maçı **3 aşamadan** oluşur. Her aşama opsiyoneldir (organizatör hangilerinin oynanacağını seçer). Her aşamaya puan değeri atanır (0 = sadece eğlence için). En çok toplam puan alan takım kazanır.
+
+### Aşama 1 — Tekli Maçlar
+- Her takımdan oyuncular 1v1 karşılaşır, sıra kaptanlar tarafından belirlenir
+- Her maç için oyun modu seçilebilir (default 501 DO), leg sayısı seçilebilir
+- Eksik oyuncu → "Rakip Yok" → hükmen galibiyet (Bo5 → 3-0)
+- Her maç galibi X puan alır (aşama başında belirlenir)
+
+### Aşama 2 — 1001 Maçı (Bira Maçı)
+- Takım bazlı X01: tüm oyuncular ortak 1001 skorundan düşürür
+- Sırayla her oyuncu 3 ok atar, sıranın arkasına geçer (döngüsel)
+- Oyuncu sayıları iki takımda eşit olmalı
+- Default tek leg, leg sayısı seçilebilir
+- Kazanan takıma X puan (0 olabilir — sadece eğlence)
+
+### Aşama 3 — Eşli Maçlar
+- Kaptanlar 2 kişilik çiftler oluşturur, sırayla eşleştirilir
+- Her maç için oyun modu ve leg sayısı seçilebilir
+- Her maç galibi X puan alır
+
+### Genel
+- Sezona yayılan organizasyon: hafta hafta iki takım karşılaşıyor
+- Genel sezon tablosu: puan, galibiyet, mağlubiyet (ileride)
+- Bracket/playoff aşaması opsiyonel (ileride)
+- Takım isimleri girilecek
+- Bir organizatör aynı anda birden fazla takım maçı yönetebilir (örn. aynı mekanda 4 takımın eş zamanlı maçları). Liste görünümünde her aktif takım maçı ayrı kart olarak gösterilir.
+
 ## Tamamlanmış major özellikler
 
 Görev numaralarıyla birlikte (TaskList sisteminde): #1-#46. Önemli olanlar:

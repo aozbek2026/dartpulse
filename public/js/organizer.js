@@ -556,6 +556,15 @@ function dragEnd() {
   });
 }
 
+function onGameModeChange(val) {
+  const fbOpts = document.getElementById('fb-options');
+  if (fbOpts) fbOpts.style.display = (val === 'cricket_fb_cezali' || val === 'cricket_fb_karambol') ? '' : 'none';
+}
+
+function modeLabel(mode) {
+  return { '501': '501', '701': '701', '1001': '1001', cricket: 'Cricket', cricket_fb_cezali: 'Full Board Cezalı', cricket_fb_karambol: 'Full Board Karambol' }[mode] || mode;
+}
+
 // ---- Create tournament ----
 async function createTournament() {
   const name = document.getElementById('t-name').value.trim();
@@ -569,8 +578,15 @@ async function createTournament() {
   const validEntries = entriesDraft.filter(e => e.player1_id && (team_mode === 'singles' || e.player2_id));
   if (validEntries.length < 2) return toast('En az 2 geçerli katılımcı gerekli');
 
+  let game_config_json = null;
+  if (game_mode === 'cricket_fb_cezali' || game_mode === 'cricket_fb_karambol') {
+    const includeLow = document.getElementById('t-include-low')?.checked !== false;
+    game_config_json = JSON.stringify({ include_low: includeLow });
+  }
+
   const body = {
     name, game_mode, team_mode, legs_to_win, sets_to_win,
+    config_json: game_config_json,
     entries: validEntries,
     stages: stagesDraft,
   };
@@ -643,6 +659,8 @@ function showTournamentSettings(id) {
         <option value="701" ${t.game_mode === '701' ? 'selected' : ''}>701</option>
         <option value="1001" ${t.game_mode === '1001' ? 'selected' : ''}>1001</option>
         <option value="cricket" ${t.game_mode === 'cricket' ? 'selected' : ''}>Cricket</option>
+        <option value="cricket_fb_cezali" ${t.game_mode === 'cricket_fb_cezali' ? 'selected' : ''}>Cricket Full Board Cezalı</option>
+        <option value="cricket_fb_karambol" ${t.game_mode === 'cricket_fb_karambol' ? 'selected' : ''}>Cricket Full Board Karambol</option>
       </select>
 
       <div style="display:grid;grid-template-columns:1fr 1fr;gap:0.75rem;margin-bottom:1.25rem;">

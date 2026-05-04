@@ -11,6 +11,7 @@ let currentBoard = null;
 let currentInput = '';
 let allBoards = [];
 let allTournaments = [];
+let cricketVisit = {};          // {20: 2, 19: 1, ...} — aktif visit girişi
 let selectedStarter = null;    // 1 veya 2 — hangi takım başlıyor
 let selectedSubStarter1 = null; // 1 veya 2 — takım 1'de kim başlıyor (doubles)
 let selectedSubStarter2 = null; // 1 veya 2 — takım 2'de kim başlıyor (doubles)
@@ -317,6 +318,9 @@ async function changeScorer() {
 // ---- Live ekran (status === 'live') ----
 function renderMatch() {
   const m = currentMatch;
+  if (m.game_mode === 'cricket') return renderCricketMatch(m);
+  if (m.game_mode === 'cricket_fb_cezali') return renderFBCezaliMatch(m);
+  if (m.game_mode === 'cricket_fb_karambol') return renderKarambolMatch(m);
   const startScore = getStartScore(m);
   const rem1 = m.p1_leg_score ?? startScore;
   const rem2 = m.p2_leg_score ?? startScore;
@@ -468,6 +472,436 @@ function renderPlayer(name, remaining, legs, sets, active, m, showSets) {
       </div>
     </div>
   `;
+}
+
+// ---- Cricket ekranı ----
+const CRICKET_NUMBERS = [20, 19, 18, 17, 16, 15, 25];
+
+function cricketMarksHtml(count, active) {
+  if (count <= 0) return '<span class="cr-mark-empty">·</span>';
+  if (count === 1) return `<span class="cr-mark${active ? ' cr-mark-act' : ''}">/</span>`;
+  if (count === 2) return `<span class="cr-mark${active ? ' cr-mark-act' : ''}">╳</span>`;
+  return `<span class="cr-mark cr-mark-closed">⊗</span>`;
+}
+
+function renderCricketMatch(m) {
+  const e1 = entryLabel(m.entry1);
+  const e2 = entryLabel(m.entry2);
+  const isTurn1 = m.current_turn === 1;
+  const boardName = isReadonly ? '👁 Canlı İzleme' : currentBoard?.name || '';
+  const headerRight = isReadonly
+    ? `<button onclick="window.close()" class="btn secondary">Kapat</button>`
+    : `<a href="/board.html" class="btn secondary">Board değiştir</a>`;
+
+  let state;
+  try { state = m.cricket_state_json ? JSON.parse(m.cricket_state_json) : null; } catch { state = null; }
+  if (!state) state = { marks: Object.fromEntries(CRICKET_NUMBERS.map(n => [n, {p1:0,p2:0}])), p1_score:0, p2_score:0 };
+
+  const pKey = isTurn1 ? 'p1' : 'p2';
+
+  const rows = CRICKET_NUMBERS.map(n => {
+    const p1m = state.marks[n]?.p1 || 0;
+    const p2m = state.marks[n]?.p2 || 0;
+    const bothClosed = p1m >= 3 && p2m >= 3;
+    const vHits = cricketVisit[n] || 0;
+    const numLabel = n === 25 ? 'BULL' : n;
+    return `
+      <tr class="cr-row${bothClosed ? ' cr-row-done' : ''}">
+        <td class="cr-cell cr-left">${cricketMarksHtml(p1m, isTurn1)}</td>
+        <td class="cr-num">
+          <span>${numLabel}</span>
+          ${!isReadonly && vHits > 0 ? `<span class="cr-pending">${vHits === 1 ? '/' : vHits === 2 ? '╳' : '⊗'}</span>` : ''}
+        </td>
+        <td class="cr-cell cr-right">${cricketMarksHtml(p2m, !isTurn1)}</td>
+      </tr>
+    `;
+  }).join('');
+
+  const inputButtons = isReadonly ? '' : CRICKET_NUMBERS.map(n => {
+    const myMarks = state.marks[n]?.[pKey] || 0;
+    const vHits = cricketVisit[n] || 0;
+    const numLabel = n === 25 ? 'BULL' : n;
+    const isClosed = myMarks >= 3;
+    return `
+      <button class="cr-btn${vHits > 0 ? ' cr-btn-sel' : ''}${isClosed ? ' cr-btn-ok' : ''}"
+        onclick="cricketToggle(${n})">
+        <span class="cr-btn-num">${numLabel}</span>
+        ${vHits > 0 ? `<span class="cr-btn-mark">${vHits === 1 ? '/' : vHits === 2 ? '╳' : '⊗'}</span>` : ''}
+        ${isClosed ? '<span class="cr-btn-mark">⊗</span>' : ''}
+      </button>
+    `;
+  }).join('');
+
+  const hasInput = Object.keys(cricketVisit).length > 0;
+
+  root.innerHTML = `
+    <div class="board-header">
+      <div>
+        <div class="board-name">${boardName}</div>
+        <div class="match-info">
+          ${m.round_label || ''} · Leg ${m.current_leg} ·
+          Sıra: <strong>${isTurn1 ? e1 : e2}</strong>
+        </div>
+      </div>
+      ${headerRight}
+    </div>
+
+    <div class="cr-wrap">
+      <div class="cr-scores">
+        <div class="cr-score-col${isTurn1 ? ' cr-active' : ''}">
+          <div class="cr-name">${e1}</div>
+          <div class="cr-pts">${state.p1_score || 0}</div>
+          <div class="cr-legs">${m.p1_legs || 0} leg</div>
+        </div>
+        <div class="cr-score-col${!isTurn1 ? ' cr-active' : ''}">
+          <div class="cr-name">${e2}</div>
+          <div class="cr-pts">${state.p2_score || 0}</div>
+          <div class="cr-legs">${m.p2_legs || 0} leg</div>
+        </div>
+      </div>
+
+      <table class="cr-table">
+        <tbody>${rows}</tbody>
+      </table>
+
+      ${isReadonly ? '' : `
+        <div class="cr-input">
+          <div class="cr-btns">${inputButtons}</div>
+          <div class="cr-actions">
+            <button class="btn secondary" onclick="cricketClear()" style="flex:1;">Temizle</button>
+            <button class="btn${hasInput ? '' : ' secondary'}" onclick="submitCricketVisit()"
+              style="flex:2; ${hasInput ? 'background:var(--accent);color:#000;font-weight:800;' : 'opacity:0.45;'}">
+              Enter
+            </button>
+          </div>
+        </div>
+      `}
+    </div>
+  `;
+}
+
+function cricketToggle(num) {
+  const cur = cricketVisit[num] || 0;
+  const next = (cur + 1) % 4;
+  if (next === 0) delete cricketVisit[num];
+  else cricketVisit[num] = next;
+  renderMatch();
+}
+
+function cricketClear() {
+  cricketVisit = {};
+  renderMatch();
+}
+
+async function submitCricketVisit() {
+  if (!currentMatch) return;
+  if (!Object.keys(cricketVisit).length) return toast('Vurulan sayıları seçin');
+  const slot = currentMatch.current_turn;
+  const res = await api.post(`/api/matches/${currentMatch.id}/cricket-throw`, {
+    playerSlot: slot,
+    hits: cricketVisit,
+  });
+  if (res.error) return toast('Hata: ' + res.error);
+  cricketVisit = {};
+  if (res.legFinished && !res.matchFinished && res.legSummary) {
+    await showLegSummary(res.legSummary);
+  }
+  if (res.matchFinished) toast('Maç tamamlandı!');
+}
+
+
+// ---- Cricket Full Board Cezalı ekranı ----
+const FB_TARGETS_ALL  = ['20','19','18','17','16','15','14','13','12','25','11','10','D','T','H'];
+const FB_TARGET_LABEL = { '25':'Bull', 'D':'Double', 'T':'Triple', 'H':'House' };
+let fbVisit = {}; // { target: markCount }
+let fbScore = 0;
+
+function fbTargetLabel(t) { return FB_TARGET_LABEL[t] || t; }
+
+function renderFBCezaliMatch(m) {
+  const e1 = entryLabel(m.entry1);
+  const e2 = entryLabel(m.entry2);
+  const isTurn1 = m.current_turn === 1;
+  const boardName = isReadonly ? '👁 Canlı İzleme' : currentBoard?.name || '';
+  const headerRight = isReadonly
+    ? `<button onclick="window.close()" class="btn secondary">Kapat</button>`
+    : `<a href="/board.html" class="btn secondary">Board değiştir</a>`;
+
+  let state;
+  try { state = m.cricket_state_json ? JSON.parse(m.cricket_state_json) : null; } catch { state = null; }
+  if (!state) state = { marks: {}, p1_score: 0, p2_score: 0, include_low: true };
+
+  const activeTargets = FB_TARGETS_ALL.filter(t => {
+    if ((t === '10' || t === '11') && !state.include_low) return false;
+    return true;
+  });
+
+  const pKey = isTurn1 ? 'p1' : 'p2';
+
+  const rows = activeTargets.map(t => {
+    const p1m = state.marks[t]?.p1 || 0;
+    const p2m = state.marks[t]?.p2 || 0;
+    const bothClosed = p1m >= 3 && p2m >= 3;
+    const label = fbTargetLabel(t);
+    return `
+      <tr class="cr-row${bothClosed ? ' cr-row-done' : ''}">
+        <td class="cr-cell cr-left">${cricketMarksHtml(p1m, isTurn1)}</td>
+        <td class="cr-num"><span>${label}</span></td>
+        <td class="cr-cell cr-right">${cricketMarksHtml(p2m, !isTurn1)}</td>
+      </tr>`;
+  }).join('');
+
+  const inputBtns = isReadonly ? '' : activeTargets.map(t => {
+    const myMarks = state.marks[t]?.[pKey] || 0;
+    const vHits   = fbVisit[t] || 0;
+    const isClosed = myMarks >= 3;
+    const label    = fbTargetLabel(t);
+    return `
+      <button class="cr-btn${vHits > 0 ? ' cr-btn-sel' : ''}${isClosed ? ' cr-btn-ok' : ''}"
+        onclick="fbToggle('${t}')">
+        <span class="cr-btn-num">${label}</span>
+        ${vHits > 0 ? `<span class="cr-btn-mark">${vHits === 1 ? '/' : vHits === 2 ? '╳' : '⊗'}</span>` : ''}
+        ${isClosed && !vHits ? '<span class="cr-btn-mark">⊗</span>' : ''}
+      </button>`;
+  }).join('');
+
+  const hasInput = Object.values(fbVisit).some(v => v > 0) || fbScore > 0;
+  const colCount = activeTargets.length <= 12 ? activeTargets.length : Math.ceil(activeTargets.length / 2);
+
+  root.innerHTML = `
+    <div class="board-header">
+      <div>
+        <div class="board-name">${boardName}</div>
+        <div class="match-info">
+          ${m.round_label || ''} · Leg ${m.current_leg} ·
+          Sıra: <strong>${isTurn1 ? e1 : e2}</strong>
+        </div>
+      </div>
+      ${headerRight}
+    </div>
+
+    <div class="cr-wrap">
+      <div class="cr-scores">
+        <div class="cr-score-col${isTurn1 ? ' cr-active' : ''}">
+          <div class="cr-name">${e1}</div>
+          <div class="cr-pts">${state.p1_score || 0}</div>
+          <div class="cr-legs">${m.p1_legs || 0} leg</div>
+        </div>
+        <div class="cr-score-col${!isTurn1 ? ' cr-active' : ''}">
+          <div class="cr-name">${e2}</div>
+          <div class="cr-pts">${state.p2_score || 0}</div>
+          <div class="cr-legs">${m.p2_legs || 0} leg</div>
+        </div>
+      </div>
+
+      <table class="cr-table">
+        <tbody>${rows}</tbody>
+      </table>
+
+      ${isReadonly ? '' : `
+        <div class="cr-input">
+          <div class="cr-btns fb-btns" style="grid-template-columns: repeat(${colCount}, 1fr);">
+            ${inputBtns}
+          </div>
+          <div class="fb-score-row">
+            <label class="fb-score-label">Puan</label>
+            <input id="fb-score-input" class="fb-score-input" type="number" min="0" max="999"
+              value="${fbScore || ''}" placeholder="0"
+              oninput="fbScore = +this.value || 0" />
+          </div>
+          <div class="cr-actions">
+            <button class="btn secondary" onclick="fbClear()" style="flex:1;">Temizle</button>
+            <button class="btn${hasInput ? '' : ' secondary'}" onclick="submitFBCezaliVisit()"
+              style="flex:2;${hasInput ? 'background:var(--accent);color:#000;font-weight:800;' : 'opacity:0.45;'}">
+              Enter
+            </button>
+          </div>
+        </div>
+      `}
+    </div>
+  `;
+}
+
+function fbToggle(target) {
+  const current = fbVisit[target] || 0;
+  if (current >= 3) {
+    delete fbVisit[target];
+  } else {
+    fbVisit[target] = current + 1;
+  }
+  renderMatch();
+  // Puan inputunu koru
+  const inp = document.getElementById('fb-score-input');
+  if (inp) inp.value = fbScore || '';
+}
+
+function fbClear() {
+  fbVisit = {};
+  fbScore = 0;
+  renderMatch();
+}
+
+async function submitFBCezaliVisit() {
+  if (!currentMatch) return;
+  const hasMarks = Object.values(fbVisit).some(v => v > 0);
+  if (!hasMarks && !fbScore) return toast('En az bir mark veya puan girin');
+  const slot = currentMatch.current_turn;
+  const res = await api.post(`/api/matches/${currentMatch.id}/fb-cezali-throw`, {
+    playerSlot: slot,
+    allocation: { marks: { ...fbVisit }, score: fbScore },
+  });
+  if (res.error) return toast('Hata: ' + res.error);
+  fbVisit = {};
+  fbScore = 0;
+  if (res.legFinished && !res.matchFinished && res.legSummary) {
+    await showLegSummary(res.legSummary);
+    if (currentMatch?.entry1?.player2 || currentMatch?.entry2?.player2) {
+      await askDoublesSubStarters(currentMatch);
+      await api.post(`/api/matches/${currentMatch.id}/set-sub-starters`, {
+        p1_sub_turn: selectedSubStarter1,
+        p2_sub_turn: selectedSubStarter2,
+      });
+      selectedSubStarter1 = null;
+      selectedSubStarter2 = null;
+    }
+  }
+  if (res.matchFinished) toast('Maç tamamlandı!');
+}
+
+
+// ---- Cricket Full Board Karambol ekranı ----
+// Cezalı ile aynı görünüm — fark: puan satırı yok, endpoint farklı
+let karambolVisit = {};
+
+function renderKarambolMatch(m) {
+  const e1 = entryLabel(m.entry1);
+  const e2 = entryLabel(m.entry2);
+  const isTurn1 = m.current_turn === 1;
+  const boardName = isReadonly ? '👁 Canlı İzleme' : currentBoard?.name || '';
+  const headerRight = isReadonly
+    ? `<button onclick="window.close()" class="btn secondary">Kapat</button>`
+    : `<a href="/board.html" class="btn secondary">Board değiştir</a>`;
+
+  let state;
+  try { state = m.cricket_state_json ? JSON.parse(m.cricket_state_json) : null; } catch { state = null; }
+  if (!state) state = { marks: {}, include_low: true };
+
+  const activeTargets = FB_TARGETS_ALL.filter(t => {
+    if ((t === '10' || t === '11') && !state.include_low) return false;
+    return true;
+  });
+
+  const pKey = isTurn1 ? 'p1' : 'p2';
+
+  const rows = activeTargets.map(t => {
+    const p1m = state.marks[t]?.p1 || 0;
+    const p2m = state.marks[t]?.p2 || 0;
+    const bothClosed = p1m >= 3 && p2m >= 3;
+    return `
+      <tr class="cr-row${bothClosed ? ' cr-row-done' : ''}">
+        <td class="cr-cell cr-left">${cricketMarksHtml(p1m, isTurn1)}</td>
+        <td class="cr-num"><span>${fbTargetLabel(t)}</span></td>
+        <td class="cr-cell cr-right">${cricketMarksHtml(p2m, !isTurn1)}</td>
+      </tr>`;
+  }).join('');
+
+  const colCount = activeTargets.length <= 12 ? activeTargets.length : Math.ceil(activeTargets.length / 2);
+
+  const inputBtns = isReadonly ? '' : activeTargets.map(t => {
+    const myMarks  = state.marks[t]?.[pKey] || 0;
+    const vHits    = karambolVisit[t] || 0;
+    const isClosed = myMarks >= 3;
+    return `
+      <button class="cr-btn${vHits > 0 ? ' cr-btn-sel' : ''}${isClosed ? ' cr-btn-ok' : ''}"
+        onclick="karambolToggle('${t}')">
+        <span class="cr-btn-num">${fbTargetLabel(t)}</span>
+        ${vHits > 0 ? `<span class="cr-btn-mark">${vHits === 1 ? '/' : vHits === 2 ? '╳' : '⊗'}</span>` : ''}
+        ${isClosed && !vHits ? '<span class="cr-btn-mark">⊗</span>' : ''}
+      </button>`;
+  }).join('');
+
+  const hasInput = Object.values(karambolVisit).some(v => v > 0);
+
+  root.innerHTML = `
+    <div class="board-header">
+      <div>
+        <div class="board-name">${boardName}</div>
+        <div class="match-info">
+          ${m.round_label || ''} · Leg ${m.current_leg} ·
+          Sıra: <strong>${isTurn1 ? e1 : e2}</strong>
+        </div>
+      </div>
+      ${headerRight}
+    </div>
+
+    <div class="cr-wrap">
+      <div class="cr-scores">
+        <div class="cr-score-col${isTurn1 ? ' cr-active' : ''}">
+          <div class="cr-name">${e1}</div>
+          <div class="cr-pts" style="font-size:clamp(20px,5vmin,38px);">${m.p1_legs || 0} leg</div>
+        </div>
+        <div class="cr-score-col${!isTurn1 ? ' cr-active' : ''}">
+          <div class="cr-name">${e2}</div>
+          <div class="cr-pts" style="font-size:clamp(20px,5vmin,38px);">${m.p2_legs || 0} leg</div>
+        </div>
+      </div>
+
+      <table class="cr-table">
+        <tbody>${rows}</tbody>
+      </table>
+
+      ${isReadonly ? '' : `
+        <div class="cr-input">
+          <div class="cr-btns fb-btns" style="grid-template-columns: repeat(${colCount}, 1fr);">
+            ${inputBtns}
+          </div>
+          <div class="cr-actions">
+            <button class="btn secondary" onclick="karambolClear()" style="flex:1;">Temizle</button>
+            <button class="btn${hasInput ? '' : ' secondary'}" onclick="submitKarambolVisit()"
+              style="flex:2;${hasInput ? 'background:var(--accent);color:#000;font-weight:800;' : 'opacity:0.45;'}">
+              Enter
+            </button>
+          </div>
+        </div>
+      `}
+    </div>
+  `;
+}
+
+function karambolToggle(target) {
+  const current = karambolVisit[target] || 0;
+  if (current >= 3) { delete karambolVisit[target]; } else { karambolVisit[target] = current + 1; }
+  renderMatch();
+}
+
+function karambolClear() {
+  karambolVisit = {};
+  renderMatch();
+}
+
+async function submitKarambolVisit() {
+  if (!currentMatch) return;
+  if (!Object.values(karambolVisit).some(v => v > 0)) return toast('En az bir mark seçin');
+  const slot = currentMatch.current_turn;
+  const res = await api.post(`/api/matches/${currentMatch.id}/karambol-throw`, {
+    playerSlot: slot,
+    allocation: { marks: { ...karambolVisit } },
+  });
+  if (res.error) return toast('Hata: ' + res.error);
+  karambolVisit = {};
+  if (res.legFinished && !res.matchFinished && res.legSummary) {
+    await showLegSummary(res.legSummary);
+    if (currentMatch?.entry1?.player2 || currentMatch?.entry2?.player2) {
+      await askDoublesSubStarters(currentMatch);
+      await api.post(`/api/matches/${currentMatch.id}/set-sub-starters`, {
+        p1_sub_turn: selectedSubStarter1,
+        p2_sub_turn: selectedSubStarter2,
+      });
+      selectedSubStarter1 = null;
+      selectedSubStarter2 = null;
+    }
+  }
+  if (res.matchFinished) toast('Maç tamamlandı!');
 }
 
 // ---- Post-match ekranı (status === 'finished') ----

@@ -1,0 +1,202 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Takım Maçı · Dart Turnuva</title>
+<link rel="stylesheet" href="/css/style.css" />
+<style>
+  /* ── Takım Maçı özel stilleri ── */
+  .team-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    flex-wrap: wrap;
+    gap: 0.5rem;
+    margin-bottom: 1.25rem;
+  }
+  .team-scoreboard {
+    display: flex;
+    align-items: center;
+    gap: 1rem;
+    background: var(--bg-2, rgba(255,255,255,0.06));
+    border-radius: 10px;
+    padding: 0.6rem 1.2rem;
+    font-size: 1.1rem;
+  }
+  .team-scoreboard .tscore {
+    font-size: 1.8rem;
+    font-weight: 700;
+    color: var(--accent);
+    min-width: 2ch;
+    text-align: center;
+  }
+  .team-scoreboard .tsep { color: var(--text-dim); }
+  .team-scoreboard .tname { font-weight: 600; max-width: 140px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+  .phase-card { margin-bottom: 1rem; }
+  .phase-title {
+    display: flex;
+    align-items: center;
+    gap: 0.6rem;
+    font-weight: 600;
+    font-size: 1rem;
+    margin-bottom: 0.6rem;
+  }
+  .phase-badge {
+    display: inline-block;
+    font-size: 0.7rem;
+    padding: 0.15rem 0.5rem;
+    border-radius: 20px;
+    background: var(--accent);
+    color: #fff;
+    font-weight: 600;
+  }
+  .phase-badge.disabled { background: var(--text-dim); }
+
+  /* Maç satırları */
+  .pm-row {
+    display: grid;
+    grid-template-columns: 1fr 90px 1fr 90px;
+    align-items: center;
+    gap: 0.4rem;
+    padding: 0.45rem 0.5rem;
+    border-radius: 8px;
+    background: var(--bg-2, rgba(255,255,255,0.04));
+    margin-bottom: 0.3rem;
+    font-size: 0.9rem;
+  }
+  .pm-row .pname { font-weight: 500; }
+  .pm-row .pname.winner { color: var(--accent); font-weight: 700; }
+  .pm-row .pname.loser  { color: var(--text-dim); text-decoration: line-through; }
+  .pm-row .pleg { text-align: center; font-variant-numeric: tabular-nums; color: var(--text-dim); font-size: 0.82rem; }
+  .pm-row .pm-actions { text-align: right; display: flex; gap: 0.35rem; justify-content: flex-end; }
+  .pm-row.walkover { opacity: 0.6; }
+
+  /* Puan giriş modalı */
+  .tm-modal-overlay {
+    position: fixed; inset: 0;
+    background: rgba(0,0,0,0.65);
+    display: flex; align-items: center; justify-content: center;
+    z-index: 200;
+  }
+  .tm-modal {
+    background: var(--bg-1, #1a1a2e);
+    border: 1px solid var(--border, rgba(255,255,255,0.1));
+    border-radius: 14px;
+    padding: 1.5rem;
+    min-width: 320px;
+    max-width: 420px;
+    width: 90%;
+  }
+  .tm-modal h3 { margin-bottom: 1rem; }
+  .tm-modal label { display: block; font-size: 0.82rem; color: var(--text-dim); margin-bottom: 0.25rem; }
+  .tm-modal input, .tm-modal select { width: 100%; margin-bottom: 0.75rem; }
+  .tm-modal .row { display: flex; gap: 0.5rem; margin-top: 0.5rem; }
+  .tm-modal .row button { flex: 1; }
+
+  .winner-btn { background: var(--accent); border: none; color: #fff; border-radius: 6px; padding: 0.25rem 0.5rem; cursor: pointer; font-size: 0.78rem; }
+  .winner-btn:hover { opacity: 0.85; }
+  .edit-btn { background: transparent; border: 1px solid var(--border, rgba(255,255,255,0.12)); color: var(--text-dim); border-radius: 6px; padding: 0.25rem 0.5rem; cursor: pointer; font-size: 0.78rem; }
+  .edit-btn:hover { color: var(--text); }
+
+  .add-match-row { display: flex; gap: 0.5rem; margin-top: 0.5rem; flex-wrap: wrap; }
+  .add-match-row input { flex: 1; min-width: 120px; }
+
+  .phase-toggle { display: flex; align-items: center; gap: 0.5rem; font-size: 0.82rem; color: var(--text-dim); }
+  .phase-settings { display: flex; flex-wrap: wrap; gap: 0.5rem; margin-bottom: 0.5rem; font-size: 0.82rem; }
+  .phase-settings select, .phase-settings input[type=number] { padding: 0.25rem 0.4rem; font-size: 0.82rem; }
+
+  /* Yeni event formu */
+  #new-event-form .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 0.75rem; }
+  @media (max-width: 500px) { #new-event-form .grid { grid-template-columns: 1fr; } }
+
+  .event-card-header {
+    display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 0.4rem;
+    margin-bottom: 0.75rem;
+  }
+  .status-pill {
+    font-size: 0.72rem; padding: 0.15rem 0.55rem; border-radius: 20px; font-weight: 600;
+    border: 1px solid currentColor;
+  }
+  .status-pill.draft    { color: var(--text-dim); }
+  .status-pill.running  { color: #4ade80; }
+  .status-pill.finished { color: var(--accent); }
+</style>
+</head>
+<body>
+<div class="app">
+  <aside class="sidebar">
+    <h1><span class="dot"></span> Dart Turnuva</h1>
+    <div id="user-bar" style="margin-bottom:1rem;font-size:0.85rem;color:var(--text-dim);display:none;">
+      <div id="user-name" style="margin-bottom:0.4rem;"></div>
+      <button id="logout-btn" style="background:transparent;border:1px solid var(--border);color:var(--text-dim);padding:0.35rem 0.7rem;border-radius:6px;cursor:pointer;font-size:0.82rem;">Çıkış Yap</button>
+    </div>
+    <nav>
+      <a href="/organizer.html">← Turnuvalar</a>
+      <a href="#events" class="tab-link active" data-tab="events">Aktif Maçlar</a>
+      <a href="#new" class="tab-link" data-tab="new">Yeni Maç</a>
+    </nav>
+  </aside>
+
+  <script>
+    fetch('/auth/me',{credentials:'same-origin'}).then(r=>r.json()).then(d=>{
+      if(!d.user){window.location.href='/login.html';return;}
+      const bar=document.getElementById('user-bar');
+      const nm=document.getElementById('user-name');
+      if(bar)bar.style.display='block';
+      if(nm)nm.textContent=d.user.name||d.user.email;
+    }).catch(()=>window.location.href='/login.html');
+    document.addEventListener('click',e=>{
+      if(e.target&&e.target.id==='logout-btn'){
+        fetch('/auth/logout',{method:'POST',credentials:'same-origin'}).finally(()=>window.location.href='/login.html');
+      }
+    });
+  </script>
+
+  <main class="main">
+    <!-- AKTİF MAÇLAR -->
+    <section class="tab" id="tab-events">
+      <h2>Takım Maçları</h2>
+      <p class="subtitle">Aktif ve tamamlanmış takım maçları.</p>
+      <div id="events-list">
+        <p style="color:var(--text-dim)">Yükleniyor…</p>
+      </div>
+    </section>
+
+    <!-- YENİ MAÇ -->
+    <section class="tab" id="tab-new" hidden>
+      <h2>Yeni Takım Maçı</h2>
+      <p class="subtitle">İki takım arasındaki maç serisini oluştur.</p>
+      <div class="card" id="new-event-form">
+        <div class="grid">
+          <div>
+            <label>Maç adı</label>
+            <input id="ne-name" placeholder="Hafta 1 — Şahinler vs Kartallar" style="width:100%;" />
+          </div>
+          <div></div>
+          <div>
+            <label>Takım 1 adı</label>
+            <input id="ne-t1" placeholder="Şahinler" style="width:100%;" />
+          </div>
+          <div>
+            <label>Takım 2 adı</label>
+            <input id="ne-t2" placeholder="Kartallar" style="width:100%;" />
+          </div>
+        </div>
+        <p style="color:var(--text-dim);font-size:0.85rem;margin-top:0.75rem;">
+          3 aşama (Tekli · Bira · Eşli) varsayılan olarak oluşturulur; oluşturduktan sonra istediğin aşamayı devre dışı bırakabilirsin.
+        </p>
+        <div class="row end" style="margin-top:1rem;">
+          <button class="primary" onclick="createEvent()">Oluştur</button>
+        </div>
+      </div>
+    </section>
+  </main>
+</div>
+
+<script src="/socket.io/socket.io.js"></script>
+<script src="/js/common.js"></script>
+<script src="/js/team.js"></script>
+</body>
+</html>
