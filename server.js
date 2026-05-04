@@ -237,6 +237,11 @@ app.post('/api/matches/:id/begin', (req, res) => {
       patch.current_turn = st;
       patch.starter_slot = st;
     }
+    // Doubles: pair içi başlayan oyuncu (1 ya da 2)
+    const s1 = req.body?.p1_sub_turn;
+    const s2 = req.body?.p2_sub_turn;
+    if (s1 === 1 || s1 === 2) patch.p1_sub_turn = s1;
+    if (s2 === 1 || s2 === 2) patch.p2_sub_turn = s2;
     db.updateMatch(id, patch);
     if (m.board_id) {
       io.to(`board:${m.board_id}`).emit('board:state', {
@@ -245,6 +250,32 @@ app.post('/api/matches/:id/begin', (req, res) => {
       });
     }
     broadcastState();
+    res.json({ ok: true });
+  } catch (e) {
+    res.status(400).json({ error: e.message });
+  }
+});
+
+// Doubles: yeni leg başında her takımdan ilk atan oyuncuyu güncelle.
+app.post('/api/matches/:id/set-sub-starters', (req, res) => {
+  try {
+    const id = +req.params.id;
+    const m = db.matchById(id);
+    if (!m) return res.status(404).json({ error: 'Maç bulunamadı' });
+    if (m.status !== 'live') return res.status(400).json({ error: 'Maç canlı değil' });
+    const patch = {};
+    const s1 = req.body?.p1_sub_turn;
+    const s2 = req.body?.p2_sub_turn;
+    if (s1 === 1 || s1 === 2) patch.p1_sub_turn = s1;
+    if (s2 === 1 || s2 === 2) patch.p2_sub_turn = s2;
+    if (!Object.keys(patch).length) return res.status(400).json({ error: 'Geçersiz değer' });
+    db.updateMatch(id, patch);
+    if (m.board_id) {
+      io.to(`board:${m.board_id}`).emit('board:state', {
+        board: db.boardById(m.board_id),
+        match: db.matchById(id),
+      });
+    }
     res.json({ ok: true });
   } catch (e) {
     res.status(400).json({ error: e.message });

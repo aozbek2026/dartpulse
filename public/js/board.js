@@ -11,7 +11,9 @@ let currentBoard = null;
 let currentInput = '';
 let allBoards = [];
 let allTournaments = [];
-let selectedStarter = null; // 1 veya 2 — "Kim başlıyor?" seçimi
+let selectedStarter = null;    // 1 veya 2 — hangi takım başlıyor
+let selectedSubStarter1 = null; // 1 veya 2 — takım 1'de kim başlıyor (doubles)
+let selectedSubStarter2 = null; // 1 veya 2 — takım 2'de kim başlıyor (doubles)
 
 socket.on('state', (s) => {
   allBoards = s.boards;
@@ -121,6 +123,7 @@ function renderPreMatch() {
   const m = currentMatch;
   const e1 = entryLabel(m.entry1);
   const e2 = entryLabel(m.entry2);
+  const isDoubles = !!(m.entry1?.player2 || m.entry2?.player2);
   const scorer = m.scorer ? entryLabel(m.scorer) : null;
   const roundLabel = m.round_label || `Round ${m.round}`;
   const tName = m.tournament_name || 'Turnuva';
@@ -176,7 +179,7 @@ function renderPreMatch() {
 
       <div style="width: 100%; max-width: 780px;">
         <div class="card" style="background: var(--surface-2); padding: 1.25rem;">
-          <div style="font-size: 0.78rem; color: var(--text-dim); letter-spacing: 0.1em; text-transform: uppercase; margin-bottom: 0.75rem;">🎯 Kim başlıyor?</div>
+          <div style="font-size: 0.78rem; color: var(--text-dim); letter-spacing: 0.1em; text-transform: uppercase; margin-bottom: 0.75rem;">🎯 Hangi takım başlıyor?</div>
           <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 1rem;">
             <button class="btn ${selectedStarter === 1 ? '' : 'secondary'}"
               style="font-size: 1.1rem; padding: 0.85rem; ${selectedStarter === 1 ? 'background: var(--accent); color: #000; font-weight: 800;' : ''}"
@@ -192,14 +195,55 @@ function renderPreMatch() {
         </div>
       </div>
 
-      <button class="btn" style="font-size: 1.5rem; padding: 1.25rem 3rem; background: var(--accent); color: #000; font-weight: 800; border-radius: 12px; margin-top: 0.5rem; opacity: ${selectedStarter ? 1 : 0.45}; cursor: ${selectedStarter ? 'pointer' : 'not-allowed'};"
-        onclick="${selectedStarter ? 'beginMatch()' : 'toast(\'Önce başlayan oyuncuyu seçin\')'}">
-        ▶ MAÇA BAŞLA
-      </button>
-
-      <div style="font-size: 0.85rem; color: var(--text-dim); text-align: center; max-width: 560px;">
-        Başlayan oyuncuyu seçin, ardından MAÇA BAŞLA'ya basın.
+      ${isDoubles ? `
+      <div style="width: 100%; max-width: 780px; display: grid; grid-template-columns: 1fr 1fr; gap: 1rem;">
+        ${[1, 2].map(slot => {
+          const entry = slot === 1 ? m.entry1 : m.entry2;
+          const sub = slot === 1 ? selectedSubStarter1 : selectedSubStarter2;
+          const p1name = entry?.player1?.nickname || entry?.player1?.name || '?';
+          const p2name = entry?.player2?.nickname || entry?.player2?.name || '?';
+          const teamLabel = slot === 1 ? e1 : e2;
+          return `
+            <div class="card" style="background: var(--surface-2); padding: 1rem;">
+              <div style="font-size: 0.72rem; color: var(--text-dim); text-transform: uppercase; letter-spacing: 0.08em; margin-bottom: 0.6rem;">
+                ${teamLabel} — ilk atan
+              </div>
+              <div style="display: flex; flex-direction: column; gap: 0.5rem;">
+                <button class="btn ${sub === 1 ? '' : 'secondary'}"
+                  style="padding: 0.65rem; ${sub === 1 ? 'background: var(--accent); color: #000; font-weight: 800;' : ''}"
+                  onclick="selectSubStarter(${slot}, 1)">
+                  ${sub === 1 ? '▶ ' : ''}${p1name}
+                </button>
+                <button class="btn ${sub === 2 ? '' : 'secondary'}"
+                  style="padding: 0.65rem; ${sub === 2 ? 'background: var(--accent); color: #000; font-weight: 800;' : ''}"
+                  onclick="selectSubStarter(${slot}, 2)">
+                  ${sub === 2 ? '▶ ' : ''}${p2name}
+                </button>
+              </div>
+            </div>
+          `;
+        }).join('')}
       </div>
+      ` : ''}
+
+      ${(() => {
+        const ready = isDoubles
+          ? selectedStarter && selectedSubStarter1 && selectedSubStarter2
+          : !!selectedStarter;
+        const hint = isDoubles
+          ? 'Başlayan takımı ve her takımdan ilk atan oyuncuyu seçin.'
+          : 'Başlayan oyuncuyu seçin, ardından MAÇA BAŞLA\'ya basın.';
+        const errMsg = isDoubles
+          ? 'Önce başlayan takımı ve her takımdan ilk atan oyuncuyu seçin'
+          : 'Önce başlayan oyuncuyu seçin';
+        return `
+          <button class="btn" style="font-size: 1.5rem; padding: 1.25rem 3rem; background: var(--accent); color: #000; font-weight: 800; border-radius: 12px; margin-top: 0.5rem; opacity: ${ready ? 1 : 0.45}; cursor: ${ready ? 'pointer' : 'not-allowed'};"
+            onclick="${ready ? 'beginMatch()' : `toast('${errMsg}')`}">
+            ▶ MAÇA BAŞLA
+          </button>
+          <div style="font-size: 0.85rem; color: var(--text-dim); text-align: center; max-width: 560px;">${hint}</div>
+        `;
+      })()}
 
       <div style="display: flex; gap: 1rem; margin-top: 0.5rem;">
         <button class="btn secondary" style="font-size: 0.9rem; padding: 0.6rem 1.2rem; border-color: var(--danger, #ef4444); color: var(--danger, #ef4444);"
@@ -220,13 +264,28 @@ function selectStarter(slot) {
   renderPreMatch();
 }
 
+function selectSubStarter(teamSlot, playerSlot) {
+  if (teamSlot === 1) selectedSubStarter1 = playerSlot;
+  else selectedSubStarter2 = playerSlot;
+  renderPreMatch();
+}
+
 async function beginMatch() {
   if (!currentMatch) return;
-  if (!selectedStarter) return toast('Önce başlayan oyuncuyu seçin');
+  const isDoubles = !!(currentMatch.entry1?.player2 || currentMatch.entry2?.player2);
+  if (!selectedStarter) return toast('Önce başlayan takımı seçin');
+  if (isDoubles && (!selectedSubStarter1 || !selectedSubStarter2))
+    return toast('Her takımdan ilk atan oyuncuyu seçin');
   const body = { starting_turn: selectedStarter };
+  if (isDoubles) {
+    body.p1_sub_turn = selectedSubStarter1;
+    body.p2_sub_turn = selectedSubStarter2;
+  }
   const res = await api.post(`/api/matches/${currentMatch.id}/begin`, body);
   if (res.error) return toast('Hata: ' + res.error);
   selectedStarter = null;
+  selectedSubStarter1 = null;
+  selectedSubStarter2 = null;
   toast('Maç başladı!');
 }
 
@@ -268,6 +327,7 @@ function renderMatch() {
 
   const isTurn1 = m.current_turn === 1;
   const showSets = (m.sets_to_win || 1) > 1;
+  const isDoubles = !!(m.entry1?.player2 || m.entry2?.player2);
 
   const stats1 = m.stats?.find(s => s.player_slot === 1) || {};
   const stats2 = m.stats?.find(s => s.player_slot === 2) || {};
@@ -312,7 +372,14 @@ function renderMatch() {
         <div class="board-name">${boardName}</div>
         <div class="match-info">
           ${m.round_label || ''} · Leg ${m.current_leg}${m.current_set > 1 ? ` · Set ${m.current_set}` : ''} ·
-          Sıra: <strong>${isTurn1 ? e1 : e2}</strong>
+          Sıra: <strong>${isDoubles
+            ? (() => {
+                const activeEntry = isTurn1 ? m.entry1 : m.entry2;
+                const subTurn = isTurn1 ? (m.p1_sub_turn || 1) : (m.p2_sub_turn || 1);
+                const p = subTurn === 1 ? activeEntry?.player1 : activeEntry?.player2;
+                return p?.nickname || p?.name || (isTurn1 ? e1 : e2);
+              })()
+            : (isTurn1 ? e1 : e2)}</strong>
           ${scorer ? ` · ✍️ ${scorer}` : ''}
         </div>
       </div>
@@ -324,14 +391,20 @@ function renderMatch() {
         <div class="dp-name-col${isTurn1 ? ' active' : ''}">
           <div class="dp-leg-big">${legs1}</div>
           <div class="dp-name-center">
-            <div class="dp-pname">${e1}</div>
+            ${isDoubles ? `
+              <div class="dp-pname dp-pname-sub${isTurn1 && m.p1_sub_turn === 1 ? ' dp-sub-active' : ''}">${m.entry1?.player1?.nickname || m.entry1?.player1?.name || '?'}</div>
+              <div class="dp-pname dp-pname-sub${isTurn1 && m.p1_sub_turn === 2 ? ' dp-sub-active' : ''}">${m.entry1?.player2?.nickname || m.entry1?.player2?.name || '?'}</div>
+            ` : `<div class="dp-pname">${e1}</div>`}
             <div class="dp-meta"><span>Ort <strong>${avg1}</strong>${showSets ? ` · Set <strong>${m.p1_sets || 0}</strong>` : ''}</span></div>
           </div>
         </div>
         <div class="dp-name-col${!isTurn1 ? ' active' : ''}" style="flex-direction:row-reverse;">
           <div class="dp-leg-big">${legs2}</div>
           <div class="dp-name-center">
-            <div class="dp-pname">${e2}</div>
+            ${isDoubles ? `
+              <div class="dp-pname dp-pname-sub${!isTurn1 && m.p2_sub_turn === 1 ? ' dp-sub-active' : ''}">${m.entry2?.player1?.nickname || m.entry2?.player1?.name || '?'}</div>
+              <div class="dp-pname dp-pname-sub${!isTurn1 && m.p2_sub_turn === 2 ? ' dp-sub-active' : ''}">${m.entry2?.player2?.nickname || m.entry2?.player2?.name || '?'}</div>
+            ` : `<div class="dp-pname">${e2}</div>`}
             <div class="dp-meta"><span>Ort <strong>${avg2}</strong>${showSets ? ` · Set <strong>${m.p2_sets || 0}</strong>` : ''}</span></div>
           </div>
         </div>
@@ -550,6 +623,14 @@ async function submitScore() {
   // (Maç tamamlandıysa zaten post-match ekranı açılıyor; ayrıca özet vermiyoruz.)
   if (res.legFinished && !res.matchFinished && res.legSummary) {
     await showLegSummary(res.legSummary);
+    // Doubles: yeni leg için her takımdan ilk atanı sor
+    const isDoubles = !!(currentMatch?.entry1?.player2 || currentMatch?.entry2?.player2);
+    if (isDoubles && currentMatch) {
+      const subs = await askDoublesSubStarters(currentMatch);
+      if (subs) {
+        await api.post(`/api/matches/${currentMatch.id}/set-sub-starters`, subs);
+      }
+    }
   }
   if (res.matchFinished) toast('Maç tamamlandı!');
 }
@@ -592,6 +673,82 @@ function askFinishDarts(score) {
       }
     };
     document.addEventListener('keydown', keyHandler, true);
+  });
+}
+
+// Doubles: yeni leg başında her takımdan ilk atanı seç.
+// { p1_sub_turn, p2_sub_turn } döner.
+function askDoublesSubStarters(match) {
+  return new Promise((resolve) => {
+    const e1 = entryLabel(match.entry1);
+    const e2 = entryLabel(match.entry2);
+    const sel = { 1: null, 2: null };
+
+    const overlay = document.createElement('div');
+    overlay.className = 'finish-prompt';
+
+    const renderModal = () => {
+      overlay.innerHTML = `
+        <div class="finish-prompt-card" style="max-width: 480px; width: 92vw;">
+          <div class="finish-prompt-title" style="font-size: clamp(14px,4vw,22px);">Yeni Leg — İlk Atanlar</div>
+          <div style="display: grid; grid-template-columns: 1fr 1fr; gap: clamp(8px,2.5vw,18px); margin-top: clamp(10px,3vw,20px);">
+            ${[1, 2].map(slot => {
+              const entry = slot === 1 ? match.entry1 : match.entry2;
+              const teamLabel = slot === 1 ? e1 : e2;
+              const p1name = entry?.player1?.nickname || entry?.player1?.name || '?';
+              const p2name = entry?.player2?.nickname || entry?.player2?.name || '?';
+              const picked = sel[slot];
+              return `
+                <div>
+                  <div style="font-size: clamp(9px,2.5vw,13px); color: var(--text-dim); text-transform: uppercase; letter-spacing: 0.07em; margin-bottom: clamp(4px,1.5vw,10px);">
+                    ${teamLabel}
+                  </div>
+                  <div style="display: flex; flex-direction: column; gap: clamp(4px,1.5vw,8px);">
+                    <button class="btn ${picked === 1 ? '' : 'secondary'}"
+                      style="padding: clamp(8px,2vw,14px); font-size: clamp(11px,3vw,16px); ${picked === 1 ? 'background:var(--accent);color:#000;font-weight:800;' : ''}"
+                      id="dsub-${slot}-1">
+                      ${picked === 1 ? '▶ ' : ''}${p1name}
+                    </button>
+                    <button class="btn ${picked === 2 ? '' : 'secondary'}"
+                      style="padding: clamp(8px,2vw,14px); font-size: clamp(11px,3vw,16px); ${picked === 2 ? 'background:var(--accent);color:#000;font-weight:800;' : ''}"
+                      id="dsub-${slot}-2">
+                      ${picked === 2 ? '▶ ' : ''}${p2name}
+                    </button>
+                  </div>
+                </div>
+              `;
+            }).join('')}
+          </div>
+          <button id="dsub-confirm" class="btn"
+            style="margin-top: clamp(12px,3.5vw,22px); width: 100%; font-size: clamp(13px,3.5vw,18px); padding: clamp(10px,2.5vw,16px);
+                   background: var(--accent); color: #000; font-weight: 800;
+                   opacity: ${sel[1] && sel[2] ? 1 : 0.4}; cursor: ${sel[1] && sel[2] ? 'pointer' : 'not-allowed'};">
+            Onayla →
+          </button>
+        </div>
+      `;
+      // Buton listener'ları
+      overlay.querySelectorAll('[id^="dsub-"]').forEach(btn => {
+        btn.addEventListener('click', () => {
+          const parts = btn.id.split('-');
+          if (parts[0] === 'dsub' && parts[1] !== 'confirm') {
+            sel[+parts[1]] = +parts[2];
+            renderModal();
+          }
+        });
+      });
+      const confirmBtn = overlay.querySelector('#dsub-confirm');
+      if (confirmBtn) {
+        confirmBtn.addEventListener('click', () => {
+          if (!sel[1] || !sel[2]) return;
+          overlay.remove();
+          resolve({ p1_sub_turn: sel[1], p2_sub_turn: sel[2] });
+        });
+      }
+    };
+
+    renderModal();
+    document.body.appendChild(overlay);
   });
 }
 

@@ -180,6 +180,12 @@ function init() {
   if (!matchCols.includes('group_index')) {
     try { db.exec('ALTER TABLE matches ADD COLUMN group_index INTEGER DEFAULT NULL'); } catch {}
   }
+  if (!matchCols.includes('p1_sub_turn')) {
+    try { db.exec('ALTER TABLE matches ADD COLUMN p1_sub_turn INTEGER DEFAULT 1'); } catch {}
+  }
+  if (!matchCols.includes('p2_sub_turn')) {
+    try { db.exec('ALTER TABLE matches ADD COLUMN p2_sub_turn INTEGER DEFAULT 1'); } catch {}
+  }
 
   // Visit başına dart sayısı: bitiren visit için 1/2/3 olabilir; eski kayıtlar için varsayılan 3.
   const throwCols = db.prepare("PRAGMA table_info(throws)").all().map(c => c.name);
@@ -356,8 +362,9 @@ function createMatch(m) {
     INSERT INTO matches
     (tournament_id, stage_id, bracket, round, match_index, entry1_id, entry2_id, status,
      next_winner_match_id, next_winner_slot, next_loser_match_id, next_loser_slot,
-     p1_leg_score, p2_leg_score, legs_to_win, sets_to_win, group_index)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+     p1_leg_score, p2_leg_score, legs_to_win, sets_to_win, group_index,
+     p1_sub_turn, p2_sub_turn)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
   `).run(
     m.tournament_id, m.stage_id, m.bracket, m.round, m.match_index,
     m.entry1_id || null, m.entry2_id || null, m.status || 'pending',
@@ -366,6 +373,7 @@ function createMatch(m) {
     m.start_score || null, m.start_score || null,
     m.legs_to_win || null, m.sets_to_win || null,
     m.group_index ?? null,
+    1, 1,
   );
   const id = info.lastInsertRowid;
   // Match stats init

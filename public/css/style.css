@@ -894,6 +894,19 @@ body.board-page #root.board-screen {
 
 .dp-name-col.active .dp-pname { color: #ff3860; }
 
+/* Doubles: iki oyuncu satırı */
+.dp-pname-sub {
+  font-size: clamp(11px, 3.2vw, 24px);
+  color: #4a5568; /* pasif — karanlık */
+  margin-bottom: 0.5vw;
+}
+.dp-pname-sub.dp-sub-active {
+  color: #e2e8f0; /* pasif takım normal rengi */
+  font-weight: 700;
+}
+.dp-name-col.active .dp-pname-sub { color: #4a5568; }
+.dp-name-col.active .dp-pname-sub.dp-sub-active { color: #ff3860; font-weight: 700; }
+
 .dp-meta { display: flex; justify-content: center; gap: 2.6vw; }
 .dp-meta span   { font-size: clamp(9px,  2.6vw, 20px); color: #4a5568; }
 .dp-meta strong { font-size: clamp(10px, 2.9vw, 22px); color: #8892b0; }

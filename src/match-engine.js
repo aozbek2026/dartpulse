@@ -109,7 +109,14 @@ function recordThrow(matchId, playerSlot, score, finishDarts) {
   } else {
     // Switch turn
     const nextTurn = playerSlot === 1 ? 2 : 1;
-    db.updateMatch(matchId, { current_turn: nextTurn });
+    const turnUpdate = { current_turn: nextTurn };
+    // Doubles: atış yapan takımın sub_turn'ünü ilerlet (bust dahil her atışta)
+    const entry1 = match.entry1_id ? db.entryById(match.entry1_id) : null;
+    if (entry1 && entry1.player2_id) {
+      const subCol = `p${playerSlot}_sub_turn`;
+      turnUpdate[subCol] = (match[subCol] === 1) ? 2 : 1;
+    }
+    db.updateMatch(matchId, turnUpdate);
   }
 
   return result;
@@ -197,6 +204,9 @@ function finishLeg(matchId, winnerSlot) {
   update.current_turn = newStarter;
   update.p1_leg_score = startScore;
   update.p2_leg_score = startScore;
+  // Doubles: yeni leg'de her takım player1'den başlar
+  update.p1_sub_turn = 1;
+  update.p2_sub_turn = 1;
 
   db.updateMatch(matchId, update);
 }
