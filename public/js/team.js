@@ -134,6 +134,7 @@ function renderEvent(ev) {
     </div>
 
     <div style="margin-top:1rem">${phasesHtml}</div>
+    ${renderBracket(ev)}
   </div>`;
 }
 
@@ -482,6 +483,244 @@ async function clearScore(pmId) {
     body: JSON.stringify({ winner_slot: null, team1_legs: 0, team2_legs: 0, walkover: 0, status: 'pending' }),
   });
   document.querySelector('.tm-modal-overlay')?.remove();
+}
+
+// ── Bracket ──────────────────────────────────────────────────────────────────
+function getBracket(ev) {
+  try { return ev.bracket_json ? JSON.parse(ev.bracket_json) : null; } catch { return null; }
+}
+
+function renderBracket(ev) {
+  const b = getBracket(ev);
+  if (!b?.enabled) {
+    return `<div style="margin-top:0.75rem;padding-top:0.75rem;border-top:1px solid var(--border,rgba(255,255,255,0.07))">
+      <button class="secondary" style="font-size:0.82rem" onclick="toggleBracket(${ev.id})">🏆 Playoff Bracket Ekle</button>
+    </div>`;
+  }
+  const rounds = b.rounds || [];
+  const roundsHtml = rounds.length
+    ? `<div class="bracket-rounds">${rounds.map((r, ri) => renderBracketRound(ev, b, r, ri)).join('')}</div>`
+    : `<p style="color:var(--text-dim);font-size:0.85rem;margin:0.5rem 0">
+         Katılımcıları ekle ve bracket oluştur.
+       </p>`;
+
+  return `<div style="margin-top:0.75rem;padding-top:0.75rem;border-top:1px solid var(--border,rgba(255,255,255,0.07))">
+    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:0.5rem;flex-wrap:wrap;gap:0.4rem">
+      <strong>🏆 Playoff Bracket</strong>
+      <div style="display:flex;gap:0.35rem">
+        <button class="secondary" style="font-size:0.78rem;padding:0.25rem 0.5rem" onclick="openBracketEditor(${ev.id})">Düzenle</button>
+        <button class="secondary" style="font-size:0.78rem;padding:0.25rem 0.5rem;color:#f87171" onclick="toggleBracket(${ev.id})">Kaldır</button>
+      </div>
+    </div>
+    ${roundsHtml}
+  </div>`;
+}
+
+function renderBracketRound(ev, b, round, ri) {
+  const NAMES = { 1: 'FİNAL', 2: 'YARI FİNAL', 4: 'ÇEYREK FİNAL', 8: 'SON 16' };
+  const matchCount = round.matches?.length || 0;
+  const name = round.name || NAMES[matchCount] || `Tur ${ri + 1}`;
+
+  const matchesHtml = (round.matches || []).map((m, mi) => {
+    const t1 = m.team1 || '—';
+    const t2 = m.team2 || '—';
+    const t1cls = m.winner_slot === 1 ? 'br-winner' : m.winner_slot === 2 ? 'br-loser' : '';
+    const t2cls = m.winner_slot === 2 ? 'br-winner' : m.winner_slot === 1 ? 'br-loser' : '';
+    const canPick = m.team1 && m.team2;
+    const onclick1 = canPick ? `onclick="setBracketWinner(${ev.id},${ri},${mi},1)"` : '';
+    const onclick2 = canPick ? `onclick="setBracketWinner(${ev.id},${ri},${mi},2)"` : '';
+    return `<div class="br-match">
+      <div class="br-team ${t1cls}" ${onclick1} title="${canPick ? 'Tıkla → galip' : ''}">${esc(t1)}</div>
+      <div class="br-sep"></div>
+      <div class="br-team ${t2cls}" ${onclick2} title="${canPick ? 'Tıkla → galip' : ''}">${esc(t2)}</div>
+    </div>`;
+  }).join('');
+
+  return `<div class="br-round">
+    <div class="br-round-name">${name}</div>
+    <div class="br-matches">${matchesHtml}</div>
+  </div>`;
+}
+
+// Bracket enable/disable
+async function toggleBracket(evId) {
+  const ev = events.find(e => e.id === evId);
+  if (!ev) return;
+  const b = getBracket(ev);
+  if (b?.enabled) {
+    if (!confirm('Bracket\'ı kaldırmak istediğine emin misin? Veriler silinir.')) return;
+    await saveBracket(evId, { enabled: false, participants: [], rounds: [] });
+  } else {
+    await saveBracket(evId, { enabled: true, participants: [], rounds: [] });
+    openBracketEditor(evId);
+  }
+}
+
+async function saveBracket(evId, b) {
+  const res = await fetch(`/api/team-events/${evId}`, {
+    method: 'PATCH', credentials: 'same-origin',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ bracket_json: JSON.stringify(b) }),
+  });
+  if (!res.ok) alert('Bracket kaydedilemedi.');
+}
+
+// Bracket editor modal
+function openBracketEditor(evId) {
+  document.querySelector('#bracket-editor-overlay')?.remove();
+  const ev = events.find(e => e.id === evId);
+  if (!ev) return;
+  const b = getBracket(ev) || { enabled: true, participants: [], rounds: [] };
+  const ps = b.participants || [];
+
+  const overlay = document.createElement('div');
+  overlay.className = 'tm-modal-overlay';
+  overlay.id = 'bracket-editor-overlay';
+  overlay.innerHTML = `
+    <div class="tm-modal" style="max-width:440px">
+      <h3>🏆 Playoff Bracket</h3>
+      <label>Katılımcılar (${ps.length})</label>
+      <div id="br-plist" style="margin-bottom:0.5rem">
+        ${ps.map((p, i) => `
+          <div style="display:flex;align-items:center;gap:0.4rem;margin-bottom:0.25rem">
+            <span style="flex:1;font-size:0.88rem">${i + 1}. ${esc(p)}</span>
+            <button class="edit-btn" style="font-size:0.72rem;color:#f87171" onclick="removeBrParticipant(${evId},${i})">✕</button>
+          </div>`).join('')}
+      </div>
+      <div style="display:flex;gap:0.4rem;margin-bottom:1rem">
+        <input list="player-pool-dl" id="br-new-p" placeholder="Takım / oyuncu adı…" style="flex:1" />
+        <button class="secondary" onclick="addBrParticipant(${evId})">+ Ekle</button>
+      </div>
+      <p style="font-size:0.82rem;color:var(--text-dim);margin-bottom:0.75rem">
+        Galip seçimi için maç ekranında takım adına tıkla. Kazanan otomatik ilerler.
+      </p>
+      <div class="row">
+        <button class="primary" onclick="generateBracket(${evId})">Bracket Oluştur / Sıfırla</button>
+        <button class="secondary" onclick="this.closest('.tm-modal-overlay').remove()">Kapat</button>
+      </div>
+    </div>`;
+  document.body.appendChild(overlay);
+  overlay.addEventListener('click', e => { if (e.target === overlay) overlay.remove(); });
+  document.getElementById('br-new-p')?.focus();
+}
+
+async function addBrParticipant(evId) {
+  const ev = events.find(e => e.id === evId);
+  if (!ev) return;
+  const input = document.getElementById('br-new-p');
+  const name = input?.value.trim();
+  if (!name) return;
+  const b = getBracket(ev) || { enabled: true, participants: [], rounds: [] };
+  b.participants = [...(b.participants || []), name];
+  b.rounds = []; // bracket'ı sıfırla
+  await saveBracket(evId, b);
+  if (input) input.value = '';
+  openBracketEditor(evId); // editörü yenile
+}
+
+async function removeBrParticipant(evId, idx) {
+  const ev = events.find(e => e.id === evId);
+  if (!ev) return;
+  const b = getBracket(ev);
+  if (!b) return;
+  b.participants = (b.participants || []).filter((_, i) => i !== idx);
+  b.rounds = [];
+  await saveBracket(evId, b);
+  openBracketEditor(evId);
+}
+
+async function generateBracket(evId) {
+  const ev = events.find(e => e.id === evId);
+  if (!ev) return;
+  const b = getBracket(ev) || { enabled: true, participants: [] };
+  const ps = b.participants || [];
+  if (ps.length < 2) { alert('En az 2 katılımcı gerekli.'); return; }
+
+  // 2'nin üssüne yuvarla
+  let n = 1;
+  while (n < ps.length) n *= 2;
+  const padded = [...ps];
+  while (padded.length < n) padded.push(null); // bye
+
+  const NAMES = { 1: 'Final', 2: 'Yarı Final', 4: 'Çeyrek Final', 8: 'Son 16', 16: 'Son 32' };
+  const rounds = [];
+  let size = n;
+  let first = true;
+
+  while (size >= 2) {
+    const count = size / 2;
+    const matches = [];
+    if (first) {
+      for (let i = 0; i < count; i++) {
+        const t1 = padded[i] || null;
+        const t2 = padded[n - 1 - i] || null;
+        const winner_slot = (!t1 && t2) ? 2 : (!t2 && t1) ? 1 : null; // bye → otomatik geç
+        matches.push({ team1: t1, team2: t2, winner_slot });
+      }
+      first = false;
+    } else {
+      for (let i = 0; i < count; i++) matches.push({ team1: null, team2: null, winner_slot: null });
+    }
+    rounds.push({ name: NAMES[count] || `${count * 2} Takım`, matches });
+    size = count;
+  }
+
+  // Bye'ları ileri taşı
+  autoAdvanceByes(rounds);
+
+  b.rounds = rounds;
+  await saveBracket(evId, b);
+  document.querySelector('#bracket-editor-overlay')?.remove();
+}
+
+function autoAdvanceByes(rounds) {
+  for (let ri = 0; ri < rounds.length - 1; ri++) {
+    rounds[ri].matches.forEach((m, mi) => {
+      if (m.winner_slot) {
+        const winner = m.winner_slot === 1 ? m.team1 : m.team2;
+        const nextMi = Math.floor(mi / 2);
+        const nextSlot = mi % 2 === 0 ? 'team1' : 'team2';
+        if (rounds[ri + 1]?.matches[nextMi]) {
+          rounds[ri + 1].matches[nextMi][nextSlot] = winner;
+        }
+      }
+    });
+  }
+}
+
+async function setBracketWinner(evId, roundIdx, matchIdx, slot) {
+  const ev = events.find(e => e.id === evId);
+  if (!ev) return;
+  const b = getBracket(ev);
+  if (!b) return;
+
+  const match = b.rounds[roundIdx]?.matches[matchIdx];
+  if (!match) return;
+
+  // Tıklama toggle: aynı galip tekrar seçilirse sıfırla
+  const toggle = match.winner_slot === slot ? null : slot;
+  match.winner_slot = toggle;
+
+  // Bir sonraki tura ileri taşı
+  const nextRound = b.rounds[roundIdx + 1];
+  if (nextRound) {
+    const nextMi   = Math.floor(matchIdx / 2);
+    const nextSlot = matchIdx % 2 === 0 ? 'team1' : 'team2';
+    const nm = nextRound.matches[nextMi];
+    if (nm) {
+      nm[nextSlot] = toggle ? (slot === 1 ? match.team1 : match.team2) : null;
+      nm.winner_slot = null; // ileri turun sonucunu sıfırla
+      // Sonraki-sonraki turdaki etkiyi de sıfırla
+      const nn = b.rounds[roundIdx + 2];
+      if (nn) {
+        const nnMi   = Math.floor(nextMi / 2);
+        const nnSlot = nextMi % 2 === 0 ? 'team1' : 'team2';
+        if (nn.matches[nnMi]) { nn.matches[nnMi][nnSlot] = null; nn.matches[nnMi].winner_slot = null; }
+      }
+    }
+  }
+
+  await saveBracket(evId, b);
 }
 
 // ── Yardımcılar ──────────────────────────────────────────────────────────────

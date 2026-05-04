@@ -116,6 +116,36 @@
   }
   .player-chip:hover { background: var(--accent); color: #fff; border-color: var(--accent); }
 
+  /* ── Bracket ── */
+  .bracket-rounds {
+    display: flex;
+    gap: 1rem;
+    overflow-x: auto;
+    padding-bottom: 0.5rem;
+    align-items: flex-start;
+  }
+  .br-round { display: flex; flex-direction: column; min-width: 130px; }
+  .br-round-name {
+    font-size: 0.72rem; font-weight: 700; color: var(--text-dim);
+    text-align: center; letter-spacing: 0.04em; margin-bottom: 0.5rem;
+  }
+  .br-matches { display: flex; flex-direction: column; gap: 0.5rem; }
+  .br-match {
+    border: 1px solid var(--border, rgba(255,255,255,0.1));
+    border-radius: 8px; overflow: hidden;
+  }
+  .br-sep { height: 1px; background: var(--border, rgba(255,255,255,0.08)); }
+  .br-team {
+    padding: 0.35rem 0.55rem;
+    font-size: 0.82rem;
+    cursor: pointer;
+    transition: background 0.12s;
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  }
+  .br-team:hover { background: rgba(255,255,255,0.06); }
+  .br-team.br-winner { background: rgba(74,222,128,0.14); color: #4ade80; font-weight: 700; }
+  .br-team.br-loser  { color: var(--text-dim); text-decoration: line-through; opacity: 0.6; }
+
   .phase-toggle { display: flex; align-items: center; gap: 0.5rem; font-size: 0.82rem; color: var(--text-dim); }
   .phase-settings { display: flex; flex-wrap: wrap; gap: 0.5rem; margin-bottom: 0.5rem; font-size: 0.82rem; }
   .phase-settings select, .phase-settings input[type=number] { padding: 0.25rem 0.4rem; font-size: 0.82rem; }
