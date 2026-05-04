@@ -9,6 +9,23 @@
 <body class="board-page">
 <div id="root" class="board-screen"></div>
 
+<script>
+  // readonly modda (izleyici) login gerekmez
+  const _params = new URLSearchParams(location.search);
+  const _isReadonly = _params.get('readonly') === '1' && _params.get('match');
+  if (!_isReadonly) {
+    fetch('/auth/me', { credentials: 'same-origin' })
+      .then(r => r.json())
+      .then(data => {
+        if (!data.user) {
+          window.location.href = '/login.html?next=' + encodeURIComponent(location.pathname + location.search);
+        }
+      })
+      .catch(() => {
+        window.location.href = '/login.html?next=' + encodeURIComponent(location.pathname + location.search);
+      });
+  }
+</script>
 <script src="/socket.io/socket.io.js"></script>
 <script src="/js/common.js"></script>
 <script src="/js/board.js"></script>

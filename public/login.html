@@ -143,8 +143,9 @@ document.getElementById('auth-form').addEventListener('submit', async (e) => {
       errEl.classList.add('show');
       return;
     }
-    // Başarılı → organizatör paneline gönder
-    window.location.href = '/organizer.html';
+    // Başarılı → ?next varsa oraya, yoksa organizatör paneline gönder
+    const nextUrl = new URLSearchParams(location.search).get('next') || '/organizer.html';
+    window.location.href = nextUrl;
   } catch (err) {
     errEl.textContent = 'Bağlantı hatası: ' + err.message;
     errEl.classList.add('show');
@@ -155,7 +156,10 @@ document.getElementById('auth-form').addEventListener('submit', async (e) => {
 fetch('/auth/me', { credentials: 'same-origin' })
   .then(r => r.json())
   .then(data => {
-    if (data.user) window.location.href = '/organizer.html';
+    if (data.user) {
+      const nextUrl = new URLSearchParams(location.search).get('next') || '/organizer.html';
+      window.location.href = nextUrl;
+    }
   })
   .catch(() => {});
 </script>
