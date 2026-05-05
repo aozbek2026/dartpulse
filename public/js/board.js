@@ -127,7 +127,8 @@ function renderPreMatch() {
   const isDoubles = !!(m.entry1?.player2 || m.entry2?.player2);
   const scorer = m.scorer ? entryLabel(m.scorer) : null;
   const roundLabel = m.round_label || `Round ${m.round}`;
-  const tName = m.tournament_name || 'Turnuva';
+  const rawTName = m.tournament_name || 'Turnuva';
+  const tName = rawTName.startsWith('__team_pool_') ? 'Takım Maçı' : rawTName;
 
   // Yazıcı dropdown için uygun entry listesi: mevcut entry + tüm uygun entry'ler
   const t = allTournaments.find(tt => tt.id === m.tournament_id);
@@ -923,6 +924,8 @@ function renderPostMatch() {
   const wSets = winnerSlot === 1 ? m.p1_sets : m.p2_sets;
   const lSets = loserSlot === 1 ? m.p1_sets : m.p2_sets;
   const scorer = m.scorer ? entryLabel(m.scorer) : null;
+  const isTeamPool = (m.tournament_name || '').startsWith('__team_pool_');
+  const postTName  = isTeamPool ? 'Takım Maçı' : (m.tournament_name || '');
 
   const setLegLabel = (s, l) => (s > 0 ? `${s} set ${l} leg` : `${l} leg`);
 
@@ -930,7 +933,7 @@ function renderPostMatch() {
     <div class="board-header">
       <div>
         <div class="board-name">${currentBoard.name}</div>
-        <div class="match-info">${m.tournament_name || ''} · ${m.round_label || ''} · MAÇ BİTTİ</div>
+        <div class="match-info">${postTName} · ${m.round_label || ''} · MAÇ BİTTİ</div>
       </div>
       <a href="/board.html" class="btn secondary">Board değiştir</a>
     </div>
@@ -993,7 +996,7 @@ function renderPostMatch() {
         </div>
       ` : `
         <div style="font-size: 1.4rem; font-weight: 800; color: #22c55e; margin-top: 0.75rem; text-align: center;">
-          🏆 Turnuva tamamlandı!
+          ${isTeamPool ? '✅ Takım maçı kaydedildi!' : '🏆 Turnuva tamamlandı!'}
         </div>
         <button class="btn secondary" style="font-size: 1rem; padding: 0.75rem 2rem; margin-top: 0.25rem; border-radius: 12px;" onclick="nextMatch()">
           Board'u serbest bırak

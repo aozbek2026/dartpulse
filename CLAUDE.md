@@ -182,6 +182,15 @@ Görev numaralarıyla birlikte (TaskList sisteminde): #1-#46. Önemli olanlar:
 - Leg-end mini özet modalı — her leg sonunda kazanan + ortalama + 180/140+/100+ pillleri (#46)
 - LAN test hazırlığı — 4 tablet kurulumu (#41), `LAN-SETUP.md`
 
+## Takım Maçı — Yarın Yapılacaklar (öncelik sırası)
+
+1. **Tablet entegrasyonu**: Phase maçlarını board'lara gönder. Tablet üzerinden oyna, maç bitince sonuç otomatik team_phase_match'e yazılsın ve sıradaki maça geçilsin.
+2. **Katılımcı yönetimi**: `team.html` sol menüsüne "Katılımcılar" sekmesi. İki takım adı girilir, her takıma oyuncu listesi eklenir (takım bazlı, turnuva player pool'undan ayrı).
+3. **Maç oluştururken takım bazlı seçim**: Tekli/eşli/bira maç ekleme satırlarında serbest metin yerine takıma göre filtrelenmiş oyuncu dropdown'u.
+4. **Bracket yeniden tasarımı**: Mevcut bracket görünümü çirkin, sıfırdan düzgün görsel bracket (bağlantı çizgileri, dikey hizalama).
+
+---
+
 ## Bekleyen yol haritası — production launch
 
 ### Faz 1: Render deploy (mevcut adım)
