@@ -52,11 +52,102 @@ socket.on('team:update', ev => {
   const idx = events.findIndex(e => e.id === ev.id);
   if (idx >= 0) events[idx] = ev; else events.unshift(ev);
   renderEventsList();
+  renderParticipantsList();
 });
 socket.on('team:deleted', ({ id }) => {
   events = events.filter(e => e.id !== id);
   renderEventsList();
+  renderParticipantsList();
 });
+
+// ── Katılımcı yönetimi ───────────────────────────────────────────────────────
+function getTeamRoster(ev) {
+  try { return ev.teams_json ? JSON.parse(ev.teams_json) : { team1: [], team2: [] }; } catch { return { team1: [], team2: [] }; }
+}
+
+async function saveTeamRoster(evId, roster) {
+  await fetch(`/api/team-events/${evId}`, {
+    method: 'PATCH', credentials: 'same-origin',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ teams_json: JSON.stringify(roster) }),
+  });
+}
+
+function renderParticipantsList() {
+  const el = document.getElementById('participants-list');
+  if (!el) return;
+  if (!events.length) {
+    el.innerHTML = '<p style="color:var(--text-dim)">Önce "Yeni Maç" sekmesinden bir takım maçı oluştur.</p>';
+    return;
+  }
+  el.innerHTML = events.map(ev => renderParticipantsCard(ev)).join('');
+}
+
+function renderParticipantsCard(ev) {
+  const roster = getTeamRoster(ev);
+  const t1 = roster.team1 || [];
+  const t2 = roster.team2 || [];
+
+  const teamCol = (players, teamNum, teamName) => `
+    <div style="flex:1;min-width:180px">
+      <div style="font-weight:700;font-size:0.95rem;margin-bottom:0.5rem;color:var(--accent)">${esc(teamName)}</div>
+      ${players.map((p, i) => `
+        <div style="display:flex;align-items:center;gap:0.4rem;padding:0.3rem 0;border-bottom:1px solid var(--border,rgba(255,255,255,0.05))">
+          <span style="flex:1;font-size:0.88rem">${i + 1}. ${esc(p)}</span>
+          <button class="edit-btn" style="font-size:0.72rem;color:#f87171;padding:0.1rem 0.35rem"
+            onclick="removeTeamPlayer(${ev.id},${teamNum},${i})">✕</button>
+        </div>`).join('')}
+      ${players.length === 0 ? '<p style="color:var(--text-dim);font-size:0.82rem;margin:0.3rem 0">Henüz oyuncu yok.</p>' : ''}
+      <div style="display:flex;gap:0.35rem;margin-top:0.5rem">
+        <input list="player-pool-dl" id="tp-${ev.id}-${teamNum}" placeholder="Oyuncu adı…"
+          style="flex:1;padding:0.3rem 0.5rem;font-size:0.85rem"
+          onkeydown="if(event.key==='Enter')addTeamPlayer(${ev.id},${teamNum})" />
+        <button class="secondary" style="font-size:0.82rem;padding:0.3rem 0.6rem"
+          onclick="addTeamPlayer(${ev.id},${teamNum})">+ Ekle</button>
+      </div>
+    </div>`;
+
+  return `<div class="card" style="margin-bottom:0.75rem">
+    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:0.75rem">
+      <strong>${esc(ev.name)}</strong>
+      <span style="font-size:0.8rem;color:var(--text-dim)">${t1.length + t2.length} oyuncu</span>
+    </div>
+    <div style="display:flex;gap:1.5rem;flex-wrap:wrap">
+      ${teamCol(t1, 1, ev.team1_name)}
+      ${teamCol(t2, 2, ev.team2_name)}
+    </div>
+  </div>`;
+}
+
+async function addTeamPlayer(evId, teamNum) {
+  const ev = events.find(e => e.id === evId);
+  if (!ev) return;
+  const input = document.getElementById(`tp-${evId}-${teamNum}`);
+  const name = input?.value.trim();
+  if (!name) return;
+  const roster = getTeamRoster(ev);
+  const key = teamNum === 1 ? 'team1' : 'team2';
+  roster[key] = [...(roster[key] || []), name];
+  await saveTeamRoster(evId, roster);
+  if (input) input.value = '';
+}
+
+async function removeTeamPlayer(evId, teamNum, idx) {
+  const ev = events.find(e => e.id === evId);
+  if (!ev) return;
+  const roster = getTeamRoster(ev);
+  const key = teamNum === 1 ? 'team1' : 'team2';
+  roster[key] = (roster[key] || []).filter((_, i) => i !== idx);
+  await saveTeamRoster(evId, roster);
+}
+
+// Takım oyuncularından <select> seçenekleri üret
+function teamPlayerOpts(players, placeholder) {
+  const opts = [`<option value="">${placeholder}</option>`];
+  players.forEach(p => opts.push(`<option value="${esc(p)}">${esc(p)}</option>`));
+  opts.push(`<option value="Rakip Yok">— Rakip Yok —</option>`);
+  return opts.join('');
+}
 
 // ── Oyuncu havuzu ────────────────────────────────────────────────────────────
 function refreshDatalist() {
@@ -180,28 +271,46 @@ function renderPhase(ev, ph) {
 
 // ── Tekli / Eşli maç listeleri ───────────────────────────────────────────────
 function renderMatchesBody(ev, ph) {
-  const matches    = ph.matches || [];
+  const matches     = ph.matches || [];
   const matchesHtml = matches.map(pm => renderPhaseMatch(ev, ph, pm)).join('');
-  const isDoubles  = ph.phase_type === 'doubles';
+  const isDoubles   = ph.phase_type === 'doubles';
+  const roster      = getTeamRoster(ev);
+  const t1          = roster.team1 || [];
+  const t2          = roster.team2 || [];
+
+  // Oyuncu listesi varsa select, yoksa free text
+  const p1input = t1.length
+    ? `<select id="p1-${ph.id}" style="flex:1"><option value="">— ${esc(ev.team1_name)} —</option>${t1.map(p => `<option value="${esc(p)}">${esc(p)}</option>`).join('')}<option value="Rakip Yok">Rakip Yok</option></select>`
+    : `<input list="player-pool-dl" id="p1-${ph.id}" placeholder="${esc(ev.team1_name)} — oyuncu" style="flex:1" />`;
+  const p2input = t2.length
+    ? `<select id="p2-${ph.id}" style="flex:1"><option value="">— ${esc(ev.team2_name)} —</option>${t2.map(p => `<option value="${esc(p)}">${esc(p)}</option>`).join('')}<option value="Rakip Yok">Rakip Yok</option></select>`
+    : `<input list="player-pool-dl" id="p2-${ph.id}" placeholder="${esc(ev.team2_name)} — oyuncu" style="flex:1" />`;
+
+  const p1a = t1.length
+    ? `<select id="p1a-${ph.id}"><option value="">— ${esc(ev.team1_name)} Oyuncu 1 —</option>${t1.map(p=>`<option value="${esc(p)}">${esc(p)}</option>`).join('')}</select>`
+    : `<input list="player-pool-dl" id="p1a-${ph.id}" placeholder="${esc(ev.team1_name)} — Oyuncu 1" />`;
+  const p1b = t1.length
+    ? `<select id="p1b-${ph.id}"><option value="">— ${esc(ev.team1_name)} Oyuncu 2 —</option>${t1.map(p=>`<option value="${esc(p)}">${esc(p)}</option>`).join('')}</select>`
+    : `<input list="player-pool-dl" id="p1b-${ph.id}" placeholder="${esc(ev.team1_name)} — Oyuncu 2" />`;
+  const p2a = t2.length
+    ? `<select id="p2a-${ph.id}"><option value="">— ${esc(ev.team2_name)} Oyuncu 1 —</option>${t2.map(p=>`<option value="${esc(p)}">${esc(p)}</option>`).join('')}</select>`
+    : `<input list="player-pool-dl" id="p2a-${ph.id}" placeholder="${esc(ev.team2_name)} — Oyuncu 1" />`;
+  const p2b = t2.length
+    ? `<select id="p2b-${ph.id}"><option value="">— ${esc(ev.team2_name)} Oyuncu 2 —</option>${t2.map(p=>`<option value="${esc(p)}">${esc(p)}</option>`).join('')}</select>`
+    : `<input list="player-pool-dl" id="p2b-${ph.id}" placeholder="${esc(ev.team2_name)} — Oyuncu 2" />`;
 
   const addRow = isDoubles
     ? `<div class="tm-add-row" id="add-row-${ph.id}">
-        <div style="display:flex;flex-direction:column;gap:0.25rem;flex:1">
-          <input list="player-pool-dl" id="p1a-${ph.id}" placeholder="${esc(ev.team1_name)} — Oyuncu 1" />
-          <input list="player-pool-dl" id="p1b-${ph.id}" placeholder="${esc(ev.team1_name)} — Oyuncu 2" />
-        </div>
+        <div style="display:flex;flex-direction:column;gap:0.25rem;flex:1">${p1a}${p1b}</div>
         <span style="align-self:center;font-weight:700;color:var(--text-dim)">vs</span>
-        <div style="display:flex;flex-direction:column;gap:0.25rem;flex:1">
-          <input list="player-pool-dl" id="p2a-${ph.id}" placeholder="${esc(ev.team2_name)} — Oyuncu 1" />
-          <input list="player-pool-dl" id="p2b-${ph.id}" placeholder="${esc(ev.team2_name)} — Oyuncu 2" />
-        </div>
+        <div style="display:flex;flex-direction:column;gap:0.25rem;flex:1">${p2a}${p2b}</div>
         <button class="secondary" style="font-size:0.82rem;align-self:center" onclick="addDoublesMatch(${ph.id})">+ Ekle</button>
        </div>`
     : `<div class="tm-add-row" id="add-row-${ph.id}">
-        <input list="player-pool-dl" id="p1-${ph.id}" placeholder="${esc(ev.team1_name)} — oyuncu" />
-        <span style="color:var(--text-dim);font-weight:700">vs</span>
-        <input list="player-pool-dl" id="p2-${ph.id}" placeholder="${esc(ev.team2_name)} — oyuncu" />
-        <button class="secondary" style="font-size:0.82rem" onclick="addMatch(${ph.id})">+ Ekle</button>
+        ${p1input}
+        <span style="color:var(--text-dim);font-weight:700;align-self:center">vs</span>
+        ${p2input}
+        <button class="secondary" style="font-size:0.82rem;align-self:center" onclick="addMatch(${ph.id})">+ Ekle</button>
        </div>`;
 
   return `${matchesHtml}${addRow}`;
@@ -230,42 +339,32 @@ function renderPhaseMatch(ev, ph, pm) {
 
 // ── Bira Maçı ────────────────────────────────────────────────────────────────
 function renderBeerBody(ev, ph) {
-  let cfg = {};
-  try { cfg = ph.game_config_json ? JSON.parse(ph.game_config_json) : {}; } catch {}
-  const t1players = cfg.team1_players || [];
-  const t2players = cfg.team2_players || [];
+  // Oyuncu listesi artık event roster'ından geliyor
+  const roster    = getTeamRoster(ev);
+  const t1players = roster.team1 || [];
+  const t2players = roster.team2 || [];
 
   const resultMatch = (ph.matches || [])[0];
   const resultHtml  = resultMatch
     ? renderPhaseMatch(ev, ph, resultMatch)
-    : `<div class="pm-row" style="opacity:0.5;justify-content:center;">
-         <span style="grid-column:1/-1;text-align:center;font-size:0.85rem;color:var(--text-dim)">
-           Oyuncuları ekledikten sonra sonuç girilebilir —
-           <button class="winner-btn" onclick="addBeerResultMatch(${ph.id})">Sonuç gir</button>
-         </span>
+    : `<div style="text-align:center;padding:0.5rem 0;font-size:0.85rem;color:var(--text-dim)">
+         <button class="winner-btn" onclick="addBeerResultMatch(${ph.id})">Sonuç gir</button>
        </div>`;
 
-  const playerList = (arr, team, label) => `
+  const playerCol = (players, label) => `
     <div style="flex:1;min-width:140px">
-      <div style="font-size:0.8rem;color:var(--text-dim);margin-bottom:0.3rem;font-weight:600">${label}</div>
-      ${arr.map((name, i) =>
-        `<div style="display:flex;align-items:center;gap:0.3rem;margin-bottom:0.2rem;font-size:0.88rem">
-           <span style="flex:1">${esc(name)}</span>
-           <button class="edit-btn" style="font-size:0.7rem;padding:0.1rem 0.35rem;color:#f87171"
-             onclick="removeBeerPlayer(${ph.id},${team},${i})">✕</button>
-         </div>`).join('')}
-      <div style="display:flex;gap:0.3rem;margin-top:0.4rem">
-        <input list="player-pool-dl" id="beer-p${team}-${ph.id}" placeholder="Oyuncu ekle…" style="flex:1;padding:0.25rem 0.4rem;font-size:0.82rem" />
-        <button class="secondary" style="font-size:0.78rem;padding:0.25rem 0.5rem" onclick="addBeerPlayer(${ph.id},${team})">+</button>
-      </div>
+      <div style="font-size:0.8rem;color:var(--text-dim);font-weight:600;margin-bottom:0.3rem">${label}</div>
+      ${players.length
+        ? players.map((p, i) => `<div style="padding:0.2rem 0;font-size:0.88rem;border-bottom:1px solid var(--border,rgba(255,255,255,0.05))">${i+1}. ${esc(p)}</div>`).join('')
+        : `<p style="color:var(--text-dim);font-size:0.82rem;margin:0">"Katılımcılar" sekmesinden ekle.</p>`}
     </div>`;
 
   return `
-    <div style="display:flex;gap:1rem;flex-wrap:wrap;margin-bottom:0.75rem">
-      ${playerList(t1players, 1, esc(ev.team1_name))}
-      ${playerList(t2players, 2, esc(ev.team2_name))}
+    <div style="display:flex;gap:1.5rem;flex-wrap:wrap;margin-bottom:0.75rem">
+      ${playerCol(t1players, esc(ev.team1_name))}
+      ${playerCol(t2players, esc(ev.team2_name))}
     </div>
-    <div style="border-top:1px solid var(--border,rgba(255,255,255,0.07));padding-top:0.5rem;margin-top:0.25rem">
+    <div style="border-top:1px solid var(--border,rgba(255,255,255,0.07));padding-top:0.5rem">
       <div style="font-size:0.8rem;color:var(--text-dim);margin-bottom:0.3rem">Sonuç</div>
       ${resultHtml}
     </div>`;
@@ -730,5 +829,8 @@ function esc(s) {
 }
 
 // ── Init ─────────────────────────────────────────────────────────────────────
-loadPlayers();
-loadEvents();
+async function init() {
+  await Promise.all([loadPlayers(), loadEvents()]);
+  renderParticipantsList();
+}
+init();

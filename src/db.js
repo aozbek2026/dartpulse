@@ -137,6 +137,7 @@ function init() {
       status TEXT DEFAULT 'draft',     -- draft | running | finished
       team1_score REAL DEFAULT 0,
       team2_score REAL DEFAULT 0,
+      teams_json TEXT,                 -- {"team1":["Ali","Mehmet"], "team2":["Fatma",...]}
       bracket_json TEXT,               -- opsiyonel playoff bracket
       created_at TEXT DEFAULT CURRENT_TIMESTAMP,
       FOREIGN KEY(user_id) REFERENCES users(id) ON DELETE CASCADE
@@ -257,10 +258,13 @@ function init() {
   if (!tournCols.includes('user_id')) {
     try { db.exec('ALTER TABLE tournaments ADD COLUMN user_id INTEGER'); } catch {}
   }
-  // Takım maçı bracket kolonu
+  // Takım maçı kolon migrasyonları
   const teamEvCols = db.prepare("PRAGMA table_info(team_events)").all().map(c => c.name);
   if (!teamEvCols.includes('bracket_json')) {
     try { db.exec('ALTER TABLE team_events ADD COLUMN bracket_json TEXT'); } catch {}
+  }
+  if (!teamEvCols.includes('teams_json')) {
+    try { db.exec('ALTER TABLE team_events ADD COLUMN teams_json TEXT'); } catch {}
   }
 }
 
@@ -703,7 +707,7 @@ function teamEventById(id) {
   return db.prepare('SELECT * FROM team_events WHERE id = ?').get(id);
 }
 function updateTeamEvent(id, fields) {
-  const allowed = ['name', 'team1_name', 'team2_name', 'status', 'team1_score', 'team2_score', 'bracket_json'];
+  const allowed = ['name', 'team1_name', 'team2_name', 'status', 'team1_score', 'team2_score', 'bracket_json', 'teams_json'];
   const keys = Object.keys(fields).filter(k => allowed.includes(k));
   if (!keys.length) return;
   const sql = `UPDATE team_events SET ${keys.map(k => `${k} = ?`).join(', ')} WHERE id = ?`;
