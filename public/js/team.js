@@ -324,10 +324,22 @@ function renderPhaseMatch(ev, ph, pm) {
   const legs   = pm.winner_slot ? `${pm.team1_legs}–${pm.team2_legs}` : '–';
   const wkoTxt = pm.walkover ? ' <em>(hükmen)</em>' : '';
 
-  const actions = pm.status !== 'finished'
-    ? `<button class="winner-btn" onclick="openScoreModal(${pm.id},${ph.id},${ev.id})">Sonuç gir</button>`
-    : `<button class="edit-btn" onclick="openScoreModal(${pm.id},${ph.id},${ev.id})">Düzenle</button>
-       <button class="edit-btn" style="color:#f87171" onclick="removeMatch(${pm.id})">✕</button>`;
+  let actions;
+  if (pm.status === 'finished') {
+    actions = `<button class="edit-btn" onclick="openScoreModal(${pm.id},${ph.id},${ev.id})">Düzenle</button>
+               <button class="edit-btn" style="color:#f87171" onclick="removeMatch(${pm.id})">✕</button>`;
+  } else if (pm.match_id) {
+    // Tablette oynanıyor
+    actions = `<span style="font-size:0.73rem;color:#4ade80;font-weight:700">▶ Oynanıyor</span>
+               <button class="edit-btn" style="font-size:0.72rem" onclick="openScoreModal(${pm.id},${ph.id},${ev.id})">Manuel</button>`;
+  } else {
+    const canSend = pm.team1_player && pm.team2_player
+      && pm.team1_player !== 'Rakip Yok' && pm.team2_player !== 'Rakip Yok';
+    actions = `${canSend
+      ? `<button class="edit-btn" style="font-size:0.72rem" onclick="openSendToBoardModal(${pm.id},${ph.id},${ev.id})">📲 Tablet</button>`
+      : ''}
+      <button class="winner-btn" onclick="openScoreModal(${pm.id},${ph.id},${ev.id})">Sonuç gir</button>`;
+  }
 
   return `<div class="pm-row ${pm.walkover ? 'walkover' : ''}" id="pm-${pm.id}">
     <span class="pname ${p1cls}">${esc(pm.team1_player || '?')}${wkoTxt}</span>
@@ -503,6 +515,57 @@ async function addBeerResultMatch(phaseId) {
   });
 }
 
+// ── Tablette Gönder modalı ───────────────────────────────────────────────────
+async function openSendToBoardModal(pmId, phaseId, evId) {
+  let boards = [];
+  try {
+    const res = await fetch('/api/boards', { credentials: 'same-origin' });
+    boards = await res.json();
+  } catch {}
+  const idle = boards.filter(b => b.status === 'idle');
+
+  const overlay = document.createElement('div');
+  overlay.className = 'tm-modal-overlay';
+  overlay.innerHTML = `
+    <div class="tm-modal" style="max-width:380px">
+      <h3>📲 Board'a Gönder</h3>
+      ${idle.length
+        ? `<p style="font-size:0.85rem;color:var(--text-dim);margin-bottom:0.75rem">Maçı hangi board'a göndereyim?</p>
+           <div id="board-choices" style="display:flex;flex-direction:column;gap:0.35rem">
+             ${idle.map(b => `
+               <button class="secondary" style="text-align:left;padding:0.55rem 0.75rem"
+                 onclick="sendToBoard(${pmId},${b.id});this.closest('.tm-modal-overlay').remove()">
+                 📋 ${esc(b.name)}
+               </button>`).join('')}
+           </div>`
+        : `<p style="color:var(--text-dim);font-size:0.85rem;margin-bottom:0.75rem">
+             Şu an boşta board yok.<br>
+             <span style="font-size:0.8rem">Organizatör sayfasından board ekle veya meşgul board'un maçını bitir.</span>
+           </p>`}
+      <div style="margin-top:0.75rem;display:flex;gap:0.4rem">
+        <button class="secondary" style="flex:1" onclick="this.closest('.tm-modal-overlay').remove()">İptal</button>
+      </div>
+    </div>`;
+  document.body.appendChild(overlay);
+  overlay.addEventListener('click', e => { if (e.target === overlay) overlay.remove(); });
+}
+
+async function sendToBoard(pmId, boardId) {
+  try {
+    const res = await fetch(`/api/team-phase-matches/${pmId}/send-to-board`, {
+      method: 'POST', credentials: 'same-origin',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ boardId }),
+    });
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({}));
+      alert('Gönderilemedi: ' + (err.error || 'bilinmeyen hata'));
+    }
+  } catch (e) {
+    alert('Bağlantı hatası: ' + e.message);
+  }
+}
+
 // ── Sonuç giriş modalı ───────────────────────────────────────────────────────
 function openScoreModal(pmId, phaseId, evId) {
   const ev = events.find(e => e.id === evId);
@@ -584,60 +647,118 @@ async function clearScore(pmId) {
   document.querySelector('.tm-modal-overlay')?.remove();
 }
 
-// ── Bracket ──────────────────────────────────────────────────────────────────
+// ── Bracket (yeniden tasarım) ─────────────────────────────────────────────────
 function getBracket(ev) {
   try { return ev.bracket_json ? JSON.parse(ev.bracket_json) : null; } catch { return null; }
 }
 
+const BR_MATCH_H  = 64;  // maç kartı yüksekliği (px)
+const BR_SLOT_H   = 82;  // ilk turda her maça ayrılan dikey alan (px)
+const BR_ROUND_W  = 148; // round kolon genişliği (px)
+const BR_COL_GAP  = 44;  // kolonlar arası boşluk (px)
+const BR_HEADER_H = 24;  // tur başlık alanı yüksekliği (px)
+
+const BR_RNAMES = { 1: 'FİNAL', 2: 'YARI FİNAL', 4: 'ÇEYREK FİNAL', 8: 'SON 16', 16: 'SON 32' };
+
 function renderBracket(ev) {
   const b = getBracket(ev);
+  const sep = 'margin-top:0.75rem;padding-top:0.75rem;border-top:1px solid var(--border,rgba(255,255,255,0.07))';
+
   if (!b?.enabled) {
-    return `<div style="margin-top:0.75rem;padding-top:0.75rem;border-top:1px solid var(--border,rgba(255,255,255,0.07))">
+    return `<div style="${sep}">
       <button class="secondary" style="font-size:0.82rem" onclick="toggleBracket(${ev.id})">🏆 Playoff Bracket Ekle</button>
     </div>`;
   }
-  const rounds = b.rounds || [];
-  const roundsHtml = rounds.length
-    ? `<div class="bracket-rounds">${rounds.map((r, ri) => renderBracketRound(ev, b, r, ri)).join('')}</div>`
-    : `<p style="color:var(--text-dim);font-size:0.85rem;margin:0.5rem 0">
-         Katılımcıları ekle ve bracket oluştur.
-       </p>`;
 
-  return `<div style="margin-top:0.75rem;padding-top:0.75rem;border-top:1px solid var(--border,rgba(255,255,255,0.07))">
-    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:0.5rem;flex-wrap:wrap;gap:0.4rem">
+  const rounds = b.rounds || [];
+  const btnRow = `
+    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:0.75rem;flex-wrap:wrap;gap:0.4rem">
       <strong>🏆 Playoff Bracket</strong>
       <div style="display:flex;gap:0.35rem">
         <button class="secondary" style="font-size:0.78rem;padding:0.25rem 0.5rem" onclick="openBracketEditor(${ev.id})">Düzenle</button>
         <button class="secondary" style="font-size:0.78rem;padding:0.25rem 0.5rem;color:#f87171" onclick="toggleBracket(${ev.id})">Kaldır</button>
       </div>
-    </div>
-    ${roundsHtml}
-  </div>`;
-}
-
-function renderBracketRound(ev, b, round, ri) {
-  const NAMES = { 1: 'FİNAL', 2: 'YARI FİNAL', 4: 'ÇEYREK FİNAL', 8: 'SON 16' };
-  const matchCount = round.matches?.length || 0;
-  const name = round.name || NAMES[matchCount] || `Tur ${ri + 1}`;
-
-  const matchesHtml = (round.matches || []).map((m, mi) => {
-    const t1 = m.team1 || '—';
-    const t2 = m.team2 || '—';
-    const t1cls = m.winner_slot === 1 ? 'br-winner' : m.winner_slot === 2 ? 'br-loser' : '';
-    const t2cls = m.winner_slot === 2 ? 'br-winner' : m.winner_slot === 1 ? 'br-loser' : '';
-    const canPick = m.team1 && m.team2;
-    const onclick1 = canPick ? `onclick="setBracketWinner(${ev.id},${ri},${mi},1)"` : '';
-    const onclick2 = canPick ? `onclick="setBracketWinner(${ev.id},${ri},${mi},2)"` : '';
-    return `<div class="br-match">
-      <div class="br-team ${t1cls}" ${onclick1} title="${canPick ? 'Tıkla → galip' : ''}">${esc(t1)}</div>
-      <div class="br-sep"></div>
-      <div class="br-team ${t2cls}" ${onclick2} title="${canPick ? 'Tıkla → galip' : ''}">${esc(t2)}</div>
     </div>`;
-  }).join('');
 
-  return `<div class="br-round">
-    <div class="br-round-name">${name}</div>
-    <div class="br-matches">${matchesHtml}</div>
+  if (!rounds.length) {
+    return `<div style="${sep}">${btnRow}
+      <p style="color:var(--text-dim);font-size:0.85rem;margin:0">Katılımcıları ekle, "Düzenle" → "Bracket Oluştur / Sıfırla".</p>
+    </div>`;
+  }
+
+  const firstCount = rounds[0].matches.length;
+  const totalH     = firstCount * BR_SLOT_H;
+  const totalW     = rounds.length * (BR_ROUND_W + BR_COL_GAP);
+
+  // Her maçın merkez konumunu hesapla
+  const pos = rounds.map((round, ri) => {
+    const cnt      = round.matches.length;
+    const slotEach = totalH / cnt;
+    return round.matches.map((_, mi) => ({
+      x:  ri * (BR_ROUND_W + BR_COL_GAP),
+      y:  (mi + 0.5) * slotEach - BR_MATCH_H / 2,
+      cy: (mi + 0.5) * slotEach,
+    }));
+  });
+
+  // SVG bağlantı çizgileri
+  const C = 'rgba(255,255,255,0.2)';
+  let lines = '';
+  for (let ri = 0; ri < rounds.length - 1; ri++) {
+    for (let ni = 0; ni < rounds[ri + 1].matches.length; ni++) {
+      const i1 = ni * 2, i2 = ni * 2 + 1;
+      if (i2 >= pos[ri].length) continue;
+      const p1 = pos[ri][i1], p2 = pos[ri][i2], pN = pos[ri + 1][ni];
+      const xR = p1.x + BR_ROUND_W;
+      const xM = xR + BR_COL_GAP / 2;
+      const xL = pN.x;
+      lines += `<line x1="${xR}" y1="${p1.cy}" x2="${xM}" y2="${p1.cy}" stroke="${C}" stroke-width="1.5"/>
+        <line x1="${xR}" y1="${p2.cy}" x2="${xM}" y2="${p2.cy}" stroke="${C}" stroke-width="1.5"/>
+        <line x1="${xM}" y1="${p1.cy}" x2="${xM}" y2="${p2.cy}" stroke="${C}" stroke-width="1.5"/>
+        <line x1="${xM}" y1="${pN.cy}" x2="${xL}" y2="${pN.cy}" stroke="${C}" stroke-width="1.5"/>`;
+    }
+  }
+
+  // Maç kartları + tur başlıkları
+  let cards = '';
+  rounds.forEach((round, ri) => {
+    const rname = round.name || BR_RNAMES[round.matches.length] || `Tur ${ri + 1}`;
+    const rx = ri * (BR_ROUND_W + BR_COL_GAP);
+    cards += `<div style="position:absolute;left:${rx}px;top:0;width:${BR_ROUND_W}px;
+      text-align:center;font-size:0.65rem;font-weight:700;color:var(--text-dim);
+      letter-spacing:0.06em;text-transform:uppercase;line-height:${BR_HEADER_H}px">${esc(rname)}</div>`;
+
+    round.matches.forEach((m, mi) => {
+      const p    = pos[ri][mi];
+      const t1   = m.team1 ?? (ri === 0 ? 'BYE' : '—');
+      const t2   = m.team2 ?? (ri === 0 ? 'BYE' : '—');
+      const bye  = m.team1 === null || m.team2 === null;
+      const t1w  = m.winner_slot === 1, t2w = m.winner_slot === 2;
+      const ok   = m.team1 && m.team2;
+      const t1c  = t1w ? 'br-winner' : (m.winner_slot ? 'br-loser' : '');
+      const t2c  = t2w ? 'br-winner' : (m.winner_slot ? 'br-loser' : '');
+      const on1  = ok ? `onclick="setBracketWinner(${ev.id},${ri},${mi},1)"` : '';
+      const on2  = ok ? `onclick="setBracketWinner(${ev.id},${ri},${mi},2)"` : '';
+      const tip  = ok ? 'title="Tıkla → galip seç"' : '';
+      cards += `<div style="position:absolute;left:${p.x}px;top:${BR_HEADER_H + p.y}px;width:${BR_ROUND_W}px">
+        <div class="br-match${bye ? ' br-bye' : ''}">
+          <div class="br-team ${t1c}" ${on1} ${tip}>${esc(t1)}</div>
+          <div class="br-sep"></div>
+          <div class="br-team ${t2c}" ${on2} ${tip}>${esc(t2)}</div>
+        </div>
+      </div>`;
+    });
+  });
+
+  return `<div style="${sep}">${btnRow}
+    <div style="overflow-x:auto;padding-bottom:0.5rem">
+      <div style="position:relative;width:${totalW}px;height:${totalH + BR_HEADER_H}px">
+        <svg style="position:absolute;left:0;top:${BR_HEADER_H}px;width:${totalW}px;height:${totalH}px;pointer-events:none;overflow:visible">
+          ${lines}
+        </svg>
+        ${cards}
+      </div>
+    </div>
   </div>`;
 }
 

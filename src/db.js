@@ -103,6 +103,7 @@ function init() {
       sets_to_win INTEGER,            -- null → turnuva varsayılanı; round başına override
       is_reset_final INTEGER DEFAULT 0, -- çift elemede 2. grand final (reset match)
       is_walkover INTEGER DEFAULT 0,   -- 1 = rakip gelmedi, istatistiklere sayılmaz
+      team_phase_match_id INTEGER,     -- takım maçına bağlıysa
       finished_at TEXT,
       FOREIGN KEY(tournament_id) REFERENCES tournaments(id) ON DELETE CASCADE,
       FOREIGN KEY(stage_id) REFERENCES stages(id) ON DELETE CASCADE
@@ -229,6 +230,9 @@ function init() {
   if (!matchCols.includes('is_walkover')) {
     try { db.exec('ALTER TABLE matches ADD COLUMN is_walkover INTEGER DEFAULT 0'); } catch {}
   }
+  if (!matchCols.includes('team_phase_match_id')) {
+    try { db.exec('ALTER TABLE matches ADD COLUMN team_phase_match_id INTEGER'); } catch {}
+  }
   if (!matchCols.includes('group_index')) {
     try { db.exec('ALTER TABLE matches ADD COLUMN group_index INTEGER DEFAULT NULL'); } catch {}
   }
@@ -349,10 +353,13 @@ function createTournament(data) {
   return db.prepare('SELECT * FROM tournaments WHERE id = ?').get(info.lastInsertRowid);
 }
 function allTournaments(userId = null) {
+  // __team_pool_*__ turnuvalarını gizle (organizatör listesinden)
   if (userId == null) {
-    return db.prepare('SELECT * FROM tournaments ORDER BY id DESC').all();
+    return db.prepare("SELECT * FROM tournaments WHERE name NOT LIKE '__team_pool_%' ORDER BY id DESC").all();
   }
-  return db.prepare('SELECT * FROM tournaments WHERE user_id = ? ORDER BY id DESC').all(userId);
+  return db.prepare(
+    "SELECT * FROM tournaments WHERE user_id = ? AND name NOT LIKE '__team_pool_%' ORDER BY id DESC"
+  ).all(userId);
 }
 function tournamentById(id) {
   return db.prepare('SELECT * FROM tournaments WHERE id = ?').get(id);
@@ -691,6 +698,50 @@ function walkoverMatch(matchId, winnerSlot) {
   return db.prepare('SELECT * FROM matches WHERE id = ?').get(matchId);
 }
 
+// ─── Team Pool ───────────────────────────────────────────────────────────────
+// Her game_mode için gizli bir havuz turnuvası tutar (board'da oynanacak takım maçları için).
+function getOrCreateTeamPool(userId, gameMode) {
+  const POOL_NAME = `__team_pool_${gameMode}__`;
+  const existing = db.prepare(
+    'SELECT * FROM tournaments WHERE user_id = ? AND name = ? LIMIT 1'
+  ).get(userId, POOL_NAME);
+
+  if (existing) {
+    const stage = db.prepare('SELECT * FROM stages WHERE tournament_id = ? LIMIT 1').get(existing.id);
+    if (stage) return { tournamentId: existing.id, stageId: stage.id };
+    const ns = createStage(existing.id, 0, 'single_elim');
+    return { tournamentId: existing.id, stageId: ns.id };
+  }
+  const info = db.prepare(
+    `INSERT INTO tournaments (user_id, name, game_mode, team_mode, legs_to_win, sets_to_win)
+     VALUES (?, ?, ?, 'singles', 2, 1)`
+  ).run(userId, POOL_NAME, gameMode);
+  const stage = createStage(info.lastInsertRowid, 0, 'single_elim');
+  return { tournamentId: info.lastInsertRowid, stageId: stage.id };
+}
+
+// Oyuncuyu isimle bul; yoksa oluştur. null → null döner.
+function getOrCreatePlayerByName(userId, name) {
+  if (!name) return null;
+  const existing = db.prepare(
+    'SELECT id FROM players WHERE user_id = ? AND (name = ? OR nickname = ?) LIMIT 1'
+  ).get(userId, name, name);
+  if (existing) return existing.id;
+  const info = db.prepare('INSERT INTO players (user_id, name) VALUES (?, ?)').run(userId, name);
+  return info.lastInsertRowid;
+}
+
+// match_id ile team_phase_match bul (finish hook için).
+function teamPhaseMatchByMatchId(matchId) {
+  return db.prepare(
+    `SELECT tpm.*, te.user_id AS team_user_id, tp.team_event_id AS event_id
+     FROM team_phase_matches tpm
+     JOIN team_phases tp ON tpm.team_phase_id = tp.id
+     JOIN team_events te ON tp.team_event_id = te.id
+     WHERE tpm.match_id = ? LIMIT 1`
+  ).get(matchId);
+}
+
 // --- Team Events ---
 function createTeamEvent(data) {
   const info = db.prepare(`
@@ -834,4 +885,5 @@ module.exports = {
   createTeamPhase, phasesForEvent, teamPhaseById, updateTeamPhase,
   createTeamPhaseMatch, matchesForPhase, teamPhaseMatchById, updateTeamPhaseMatch,
   deleteTeamPhaseMatch, recalcTeamScores,
+  getOrCreateTeamPool, getOrCreatePlayerByName, teamPhaseMatchByMatchId,
 };

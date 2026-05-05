@@ -419,19 +419,22 @@ app.post('/api/matches/:id/throw', (req, res) => {
     const result = engine.recordThrow(matchId, playerSlot, +score, finishDarts ? +finishDarts : null);
     io.emit('match:update', { matchId });
     if (result.matchFinished) {
-      tournament.onMatchFinished(matchId);
-      // Maçın sahibi olan kullanıcı için scheduler çalıştır
       const m = db.matchById(matchId);
-      const t = m ? db.tournamentById(m.tournament_id) : null;
-      // Turnuva bittiyse board'ları serbest bırak ve tabletlere bildir
-      if (t && t.status === 'finished') {
-        const boards = db.allBoards(t.user_id);
-        db.clearUserBoards(t.user_id);
-        for (const b of boards) {
-          io.to(`board:${b.id}`).emit('board:state', { board: { ...b, current_match_id: null, status: 'idle' }, match: null });
-        }
+      if (m && m.team_phase_match_id) {
+        // Takım maçı — ayrı işleyici
+        onTeamMatchFinished(matchId, m);
       } else {
-        scheduler.assignPendingMatches(io, t?.user_id || null);
+        tournament.onMatchFinished(matchId);
+        const t = m ? db.tournamentById(m.tournament_id) : null;
+        if (t && t.status === 'finished') {
+          const boards = db.allBoards(t.user_id);
+          db.clearUserBoards(t.user_id);
+          for (const b of boards) {
+            io.to(`board:${b.id}`).emit('board:state', { board: { ...b, current_match_id: null, status: 'idle' }, match: null });
+          }
+        } else {
+          scheduler.assignPendingMatches(io, t?.user_id || null);
+        }
       }
       broadcastState();
     } else {
@@ -454,18 +457,21 @@ app.post('/api/matches/:id/walkover', (req, res) => {
     if (m.status === 'finished') return res.status(400).json({ error: 'Maç zaten bitti' });
     // Walkover olarak bitir
     db.walkoverMatch(matchId, winnerSlot);
-    // Bracket ilerletme
-    tournament.onMatchFinished(matchId);
     const updated = db.matchById(matchId);
-    const t = updated ? db.tournamentById(updated.tournament_id) : null;
-    if (t && t.status === 'finished') {
-      const boards = db.allBoards(t.user_id);
-      db.clearUserBoards(t.user_id);
-      for (const b of boards) {
-        io.to(`board:${b.id}`).emit('board:state', { board: { ...b, current_match_id: null, status: 'idle' }, match: null });
-      }
+    if (updated && updated.team_phase_match_id) {
+      onTeamMatchFinished(matchId, updated);
     } else {
-      scheduler.assignPendingMatches(io, t?.user_id || null);
+      tournament.onMatchFinished(matchId);
+      const t = updated ? db.tournamentById(updated.tournament_id) : null;
+      if (t && t.status === 'finished') {
+        const boards = db.allBoards(t.user_id);
+        db.clearUserBoards(t.user_id);
+        for (const b of boards) {
+          io.to(`board:${b.id}`).emit('board:state', { board: { ...b, current_match_id: null, status: 'idle' }, match: null });
+        }
+      } else {
+        scheduler.assignPendingMatches(io, t?.user_id || null);
+      }
     }
     io.emit('match:update', { matchId });
     broadcastState();
@@ -690,6 +696,115 @@ app.delete('/api/team-phase-matches/:id', auth.requireAuth, (req, res) => {
   io.emit('team:update', { ...updatedEv, phases });
   res.json({ ok: true });
 });
+
+// ── Takım maçını board'a gönder ───────────────────────────────────────────────
+app.post('/api/team-phase-matches/:id/send-to-board', auth.requireAuth, (req, res) => {
+  try {
+    const userId = req.session.userId;
+    const pm = db.teamPhaseMatchById(+req.params.id);
+    if (!pm) return res.status(404).json({ error: 'Maç bulunamadı' });
+    const ph = db.teamPhaseById(pm.team_phase_id);
+    const ev = db.teamEventById(ph?.team_event_id);
+    if (!ev || ev.user_id !== userId) return res.status(403).json({ error: 'Yetkisiz' });
+    if (pm.status === 'finished') return res.status(400).json({ error: 'Maç zaten bitti' });
+
+    const { boardId } = req.body;
+    const board = boardId ? db.boardById(+boardId) : null;
+    if (boardId && !board) return res.status(404).json({ error: 'Board bulunamadı' });
+
+    const gameMode = ph.game_mode || '501';
+    const legsToWin = ph.legs_to_win || 3;
+
+    // Havuz turnuvası / stage
+    const { tournamentId, stageId } = db.getOrCreateTeamPool(userId, gameMode);
+
+    // Oyuncuları bul/oluştur
+    const p1Id = db.getOrCreatePlayerByName(userId, pm.team1_player);
+    const p2Id = db.getOrCreatePlayerByName(userId, pm.team2_player);
+    if (!p1Id || !p2Id) return res.status(400).json({ error: 'Geçerli oyuncu adları gerekli' });
+
+    // Entry slot
+    const nextSlot = (db.db.prepare(
+      'SELECT COALESCE(MAX(slot),0) FROM entries WHERE tournament_id = ?'
+    ).pluck().get(tournamentId) || 0) + 1;
+    const e1 = db.addEntry(tournamentId, nextSlot,     p1Id);
+    const e2 = db.addEntry(tournamentId, nextSlot + 1, p2Id);
+
+    // Start score (cricket için null)
+    const startScores = { '501': 501, '701': 701, '1001': 1001 };
+    const startScore  = startScores[gameMode] || null;
+
+    // Maç oluştur
+    const match = db.createMatch({
+      tournament_id: tournamentId,
+      stage_id:      stageId,
+      bracket:       'team',
+      round:         0,
+      match_index:   0,
+      entry1_id:     e1.id,
+      entry2_id:     e2.id,
+      status:        board ? 'ready' : 'pending',
+      legs_to_win:   legsToWin,
+      start_score:   startScore,
+    });
+    // team_phase_match ile ilişkilendir
+    db.updateMatch(match.id, { team_phase_match_id: pm.id });
+
+    // Board'a ata (varsa)
+    if (board) {
+      db.updateMatch(match.id, { board_id: board.id });
+      db.setBoardMatch(board.id, match.id);
+      io.to(`board:${board.id}`).emit('board:state', {
+        board: db.boardById(board.id),
+        match: db.matchById(match.id),
+      });
+    }
+
+    // Team phase match güncelle
+    db.updateTeamPhaseMatch(pm.id, { match_id: match.id, status: board ? 'live' : 'pending' });
+
+    // Team event emit
+    const updatedEv = db.teamEventById(ev.id);
+    const phases    = db.phasesForEvent(ev.id).map(p => ({ ...p, matches: db.matchesForPhase(p.id) }));
+    io.emit('team:update', { ...updatedEv, phases });
+
+    res.json({ matchId: match.id, boardUrl: board ? `/board.html?id=${board.id}` : null });
+  } catch (e) {
+    console.error('send-to-board hatası:', e);
+    res.status(500).json({ error: e.message });
+  }
+});
+
+// Takım maçı bitiş işleyici (internal)
+function onTeamMatchFinished(matchId, m) {
+  try {
+    const tpm = db.teamPhaseMatchByMatchId(matchId);
+    if (!tpm) return;
+    const winnerSlot = m.winner_entry_id === m.entry1_id ? 1 : 2;
+    db.updateTeamPhaseMatch(tpm.id, {
+      winner_slot: winnerSlot,
+      team1_legs:  m.p1_legs || 0,
+      team2_legs:  m.p2_legs || 0,
+      status:      'finished',
+    });
+    db.recalcTeamScores(tpm.event_id);
+    // Board serbest bırak
+    if (m.board_id) {
+      db.setBoardMatch(m.board_id, null);
+      io.to(`board:${m.board_id}`).emit('board:state', {
+        board: { ...db.boardById(m.board_id), current_match_id: null, status: 'idle' },
+        match: null,
+      });
+      scheduler.assignPendingMatches(io, tpm.team_user_id || null);
+    }
+    // Team update emit
+    const teamEv = db.teamEventById(tpm.event_id);
+    const phases  = db.phasesForEvent(tpm.event_id).map(p => ({ ...p, matches: db.matchesForPhase(p.id) }));
+    io.emit('team:update', { ...teamEv, phases });
+  } catch (e) {
+    console.error('onTeamMatchFinished hatası:', e);
+  }
+}
 
 // --- Start ---
 const PORT = process.env.PORT || 3000;
