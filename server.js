@@ -30,17 +30,49 @@ app.use((req, res, next) => {
 app.use(express.json());
 
 // Session — multi-organizer için kimlik izolasyonu
-// SQLite tabanlı session store: server yeniden başlayınca oturumlar kaybolmaz
-const SQLiteStore = require('connect-sqlite3')(session);
-const DB_PATH_FOR_SESSION = process.env.DB_PATH || path.join(__dirname, 'data.db');
+// better-sqlite3 ile yazılmış özel session store: connect-sqlite3 çakışması yok,
+// session'lar kalıcı disk üzerindeki aynı data.db içinde saklanır.
 const SESSION_SECRET = process.env.SESSION_SECRET
   || 'dev-secret-please-set-SESSION_SECRET-in-prod';
-app.use(session({
-  store: new SQLiteStore({
-    db: path.basename(DB_PATH_FOR_SESSION),
-    dir: path.dirname(DB_PATH_FOR_SESSION),
-    concurrentDB: true,
-  }),
+
+class BetterSQLiteStore extends session.Store {
+  constructor() {
+    super();
+    db.exec(`CREATE TABLE IF NOT EXISTS sessions (
+      sid TEXT PRIMARY KEY,
+      sess TEXT NOT NULL,
+      expired_at INTEGER NOT NULL
+    )`);
+    setInterval(() => {
+      try { db.prepare('DELETE FROM sessions WHERE expired_at < ?').run(Date.now()); } catch {}
+    }, 60 * 60 * 1000).unref();
+  }
+  get(sid, cb) {
+    try {
+      const row = db.prepare('SELECT sess, expired_at FROM sessions WHERE sid = ?').get(sid);
+      if (!row || row.expired_at < Date.now()) return cb(null, null);
+      cb(null, JSON.parse(row.sess));
+    } catch (e) { cb(e); }
+  }
+  set(sid, sess, cb) {
+    try {
+      const maxAge = sess.cookie && sess.cookie.maxAge ? sess.cookie.maxAge * 1000 : 86400000 * 30;
+      const expiredAt = Date.now() + maxAge;
+      db.prepare('INSERT OR REPLACE INTO sessions (sid, sess, expired_at) VALUES (?, ?, ?)')
+        .run(sid, JSON.stringify(sess), expiredAt);
+      cb(null);
+    } catch (e) { cb(e); }
+  }
+  destroy(sid, cb) {
+    try {
+      db.prepare('DELETE FROM sessions WHERE sid = ?').run(sid);
+      cb(null);
+    } catch (e) { cb(e); }
+  }
+}
+
+const sessionMiddleware = session({
+  store: new BetterSQLiteStore(),
   secret: SESSION_SECRET,
   resave: false,
   saveUninitialized: false,
@@ -50,7 +82,8 @@ app.use(session({
     secure: process.env.NODE_ENV === 'production',
     maxAge: 1000 * 60 * 60 * 24 * 30, // 30 gün
   },
-}));
+});
+app.use(sessionMiddleware);
 app.use(auth.optionalAuth);
 
 app.use(express.static(path.join(__dirname, 'public')));
@@ -499,12 +532,7 @@ app.post('/api/reset', auth.requireAuth, (req, res) => {
 });
 
 // --- Socket.IO ---
-// Express session'ı socket handshake'ine bağla — her socket kendi userId'sini bilsin.
-const sessionMiddleware = session({
-  secret: SESSION_SECRET,
-  resave: false,
-  saveUninitialized: false,
-});
+// Express session'ı socket handshake'ine bağla — HTTP ile aynı store kullanılıyor.
 io.engine.use((req, res, next) => sessionMiddleware(req, res, next));
 
 io.on('connection', (socket) => {
