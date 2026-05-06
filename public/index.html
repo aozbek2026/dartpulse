@@ -14,14 +14,7 @@
 <body>
   <div class="spinner"></div>
 <script>
-fetch('/auth/me', { credentials: 'same-origin' })
-  .then(r => r.json())
-  .then(data => {
-    window.location.replace(data.user ? '/organizer.html' : '/login.html');
-  })
-  .catch(() => {
-    window.location.replace('/login.html');
-  });
+  window.location.replace('/scorer.html');
 </script>
 </body>
 </html>
