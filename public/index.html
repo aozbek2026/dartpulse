@@ -6,15 +6,75 @@
 <title>Dart Pulse</title>
 <link rel="stylesheet" href="/css/style.css" />
 <style>
-  body { display: flex; align-items: center; justify-content: center; min-height: 100vh; }
-  .spinner { width: 2rem; height: 2rem; border: 3px solid var(--border); border-top-color: var(--accent); border-radius: 50%; animation: spin 0.7s linear infinite; }
-  @keyframes spin { to { transform: rotate(360deg); } }
+  body {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    min-height: 100vh;
+    gap: 1.5rem;
+    padding: 2rem;
+    box-sizing: border-box;
+  }
+  .home-logo {
+    font-size: clamp(1.6rem, 5vw, 2.4rem);
+    font-weight: 700;
+    color: var(--accent);
+    letter-spacing: 0.05em;
+    margin-bottom: 0.5rem;
+  }
+  .home-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 1rem;
+    width: 100%;
+    max-width: 480px;
+  }
+  .home-btn {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 0.5rem;
+    padding: clamp(1.2rem, 4vw, 2rem) 1rem;
+    background: var(--surface);
+    border: 2px solid var(--border);
+    border-radius: 1rem;
+    color: var(--text);
+    text-decoration: none;
+    font-size: clamp(0.95rem, 3vw, 1.1rem);
+    font-weight: 600;
+    transition: border-color 0.15s, background 0.15s;
+    cursor: pointer;
+  }
+  .home-btn:hover, .home-btn:active {
+    border-color: var(--accent);
+    background: var(--hover);
+  }
+  .home-btn .icon {
+    font-size: clamp(1.8rem, 6vw, 2.4rem);
+  }
 </style>
 </head>
 <body>
-  <div class="spinner"></div>
-<script>
-  window.location.replace('/scorer.html');
-</script>
+  <div class="home-logo">🎯 Dart Pulse</div>
+  <div class="home-grid">
+    <a class="home-btn" href="/organizer.html">
+      <span class="icon">🏆</span>
+      Organizatör
+    </a>
+    <a class="home-btn" href="/board.html">
+      <span class="icon">📲</span>
+      Boardlar
+    </a>
+    <a class="home-btn" href="/scorer.html">
+      <span class="icon">🎯</span>
+      Hızlı Skor
+    </a>
+    <a class="home-btn" href="/viewer.html">
+      <span class="icon">📺</span>
+      İzleyici Ekranı
+    </a>
+  </div>
 </body>
 </html>
