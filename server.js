@@ -1,4 +1,14 @@
 // Dart Tournament Server - Express + Socket.IO + SQLite
+
+// Başlangıçta yakalanmayan hatalar loglanır — Render crash'lerini görünür yapar
+process.on('uncaughtException', (err) => {
+  console.error('[FATAL] uncaughtException:', err);
+  process.exit(1);
+});
+process.on('unhandledRejection', (reason) => {
+  console.error('[FATAL] unhandledRejection:', reason);
+  process.exit(1);
+});
 const path = require('path');
 const express = require('express');
 const session = require('express-session');
