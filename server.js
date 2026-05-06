@@ -38,18 +38,21 @@ const SESSION_SECRET = process.env.SESSION_SECRET
 class BetterSQLiteStore extends session.Store {
   constructor() {
     super();
-    db.exec(`CREATE TABLE IF NOT EXISTS sessions (
+    // db.db = ham better-sqlite3 instance
+    const raw = db.db;
+    raw.exec(`CREATE TABLE IF NOT EXISTS sessions (
       sid TEXT PRIMARY KEY,
       sess TEXT NOT NULL,
       expired_at INTEGER NOT NULL
     )`);
     setInterval(() => {
-      try { db.prepare('DELETE FROM sessions WHERE expired_at < ?').run(Date.now()); } catch {}
+      try { raw.prepare('DELETE FROM sessions WHERE expired_at < ?').run(Date.now()); } catch {}
     }, 60 * 60 * 1000).unref();
+    this._raw = raw;
   }
   get(sid, cb) {
     try {
-      const row = db.prepare('SELECT sess, expired_at FROM sessions WHERE sid = ?').get(sid);
+      const row = this._raw.prepare('SELECT sess, expired_at FROM sessions WHERE sid = ?').get(sid);
       if (!row || row.expired_at < Date.now()) return cb(null, null);
       cb(null, JSON.parse(row.sess));
     } catch (e) { cb(e); }
@@ -58,14 +61,14 @@ class BetterSQLiteStore extends session.Store {
     try {
       const maxAge = sess.cookie && sess.cookie.maxAge ? sess.cookie.maxAge * 1000 : 86400000 * 30;
       const expiredAt = Date.now() + maxAge;
-      db.prepare('INSERT OR REPLACE INTO sessions (sid, sess, expired_at) VALUES (?, ?, ?)')
+      this._raw.prepare('INSERT OR REPLACE INTO sessions (sid, sess, expired_at) VALUES (?, ?, ?)')
         .run(sid, JSON.stringify(sess), expiredAt);
       cb(null);
     } catch (e) { cb(e); }
   }
   destroy(sid, cb) {
     try {
-      db.prepare('DELETE FROM sessions WHERE sid = ?').run(sid);
+      this._raw.prepare('DELETE FROM sessions WHERE sid = ?').run(sid);
       cb(null);
     } catch (e) { cb(e); }
   }
