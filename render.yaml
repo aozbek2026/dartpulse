@@ -3,7 +3,7 @@ services:
     name: dart-tournament
     runtime: node
     plan: starter
-    buildCommand: npm install
+    buildCommand: npm install && npm rebuild better-sqlite3 --build-from-source
     startCommand: npm start
     envVars:
       - key: NODE_VERSION
