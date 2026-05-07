@@ -945,14 +945,32 @@ body.board-page #root.board-screen {
   display: flex;
   flex-direction: column;
   align-items: center;
-  justify-content: flex-end;
+  justify-content: flex-start;  /* yukarıdan aşağı — throws ile aynı yön */
   padding-bottom: 0;
+  overflow: hidden;
   border-left: 1px solid #1e2336;
   border-right: 1px solid #1e2336;
 }
 
+/* dp-rem ile hizalamak için görünmez spacer */
+.dp-rem-ghost {
+  height: clamp(32px, 10vw, 80px);       /* dp-rem font-size, line-height:1 */
+  margin-bottom: clamp(4px, 1.3vw, 10px); /* dp-rem margin-bottom */
+  flex-shrink: 0;
+}
+
+/* ok numaraları kapsayıcısı — dp-throws ile eşit scroll yapılır */
+.dp-middle-nums {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  overflow: hidden;
+  width: 100%;
+}
+
 .dp-visit-num {
-  font-size: clamp(13px, 3.8vw, 28px);
+  font-size: clamp(16px, 4.8vw, 36px); /* dp-throw ile aynı → satır yükseklikleri eşit */
   color: #2a2e42;
   line-height: 2.0;
   font-weight: 500;

@@ -420,7 +420,7 @@ function renderMatch() {
           <div class="dp-rem">${rem1}</div>
           <div class="dp-throws">${buildThrows(vis1)}</div>
         </div>
-        <div class="dp-middle">${visitNums}</div>
+        <div class="dp-middle"><div class="dp-rem-ghost"></div><div class="dp-middle-nums">${visitNums}</div></div>
         <div class="dp-score-col${!isTurn1 ? ' active' : ''}">
           <div class="dp-rem">${rem2}</div>
           <div class="dp-throws">${buildThrows(vis2)}</div>
@@ -459,7 +459,8 @@ function renderMatch() {
   // Atışlar yukarıdan aşağı akar; overflow olduğunda eskiler üstten kırpılır.
   // innerHTML set edildikten sonra her .dp-throws sütununu en alta kaydır.
   requestAnimationFrame(() => {
-    document.querySelectorAll('.dp-throws').forEach(el => {
+    // Atış sütunları ve ok numaraları aynı anda aşağı kaydırılır → satırlar hizalı kalır
+    document.querySelectorAll('.dp-throws, .dp-middle-nums').forEach(el => {
       el.scrollTop = el.scrollHeight;
     });
   });
