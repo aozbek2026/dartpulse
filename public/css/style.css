@@ -1034,9 +1034,10 @@ body.board-page #root.board-screen {
   color: #fff;
   font-variant-numeric: tabular-nums;
 }
-.dp-inp.dp-inp-hint {
-  color: rgba(255,255,255,0.18);
-  font-weight: 400;
+.dp-key.dp-key-180 {
+  color: var(--accent);
+  font-size: clamp(11px, 3vw, 22px);
+  font-weight: 700;
 }
 
 .dp-gon {

@@ -151,7 +151,12 @@ app.get('/api/players', (req, res) => {
 app.post('/api/players', auth.requireAuth, (req, res) => {
   const { name, nickname } = req.body;
   if (!name || !name.trim()) return res.status(400).json({ error: 'İsim gerekli' });
-  const p = db.createPlayer(name.trim(), nickname?.trim() || null, req.user.id);
+  const trimmed = name.trim();
+  // Aynı kullanıcıya ait aynı isimde oyuncu varsa engelle (büyük/küçük harf farkı yok)
+  const existing = db.allPlayers(req.user.id);
+  const dupe = existing.find(p => p.name.toLowerCase() === trimmed.toLowerCase());
+  if (dupe) return res.status(400).json({ error: `"${trimmed}" isimli oyuncu zaten mevcut` });
+  const p = db.createPlayer(trimmed, nickname?.trim() || null, req.user.id);
   broadcastState();
   res.json(p);
 });

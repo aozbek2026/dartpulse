@@ -433,7 +433,7 @@ function renderMatch() {
       <div class="dp-keypad">
         <div class="dp-top">
           <div class="dp-undo" onclick="undoThrow()">Geri Al</div>
-          <div class="dp-inp${currentInput ? '' : ' dp-inp-hint'}" id="keypad-input">${currentInput || '180'}</div>
+          <div class="dp-inp" id="keypad-input">${currentInput || '0'}</div>
           <div class="dp-gon" onclick="submitScore()">Gönder ▶</div>
         </div>
         <div class="dp-main">
@@ -443,7 +443,7 @@ function renderMatch() {
           <div class="dp-grid">
             ${[1,2,3,4,5,6,7,8,9].map(n => `<div class="dp-key" onclick="addDigit('${n}')">${n}</div>`).join('')}
             <div class="dp-key c" onclick="clearInput()">C</div>
-            <div class="dp-key" onclick="addDigit('0')">0</div>
+            <div class="dp-key${currentInput ? '' : ' dp-key-180'}" id="key-zero" onclick="${currentInput ? "addDigit('0')" : 'setScore(180)'}">${currentInput ? '0' : '180'}</div>
             <div class="dp-key bust" onclick="setScore(0)">Bust</div>
           </div>
           <div class="dp-quick">
@@ -1025,9 +1025,13 @@ function clearInput() { currentInput = ''; updateInput(); }
 function setScore(n) { currentInput = '' + n; updateInput(); }
 function updateInput() {
   const el = document.getElementById('keypad-input');
-  if (el) {
-    el.textContent = currentInput || '180';
-    el.classList.toggle('dp-inp-hint', !currentInput);
+  if (el) el.textContent = currentInput || '0';
+  // 0 tuşu: input yoksa "180" göster ve tıklayınca 180 girer; input varsa normal "0"
+  const keyZero = document.getElementById('key-zero');
+  if (keyZero) {
+    keyZero.textContent = currentInput ? '0' : '180';
+    keyZero.onclick = currentInput ? () => addDigit('0') : () => setScore(180);
+    keyZero.classList.toggle('dp-key-180', !currentInput);
   }
   const submitBtn = document.querySelector('.keypad-grid .submit');
   if (submitBtn) submitBtn.textContent = `Skor Gönder (${currentInput || '0'})`;

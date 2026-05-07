@@ -48,19 +48,25 @@ async function bulkAddPlayers() {
   const raw = document.getElementById('bulk-names').value;
   const lines = raw.split('\n').map(l => l.trim()).filter(l => l.length > 0);
   if (!lines.length) return toast('Liste boş');
-  let added = 0;
+  let added = 0, skipped = 0;
+  const seen = new Set(); // liste içi tekrarları da engelle
   for (const line of lines) {
     const parts = line.split('/').map(p => p.trim());
     const name = parts[0];
     const nickname = parts[1] || '';
     if (!name) continue;
-    await api.post('/api/players', { name, nickname });
+    const key = name.toLowerCase();
+    if (seen.has(key)) { skipped++; continue; }
+    seen.add(key);
+    const res = await api.post('/api/players', { name, nickname });
+    if (res && res.error) { skipped++; continue; } // sunucudan duplicate hatası
     added++;
   }
   document.getElementById('bulk-names').value = '';
   const det = document.getElementById('bulk-details');
   if (det) det.removeAttribute('open');
-  toast(`${added} oyuncu eklendi`);
+  const msg = skipped > 0 ? `${added} oyuncu eklendi, ${skipped} tekrar atlandı` : `${added} oyuncu eklendi`;
+  toast(msg);
 }
 
 // ---- Boards ----
