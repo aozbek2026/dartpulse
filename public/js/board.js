@@ -433,7 +433,7 @@ function renderMatch() {
       <div class="dp-keypad">
         <div class="dp-top">
           <div class="dp-undo" onclick="undoThrow()">Geri Al</div>
-          <div class="dp-inp" id="keypad-input">${currentInput || '0'}</div>
+          <div class="dp-inp${currentInput ? '' : ' dp-inp-hint'}" id="keypad-input">${currentInput || '180'}</div>
           <div class="dp-gon" onclick="submitScore()">Gönder ▶</div>
         </div>
         <div class="dp-main">
@@ -1025,7 +1025,10 @@ function clearInput() { currentInput = ''; updateInput(); }
 function setScore(n) { currentInput = '' + n; updateInput(); }
 function updateInput() {
   const el = document.getElementById('keypad-input');
-  if (el) el.textContent = currentInput || '0';
+  if (el) {
+    el.textContent = currentInput || '180';
+    el.classList.toggle('dp-inp-hint', !currentInput);
+  }
   const submitBtn = document.querySelector('.keypad-grid .submit');
   if (submitBtn) submitBtn.textContent = `Skor Gönder (${currentInput || '0'})`;
 }
