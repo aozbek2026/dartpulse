@@ -849,8 +849,8 @@ body.board-page #root.board-screen {
   background: #0b0d14;
 }
 
-/* Skor ile keypad arasındaki boşluk doldurucu */
-.dp-gap { flex: 1 1 auto; }
+/* Skor ile keypad arasındaki boşluk doldurucu — artık kullanılmıyor, dp-scores büyüyor */
+.dp-gap { flex: 0; }
 
 /* İsim satırı — 2 kolon: her biri [leg-big | isim-center] */
 /* Boyutlar: mockup 380px genişlikte tasarlandı.
@@ -918,12 +918,13 @@ body.board-page #root.board-screen {
 .dp-meta span   { font-size: clamp(9px,  2.6vw, 20px); color: #4a5568; }
 .dp-meta strong { font-size: clamp(10px, 2.9vw, 22px); color: #8892b0; }
 
-/* Skor alanı */
+/* Skor alanı — tüm boş alanı doldurur, keypad alta sabitlenir */
 .dp-scores {
   display: grid;
   grid-template-columns: 1fr clamp(18px, 7.4vw, 36px) 1fr;
   border-bottom: 1px solid #1e2336;
-  flex: 0 0 auto;
+  flex: 1 1 0;       /* boş alanı doldur */
+  min-height: 0;     /* flex çocuğunun küçülebilmesi için zorunlu */
 }
 
 .dp-score-col {
@@ -931,8 +932,9 @@ body.board-page #root.board-screen {
   display: flex;
   flex-direction: column;
   align-items: center;
-  height: clamp(100px, 34.2vw, 260px); /* sabit yükseklik — keypad'i ezmez */
-  overflow: hidden;                     /* taşan atışlar gizlenir, keypad sabit kalır */
+  height: 100%;      /* grid hücresini doldur */
+  min-height: 0;
+  overflow: hidden;  /* taşan atışlar yukarı kayar */
 }
 
 .dp-score-col.active   { background: #140a10; }

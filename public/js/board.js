@@ -347,7 +347,7 @@ function renderMatch() {
   );
   const visits1 = legThrows.filter(t => t.player_slot === 1);
   const visits2 = legThrows.filter(t => t.player_slot === 2);
-  const SHOW = 6;
+  const SHOW = 50;
   const vis1 = visits1.slice(-SHOW);
   const vis2 = visits2.slice(-SHOW);
   const visCount = Math.max(vis1.length, vis2.length, 0);
