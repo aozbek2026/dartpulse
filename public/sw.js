@@ -1,4 +1,4 @@
-// Service Worker — Dart Pulse Hızlı Skor
+// Service Worker — Dart Core Pro Hızlı Skor
 // Strateji: Network First — her açılışta güncel versiyonu çek, çevrimdışıysa cache kullan.
 const CACHE = 'dart-scorer-v1';
 const SCORER_FILES = [
