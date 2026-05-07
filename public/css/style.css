@@ -181,11 +181,18 @@ th { color: var(--text-dim); font-weight: 500; font-size: 0.82rem; text-transfor
 }
 
 /* Board view specific */
-/* Board sayfasında body'yi viewport'a kilitle — scroll yok, her tablette tam ekran */
-body.board-page {
-  height: 100dvh;        /* modern tarayıcılar — browser chrome dahil değil */
-  height: 100svh;        /* dvh desteklemeyen fallback */
+/* Board sayfasında body + html'yi viewport'a kilitle — scroll yok, her tablette tam ekran */
+html:has(body.board-page) {
   overflow: hidden;
+  overscroll-behavior: none;
+  height: 100%;
+}
+body.board-page {
+  height: 100dvh;
+  height: 100svh;
+  overflow: hidden;
+  overscroll-behavior: none;
+  touch-action: pan-x;  /* yatay kaydırma izinli, dikey yok */
   margin: 0;
 }
 body.board-page #root.board-screen {
