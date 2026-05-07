@@ -104,6 +104,7 @@
 // ===== State =====
 let G = null;
 let inputBuf = '';
+let submitLocked = false;
 
 function startGame() {
   const mode = document.getElementById('s-mode').value;
@@ -169,37 +170,57 @@ function scConfirm(msg, okLabel = 'Evet', cancelLabel = 'İptal') {
 }
 
 // ===== Keypad giriş =====
-function scInput(ch) {
+function flashKey(btn) {
+  if (!btn) return;
+  btn.classList.add('key-flash');
+  setTimeout(() => btn.classList.remove('key-flash'), 180);
+}
+function updateZeroKey() {
+  const zeroBtn = document.getElementById('sc-zero-key');
+  if (zeroBtn) zeroBtn.textContent = inputBuf.length === 0 ? '180' : '0';
+}
+function scInput(ch, btn) {
   if (!G || G.finished) return;
+  if (submitLocked) return;
   if (inputBuf.length >= 3) return;
+  flashKey(btn);
   inputBuf += ch;
   const el = document.getElementById('sc-input');
   if (el) el.textContent = inputBuf || '0';
+  updateZeroKey();
 }
 function scClear() {
   inputBuf = '';
   const el = document.getElementById('sc-input');
   if (el) el.textContent = '0';
+  updateZeroKey();
 }
 function scBackspace() {
   inputBuf = inputBuf.slice(0, -1);
   const el = document.getElementById('sc-input');
   if (el) el.textContent = inputBuf || '0';
+  updateZeroKey();
 }
-function scSetQuick(score) {
+function scSetQuick(score, btn) {
   if (!G || G.finished) return;
+  if (submitLocked) return;
+  flashKey(btn);
   inputBuf = String(score);
   submitScore();
 }
 
 function submitScore() {
   if (!G || G.finished) return;
+  if (submitLocked) return;
   const score = +inputBuf;
   if (isNaN(score) || score < 0 || score > 180) { scClear(); return; }
   // Flash
   const el = document.getElementById('sc-input');
   if (el) { el.classList.remove('score-flash'); void el.offsetWidth; el.classList.add('score-flash'); }
   inputBuf = '';
+  submitLocked = true;
+  setTimeout(() => { submitLocked = false; }, 500);
+  updateZeroKey();
   recordThrow(G.turn, score);
 }
 
@@ -396,10 +417,10 @@ function renderGame() {
             ${[26,40,41,43,45].map(s => `<div class="dp-qbtn" onclick="scSetQuick(${s})">${s}</div>`).join('')}
           </div>
           <div class="dp-grid">
-            ${[1,2,3,4,5,6,7,8,9].map(n => `<div class="dp-key" onclick="scInput('${n}')">${n}</div>`).join('')}
+            ${[1,2,3,4,5,6,7,8,9].map(n => `<div class="dp-key" onclick="scInput('${n}', this)">${n}</div>`).join('')}
             <div class="dp-key c" onclick="scClear()">C</div>
-            <div class="dp-key" onclick="scInput('0')">0</div>
-            <div class="dp-key bust" onclick="scSetQuick(0)">Bust</div>
+            <div class="dp-key" id="sc-zero-key" onclick="inputBuf.length===0 ? scSetQuick(180,this) : scInput('0',this)">${inputBuf.length === 0 ? '180' : '0'}</div>
+            <div class="dp-key bust" onclick="scSetQuick(0,this)">Bust</div>
           </div>
           <div class="dp-quick">
             ${[60,81,85,100,140].map(s => `<div class="dp-qbtn" onclick="scSetQuick(${s})">${s}</div>`).join('')}

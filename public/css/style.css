@@ -943,16 +943,16 @@ body.board-page #root.board-screen {
   display: flex;
   flex-direction: column;
   align-items: center;
-  justify-content: flex-start;
-  padding-top: clamp(38px, 12.6vw, 96px);
+  justify-content: flex-end;
+  padding-bottom: 0;
   border-left: 1px solid #1e2336;
   border-right: 1px solid #1e2336;
 }
 
 .dp-visit-num {
-  font-size: clamp(9px, 2.6vw, 20px);
+  font-size: clamp(13px, 3.8vw, 28px);
   color: #2a2e42;
-  line-height: 2.1;
+  line-height: 2.0;
   font-weight: 500;
   font-variant-numeric: tabular-nums;
 }
@@ -969,17 +969,30 @@ body.board-page #root.board-screen {
 .dp-score-col.active .dp-rem       { color: #ff3860; }
 .dp-score-col:not(.active) .dp-rem { color: #4a5568; }
 
-.dp-throws { display: flex; flex-direction: column; gap: 1px; width: 100%; }
+.dp-throws { display: flex; flex-direction: column; justify-content: flex-end; gap: 1px; width: 100%; flex: 1; overflow: hidden; }
 
 .dp-throw {
-  font-size: clamp(11px, 3.2vw, 24px);
+  font-size: clamp(16px, 4.8vw, 36px);
   color: #4a5568;
   text-align: center;
-  line-height: 2.1;
+  line-height: 2.0;
   font-variant-numeric: tabular-nums;
 }
 
 .dp-throw.last { color: #00d4ff; font-weight: 500; }
+
+/* Keypad buton dokunma flash */
+@keyframes keyFlash {
+  0%   { background: #ff3860; color: #fff; transform: scale(0.93); }
+  100% { background: ''; color: ''; transform: scale(1); }
+}
+.dp-key.key-flash {
+  background: #ff3860 !important;
+  color: #fff !important;
+  transform: scale(0.93);
+  transition: background 0.18s, transform 0.18s;
+}
+
 .dp-throw.bust { color: #ef4444; }
 
 /* Keypad — içeriğe göre boyutlanır, alta yapışık, asla küçülmez */
