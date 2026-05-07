@@ -455,6 +455,14 @@ function renderMatch() {
       `}
     </div>
   `;
+
+  // Atışlar yukarıdan aşağı akar; overflow olduğunda eskiler üstten kırpılır.
+  // innerHTML set edildikten sonra her .dp-throws sütununu en alta kaydır.
+  requestAnimationFrame(() => {
+    document.querySelectorAll('.dp-throws').forEach(el => {
+      el.scrollTop = el.scrollHeight;
+    });
+  });
 }
 
 function renderPlayer(name, remaining, legs, sets, active, m, showSets) {

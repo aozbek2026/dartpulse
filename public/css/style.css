@@ -971,7 +971,7 @@ body.board-page #root.board-screen {
 .dp-score-col.active .dp-rem       { color: #ff3860; }
 .dp-score-col:not(.active) .dp-rem { color: #4a5568; }
 
-.dp-throws { display: flex; flex-direction: column; justify-content: flex-end; gap: 1px; width: 100%; flex: 1; overflow: hidden; }
+.dp-throws { display: flex; flex-direction: column; justify-content: flex-start; gap: 1px; width: 100%; flex: 1; overflow: hidden; }
 
 .dp-throw {
   font-size: clamp(16px, 4.8vw, 36px);
