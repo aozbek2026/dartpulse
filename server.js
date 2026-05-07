@@ -106,6 +106,11 @@ app.post('/auth/register', auth.registerHandler);
 app.post('/auth/login', auth.loginHandler);
 app.post('/auth/logout', auth.logoutHandler);
 app.get('/auth/me', auth.meHandler);
+app.post('/auth/forgot-password', auth.forgotPasswordHandler);
+app.post('/auth/reset-password', auth.resetPasswordHandler);
+app.get('/auth/verify-email', auth.verifyEmailHandler);
+app.post('/auth/resend-verify', auth.resendVerifyHandler);
+app.post('/auth/delete-account', auth.deleteAccountHandler);
 
 // --- Helpers ---
 // Multi-organizer: her bağlı socket için (userId varsa) o kullanıcıya özel

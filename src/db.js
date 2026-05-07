@@ -270,6 +270,21 @@ function init() {
   if (!teamEvCols.includes('teams_json')) {
     try { db.exec('ALTER TABLE team_events ADD COLUMN teams_json TEXT'); } catch {}
   }
+
+  // Users: e-posta doğrulama + şifre sıfırlama
+  const userCols = db.prepare("PRAGMA table_info(users)").all().map(c => c.name);
+  if (!userCols.includes('email_verified')) {
+    try { db.exec("ALTER TABLE users ADD COLUMN email_verified INTEGER DEFAULT 0"); } catch {}
+  }
+  if (!userCols.includes('verify_token')) {
+    try { db.exec("ALTER TABLE users ADD COLUMN verify_token TEXT"); } catch {}
+  }
+  if (!userCols.includes('reset_token')) {
+    try { db.exec("ALTER TABLE users ADD COLUMN reset_token TEXT"); } catch {}
+  }
+  if (!userCols.includes('reset_token_expires')) {
+    try { db.exec("ALTER TABLE users ADD COLUMN reset_token_expires INTEGER"); } catch {}
+  }
 }
 
 // --- Users ---
@@ -868,9 +883,38 @@ function clearUserBoards(userId) {
   ).run(userId);
 }
 
+// --- User token fonksiyonları ---
+function setVerifyToken(userId, token) {
+  db.prepare('UPDATE users SET verify_token = ? WHERE id = ?').run(token, userId);
+}
+function verifyEmailToken(token) {
+  const user = db.prepare('SELECT * FROM users WHERE verify_token = ?').get(token);
+  if (!user) return null;
+  db.prepare('UPDATE users SET email_verified = 1, verify_token = NULL WHERE id = ?').run(user.id);
+  return user;
+}
+function setResetToken(userId, token, expires) {
+  db.prepare('UPDATE users SET reset_token = ?, reset_token_expires = ? WHERE id = ?').run(token, expires, userId);
+}
+function getUserByResetToken(token) {
+  return db.prepare('SELECT * FROM users WHERE reset_token = ? AND reset_token_expires > ?').get(token, Date.now());
+}
+function clearResetToken(userId) {
+  db.prepare('UPDATE users SET reset_token = NULL, reset_token_expires = NULL WHERE id = ?').run(userId);
+}
+function updatePassword(userId, passwordHash) {
+  db.prepare('UPDATE users SET password_hash = ? WHERE id = ?').run(passwordHash, userId);
+}
+function deleteUser(userId) {
+  db.prepare('DELETE FROM users WHERE id = ?').run(userId);
+}
+
 module.exports = {
   db, init,
   createUser, userByEmail, userById, allUsers,
+  setVerifyToken, verifyEmailToken,
+  setResetToken, getUserByResetToken, clearResetToken,
+  updatePassword, deleteUser,
   createPlayer, allPlayers, playerById, deletePlayer,
   createBoard, allBoards, boardById, deleteBoard, setBoardMatch, clearUserBoards,
   createTournament, allTournaments, tournamentById, updateTournamentStatus, updateTournament, deleteTournament,
