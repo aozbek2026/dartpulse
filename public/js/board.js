@@ -665,8 +665,9 @@ async function submitCricketDarts() {
 
 
 // ---- Cricket Full Board Cezalı ekranı ----
-const FB_TARGETS_ALL  = ['20','19','18','17','16','15','14','13','12','25','11','10','D','T','H'];
-const FB_TARGET_LABEL = { '25':'Bull', 'D':'Double', 'T':'Triple', 'H':'House' };
+// Sıralama: 20→10, sonra D, T, B (Bull), H (House)
+const FB_TARGETS_ALL  = ['20','19','18','17','16','15','14','13','12','11','10','D','T','25','H'];
+const FB_TARGET_LABEL = { '25':'B', 'D':'D', 'T':'T', 'H':'H' };
 let fbVisit = {}; // { target: markCount }
 let fbScore = 0;
 

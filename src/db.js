@@ -2,7 +2,20 @@
 const path = require('path');
 const Database = require('better-sqlite3');
 
+// Güvenlik: production'da DB_PATH AÇIK olmak zorunda. Yoksa kalıcı diske değil
+// geçici filesystem'e yazardık — her deploy'da kullanıcılar/turnuvalar uçar.
+// Bu kontrol o regresyonu kalıcı olarak engeller (eski sürüm canlı kalır).
+if (process.env.NODE_ENV === 'production' && !process.env.DB_PATH) {
+  console.error('[FATAL] DB_PATH env var production\'da set değil. Geçici filesystem kullanılırsa kullanıcı/turnuva kayıtları uçar.');
+  console.error('[FATAL] Render: render.yaml -> envVars.DB_PATH = /data/data.db olmalı ve disk mount /data duruyor olmalı.');
+  process.exit(1);
+}
+
 const DB_PATH = process.env.DB_PATH || path.join(__dirname, '..', 'data.db');
+
+// Açılışta yolu logla — Render Logs'unda her deploy sonrası DB nerede görünür.
+console.log(`[db] DB_PATH = ${DB_PATH}`);
+
 const db = new Database(DB_PATH);
 db.pragma('journal_mode = WAL');
 db.pragma('foreign_keys = ON');

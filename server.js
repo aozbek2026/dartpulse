@@ -860,6 +860,19 @@ function onTeamMatchFinished(matchId, m) {
 // --- Start ---
 const PORT = process.env.PORT || 3000;
 db.init();
+
+// Açılış özet log'u — her deploy sonrası DB sağlam mı görmek için.
+// Eğer kullanıcı sayısı sıfıra düşerse (önceki deploy'da > 0 idi), kalıcı disk
+// devre dışı kalmış demektir. Logları izleyerek erken yakalanır.
+try {
+  const userCount  = db.db.prepare('SELECT COUNT(*) AS n FROM users').get().n;
+  const tourCount  = db.db.prepare('SELECT COUNT(*) AS n FROM tournaments').get().n;
+  const playerCount = db.db.prepare('SELECT COUNT(*) AS n FROM players').get().n;
+  console.log(`[db] Snapshot — users: ${userCount}, tournaments: ${tourCount}, players: ${playerCount}`);
+} catch (e) {
+  console.error('[db] Snapshot log hatası:', e.message);
+}
+
 scheduler.init(io);
 
 function getLanAddresses() {

@@ -1372,21 +1372,26 @@ body.board-page #root.board-screen {
   padding: clamp(2px, 0.5vmin, 6px) 0;
 }
 
-/* Her satır: marks-sol | D | büyük sayı | T | marks-sağ */
+/* Her satır: marks-sol (büyük) | D (dar) | büyük sayı butonu | T (dar) | marks-sağ (büyük) */
 .cr-target-row {
   display: grid;
-  grid-template-columns: clamp(28px, 7vmin, 60px) clamp(40px, 9vmin, 76px) 1fr clamp(40px, 9vmin, 76px) clamp(28px, 7vmin, 60px);
+  grid-template-columns:
+    clamp(44px, 11vmin, 96px)
+    clamp(34px, 7vmin, 58px)
+    1fr
+    clamp(34px, 7vmin, 58px)
+    clamp(44px, 11vmin, 96px);
   align-items: center;
-  gap: clamp(4px, 1vmin, 10px);
+  gap: clamp(2px, 0.6vmin, 6px);
   padding: clamp(2px, 0.5vmin, 6px) clamp(2px, 0.5vmin, 8px);
   border-bottom: 1px solid #1e2236;
-  min-height: clamp(44px, 9vmin, 80px);
+  min-height: clamp(48px, 10vmin, 90px);
 }
 .cr-target-row.cr-target-done { opacity: 0.42; }
 
 .cr-marks-l, .cr-marks-r {
   text-align: center;
-  font-size: clamp(18px, 4.8vmin, 36px);
+  font-size: clamp(30px, 7.5vmin, 60px);
   font-weight: 800;
   line-height: 1;
 }
@@ -1401,29 +1406,32 @@ body.board-page #root.board-screen {
 .cr-m2 { color: #cbd5e0; }
 .cr-m3 { color: #48bb78; }
 
+/* Orta sütun — sayı butonu (büyük, görünür buton) */
 .cr-tap-num {
   text-align: center;
   font-size: clamp(28px, 7.5vmin, 60px);
   font-weight: 700;
   letter-spacing: 1px;
   color: #f0f4ff;
-  background: transparent;
-  border: 0;
-  padding: clamp(4px, 1vmin, 10px) 0;
+  background: #1f2438;
+  border: 2px solid #2a2e42;
+  border-radius: 10px;
+  padding: clamp(8px, 1.8vmin, 16px) 0;
   cursor: pointer;
   user-select: none;
   -webkit-tap-highlight-color: transparent;
-  border-radius: 6px;
+  margin: 0 clamp(2px, 0.5vmin, 6px);
 }
-.cr-tap-num:active { background: rgba(255,255,255,0.05); }
+.cr-tap-num:active { background: #2c3147; border-color: #3d4263; }
 
+/* D ve T — dar, ortaya yakın (sayıya yapışık) */
 .cr-tap-d, .cr-tap-t {
   background: #c81e28;
   color: #fff;
   border: 0;
   border-radius: 8px;
   padding: clamp(8px, 1.8vmin, 16px) 0;
-  font-size: clamp(15px, 3.4vmin, 26px);
+  font-size: clamp(13px, 2.8vmin, 22px);
   font-weight: 800;
   cursor: pointer;
   user-select: none;
@@ -1438,7 +1446,7 @@ body.board-page #root.board-screen {
   border: 0;
   border-radius: 8px;
   padding: clamp(8px, 1.8vmin, 16px) 0;
-  font-size: clamp(11px, 2.4vmin, 18px);
+  font-size: clamp(10px, 2.2vmin, 16px);
   font-weight: 800;
   cursor: pointer;
   -webkit-tap-highlight-color: transparent;
