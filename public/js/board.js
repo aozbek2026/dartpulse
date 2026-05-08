@@ -585,7 +585,7 @@ function renderCricketMatch(m) {
     <div class="cr-bottom-bar">
       <button class="cr-undo-btn" onclick="cricketUndoDart()" ${cricketDarts.length === 0 ? 'disabled' : ''}>← GERİ</button>
       <div class="cr-dots">${dotsHtml}</div>
-      <button class="cr-miss-btn" onclick="cricketMiss()">ISKA</button>
+      <button class="cr-miss-btn" onclick="submitCricketDarts()" ${cricketDarts.length === 0 ? 'disabled' : ''}>Enter</button>
     </div>
   `;
 
@@ -791,7 +791,7 @@ function renderFBCezaliMatch(m) {
     <div class="cr-bottom-bar">
       <button class="cr-undo-btn" onclick="fbUndoDart()" ${fbDarts.length === 0 ? 'disabled' : ''}>← GERİ</button>
       <div class="cr-dots">${dotsHtml}</div>
-      <button class="cr-miss-btn" onclick="fbMiss()">ISKA</button>
+      <button class="cr-miss-btn" onclick="submitFBCezaliDarts()" ${fbDarts.length === 0 ? 'disabled' : ''}>Enter</button>
     </div>`;
 
   root.innerHTML = `
@@ -1088,7 +1088,7 @@ function renderKarambolMatch(m) {
     <div class="cr-bottom-bar">
       <button class="cr-undo-btn" onclick="karambolUndoDart()" ${karambolDarts.length === 0 ? 'disabled' : ''}>← GERİ</button>
       <div class="cr-dots">${dotsHtml}</div>
-      <button class="cr-miss-btn" onclick="karambolMiss()">ISKA</button>
+      <button class="cr-miss-btn" onclick="submitKarambolDarts()" ${karambolDarts.length === 0 ? 'disabled' : ''}>Enter</button>
     </div>`;
 
   root.innerHTML = `

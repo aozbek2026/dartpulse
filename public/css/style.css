@@ -1555,7 +1555,7 @@ body.board-page #root.board-screen {
 .cr-undo-btn:not(:disabled):active { background: #2a2e42; }
 
 .cr-miss-btn {
-  background: #5a1a1a;
+  background: #15803d;
   color: #fff;
   border: 0;
   border-radius: 10px;
@@ -1566,7 +1566,13 @@ body.board-page #root.board-screen {
   -webkit-tap-highlight-color: transparent;
   letter-spacing: 0.5px;
 }
-.cr-miss-btn:active { background: #3f0f0f; }
+.cr-miss-btn:active { background: #0f6e30; }
+.cr-miss-btn:disabled {
+  opacity: 0.35;
+  cursor: default;
+  background: #1f2438;
+  color: #6b7280;
+}
 
 .cr-dots {
   display: flex;
