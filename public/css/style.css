@@ -1361,37 +1361,42 @@ body.board-page #root.board-screen {
 .cr-score-col.cr-flip-active .cr-pts  { color: #000; }
 .cr-score-col.cr-flip-active .cr-legs { color: #555; }
 
-/* Hedef satırları kapsayıcısı */
+/* Hedef satırları kapsayıcısı — flex column, scroll YOK
+   Mevcut alana göre tüm satırlar otomatik dağılır */
 .cr-targets {
   flex: 1 1 0;
   min-height: 0;
-  overflow-y: auto;
+  overflow: hidden;
   display: flex;
   flex-direction: column;
-  gap: clamp(2px, 0.6vmin, 8px);
-  padding: clamp(2px, 0.5vmin, 6px) 0;
+  gap: clamp(1px, 0.3vmin, 4px);
+  padding: clamp(1px, 0.3vmin, 4px) 0;
+  align-items: stretch;
+  justify-content: stretch;
 }
 
-/* Her satır: marks-sol (büyük) | D (dar) | büyük sayı butonu | T (dar) | marks-sağ (büyük) */
+/* Her satır: flex:1 ile dikey alanı eşit paylaşır.
+   İçerikler yatayda: marks-L (esner) | D (dar) | NUM (orta) | T (dar) | marks-R (esner)
+   D/NUM/T ortada gruplaşmış, marks-L ve marks-R esner — satır tam ortalı */
 .cr-target-row {
-  display: grid;
-  grid-template-columns:
-    clamp(44px, 11vmin, 96px)
-    clamp(34px, 7vmin, 58px)
-    1fr
-    clamp(34px, 7vmin, 58px)
-    clamp(44px, 11vmin, 96px);
-  align-items: center;
-  gap: clamp(2px, 0.6vmin, 6px);
-  padding: clamp(2px, 0.5vmin, 6px) clamp(2px, 0.5vmin, 8px);
+  flex: 1 1 0;
+  min-height: 0;
+  display: flex;
+  align-items: stretch;
+  gap: clamp(2px, 0.5vmin, 6px);
+  padding: 0 clamp(4px, 1vmin, 10px);
   border-bottom: 1px solid #1e2236;
-  min-height: clamp(48px, 10vmin, 90px);
 }
 .cr-target-row.cr-target-done { opacity: 0.42; }
 
+/* Marks sütunları — esner, ortalı */
 .cr-marks-l, .cr-marks-r {
-  text-align: center;
-  font-size: clamp(30px, 7.5vmin, 60px);
+  flex: 1 1 0;
+  min-width: clamp(28px, 7vmin, 70px);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: clamp(20px, 5.5vmin, 56px);
   font-weight: 800;
   line-height: 1;
 }
@@ -1400,38 +1405,47 @@ body.board-page #root.board-screen {
   text-shadow: 0 0 10px rgba(255, 210, 0, 0.45);
 }
 
-/* Marks sembolleri: 0 / 1 / 2 / 3 (closed) */
+/* Marks sembolleri */
 .cr-m0 { color: #2c3146; }
 .cr-m1 { color: #cbd5e0; }
 .cr-m2 { color: #cbd5e0; }
 .cr-m3 { color: #48bb78; }
 
-/* Orta sütun — sayı butonu (büyük, görünür buton) */
+/* Orta sütun — sayı butonu (görünür, esnek genişlik) */
 .cr-tap-num {
+  flex: 0 0 auto;
+  min-width: clamp(60px, 14vmin, 140px);
+  display: flex;
+  align-items: center;
+  justify-content: center;
   text-align: center;
-  font-size: clamp(28px, 7.5vmin, 60px);
+  font-size: clamp(18px, 4.8vmin, 44px);
   font-weight: 700;
   letter-spacing: 1px;
   color: #f0f4ff;
   background: #1f2438;
   border: 2px solid #2a2e42;
-  border-radius: 10px;
-  padding: clamp(8px, 1.8vmin, 16px) 0;
+  border-radius: 8px;
+  padding: 0 clamp(6px, 1.5vmin, 14px);
   cursor: pointer;
   user-select: none;
   -webkit-tap-highlight-color: transparent;
-  margin: 0 clamp(2px, 0.5vmin, 6px);
 }
 .cr-tap-num:active { background: #2c3147; border-color: #3d4263; }
 
-/* D ve T — dar, ortaya yakın (sayıya yapışık) */
+/* D / T — dar, sayıya yapışık */
 .cr-tap-d, .cr-tap-t {
+  flex: 0 0 auto;
+  min-width: clamp(34px, 7vmin, 58px);
+  display: flex;
+  align-items: center;
+  justify-content: center;
   background: #c81e28;
   color: #fff;
   border: 0;
-  border-radius: 8px;
-  padding: clamp(8px, 1.8vmin, 16px) 0;
-  font-size: clamp(13px, 2.8vmin, 22px);
+  border-radius: 7px;
+  padding: 0;
+  font-size: clamp(12px, 2.6vmin, 22px);
   font-weight: 800;
   cursor: pointer;
   user-select: none;
@@ -1441,12 +1455,17 @@ body.board-page #root.board-screen {
 .cr-tap-d:active, .cr-tap-t:active { background: #9c1620; }
 
 .cr-tap-dbull {
+  flex: 0 0 auto;
+  min-width: clamp(34px, 7vmin, 58px);
+  display: flex;
+  align-items: center;
+  justify-content: center;
   background: #c81e28;
   color: #fff;
   border: 0;
-  border-radius: 8px;
-  padding: clamp(8px, 1.8vmin, 16px) 0;
-  font-size: clamp(10px, 2.2vmin, 16px);
+  border-radius: 7px;
+  padding: 0;
+  font-size: clamp(9px, 2vmin, 14px);
   font-weight: 800;
   cursor: pointer;
   -webkit-tap-highlight-color: transparent;
@@ -1454,32 +1473,20 @@ body.board-page #root.board-screen {
 }
 .cr-tap-dbull:active { background: #9c1620; }
 
-/* Meta hedef satırları (D / T / H) — 3 sütun: marks-L | tek geniş buton | marks-R */
-.cr-target-row.cr-target-meta {
-  grid-template-columns: clamp(44px, 11vmin, 96px) 1fr clamp(44px, 11vmin, 96px);
-}
-.cr-tap-num.cr-tap-meta {
+/* Meta hedef satırları (D / T / H): marks-L | geniş buton | marks-R */
+.cr-target-row.cr-target-meta .cr-tap-num.cr-tap-meta {
+  flex: 0 0 auto;
+  min-width: clamp(140px, 32vmin, 360px);
   background: #2a3450;
   border-color: #3d4d70;
   letter-spacing: 3px;
 }
-.cr-tap-num.cr-tap-meta:active { background: #3d4d70; }
+.cr-target-row.cr-target-meta .cr-tap-num.cr-tap-meta:active {
+  background: #3d4d70;
+}
 
-/* FB Cezalı/Karambol — 13-15 satır var, satırları daralt ki ekrana sığsın */
-.cr-targets-fb .cr-target-row {
-  min-height: clamp(36px, 6.5vmin, 60px);
-}
-.cr-targets-fb .cr-marks-l, .cr-targets-fb .cr-marks-r {
-  font-size: clamp(22px, 5.5vmin, 42px);
-}
-.cr-targets-fb .cr-tap-num {
-  font-size: clamp(20px, 5.2vmin, 40px);
-  padding: clamp(4px, 1.2vmin, 10px) 0;
-}
-.cr-targets-fb .cr-tap-d, .cr-targets-fb .cr-tap-t {
-  font-size: clamp(11px, 2.4vmin, 18px);
-  padding: clamp(5px, 1.2vmin, 10px) 0;
-}
+/* FB Cezalı/Karambol için ek not: aynı CSS — flex satır dağıtımı 15 satırı
+   da otomatik küçültür. Ek bir override gerekmiyor. */
 
 /* Alt aksiyon barı: GERİ | nokta progress | IŞKAL */
 .cr-bottom-bar {
