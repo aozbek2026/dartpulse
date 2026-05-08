@@ -11,7 +11,7 @@ let currentBoard = null;
 let currentInput = '';
 let allBoards = [];
 let allTournaments = [];
-let cricketVisit = {};          // {20: 2, 19: 1, ...} — aktif visit girişi
+let cricketDarts = [];          // [{target: 20, mult: 1|2|3} | {target: null, mult: 0 — ışkal}, ...] (max 3)
 let selectedStarter = null;    // 1 veya 2 — hangi takım başlıyor
 let selectedSubStarter1 = null; // 1 veya 2 — takım 1'de kim başlıyor (doubles)
 let selectedSubStarter2 = null; // 1 veya 2 — takım 2'de kim başlıyor (doubles)
@@ -482,14 +482,24 @@ function renderPlayer(name, remaining, legs, sets, active, m, showSets) {
   `;
 }
 
-// ---- Cricket ekranı ----
+// ---- Cricket ekranı (yeni dart-bazlı UI — DartConnect tarzı) ----
 const CRICKET_NUMBERS = [20, 19, 18, 17, 16, 15, 25];
 
-function cricketMarksHtml(count, active) {
-  if (count <= 0) return '<span class="cr-mark-empty">·</span>';
-  if (count === 1) return `<span class="cr-mark${active ? ' cr-mark-act' : ''}">/</span>`;
-  if (count === 2) return `<span class="cr-mark${active ? ' cr-mark-act' : ''}">╳</span>`;
-  return `<span class="cr-mark cr-mark-closed">⊗</span>`;
+// Marks sembolü: /, X, O (closed). Boşken zayıf nokta.
+function cricketMarkSym(count) {
+  if (count <= 0) return { sym: '·', cls: 'cr-m0' };
+  if (count === 1) return { sym: '/', cls: 'cr-m1' };
+  if (count === 2) return { sym: 'X', cls: 'cr-m2' };
+  return { sym: 'O', cls: 'cr-m3' }; // 3+ closed
+}
+
+// Aktif oyuncunun pending dartlarından bu satıra düşen mark katkısını hesapla
+function cricketPendingForTarget(target) {
+  let extra = 0;
+  for (const d of cricketDarts) {
+    if (d.target === target && d.mult > 0) extra += d.mult;
+  }
+  return extra;
 }
 
 function renderCricketMatch(m) {
@@ -507,40 +517,68 @@ function renderCricketMatch(m) {
 
   const pKey = isTurn1 ? 'p1' : 'p2';
 
+  // Hedef satırları
   const rows = CRICKET_NUMBERS.map(n => {
     const p1m = state.marks[n]?.p1 || 0;
     const p2m = state.marks[n]?.p2 || 0;
-    const bothClosed = p1m >= 3 && p2m >= 3;
-    const vHits = cricketVisit[n] || 0;
+    // Aktif oyuncunun pending dartları kendi tarafına eklenir (görsel preview)
+    const pendingForMe = isReadonly ? 0 : cricketPendingForTarget(n);
+    // Görsel: hep p1 solda / p2 sağda — slot yer değiştirmez
+    const leftCount  = p1m + (isTurn1 ? pendingForMe : 0);
+    const rightCount = p2m + (isTurn1 ? 0 : pendingForMe);
+    const lSym = cricketMarkSym(leftCount);
+    const rSym = cricketMarkSym(rightCount);
+    const bothClosed = leftCount >= 3 && rightCount >= 3;
     const numLabel = n === 25 ? 'BULL' : n;
+    const isBull = (n === 25);
+
+    if (isReadonly) {
+      return `
+        <div class="cr-target-row${bothClosed ? ' cr-target-done' : ''}">
+          <div class="cr-marks-l ${lSym.cls}${isTurn1 ? ' cr-active' : ''}">${lSym.sym}</div>
+          <div></div>
+          <div class="cr-tap-num" style="cursor:default;">${numLabel}</div>
+          <div></div>
+          <div class="cr-marks-r ${rSym.cls}${!isTurn1 ? ' cr-active' : ''}">${rSym.sym}</div>
+        </div>
+      `;
+    }
+
+    const dBtn = isBull
+      ? `<button class="cr-tap-dbull" onclick="cricketDart(25, 2)">D-BULL</button>`
+      : `<button class="cr-tap-d" onclick="cricketDart(${n}, 2)">D</button>`;
+    const tBtn = isBull
+      ? `<div></div>`
+      : `<button class="cr-tap-t" onclick="cricketDart(${n}, 3)">T</button>`;
+
     return `
-      <tr class="cr-row${bothClosed ? ' cr-row-done' : ''}">
-        <td class="cr-cell cr-left">${cricketMarksHtml(p1m, isTurn1)}</td>
-        <td class="cr-num">
-          <span>${numLabel}</span>
-          ${!isReadonly && vHits > 0 ? `<span class="cr-pending">${vHits === 1 ? '/' : vHits === 2 ? '╳' : '⊗'}</span>` : ''}
-        </td>
-        <td class="cr-cell cr-right">${cricketMarksHtml(p2m, !isTurn1)}</td>
-      </tr>
+      <div class="cr-target-row${bothClosed ? ' cr-target-done' : ''}">
+        <div class="cr-marks-l ${lSym.cls}${isTurn1 ? ' cr-active' : ''}">${lSym.sym}</div>
+        ${dBtn}
+        <button class="cr-tap-num" onclick="cricketDart(${n}, 1)">${numLabel}</button>
+        ${tBtn}
+        <div class="cr-marks-r ${rSym.cls}${!isTurn1 ? ' cr-active' : ''}">${rSym.sym}</div>
+      </div>
     `;
   }).join('');
 
-  const inputButtons = isReadonly ? '' : CRICKET_NUMBERS.map(n => {
-    const myMarks = state.marks[n]?.[pKey] || 0;
-    const vHits = cricketVisit[n] || 0;
-    const numLabel = n === 25 ? 'BULL' : n;
-    const isClosed = myMarks >= 3;
-    return `
-      <button class="cr-btn${vHits > 0 ? ' cr-btn-sel' : ''}${isClosed ? ' cr-btn-ok' : ''}"
-        onclick="cricketToggle(${n})">
-        <span class="cr-btn-num">${numLabel}</span>
-        ${vHits > 0 ? `<span class="cr-btn-mark">${vHits === 1 ? '/' : vHits === 2 ? '╳' : '⊗'}</span>` : ''}
-        ${isClosed ? '<span class="cr-btn-mark">⊗</span>' : ''}
-      </button>
-    `;
+  // 3 dart slot göstergesi
+  const dotsHtml = [0,1,2].map(i => {
+    const d = cricketDarts[i];
+    if (!d) return `<div class="cr-dot"></div>`;
+    if (d.target == null) return `<div class="cr-dot cr-dot-miss">×</div>`;
+    const pre = d.mult === 2 ? 'D' : d.mult === 3 ? 'T' : '';
+    const lbl = d.target === 25 ? (d.mult === 2 ? 'DB' : 'B') : `${pre}${d.target}`;
+    return `<div class="cr-dot cr-dot-hit">${lbl}</div>`;
   }).join('');
 
-  const hasInput = Object.keys(cricketVisit).length > 0;
+  const bottomBar = isReadonly ? '' : `
+    <div class="cr-bottom-bar">
+      <button class="cr-undo-btn" onclick="cricketUndoDart()" ${cricketDarts.length === 0 ? 'disabled' : ''}>← GERİ</button>
+      <div class="cr-dots">${dotsHtml}</div>
+      <button class="cr-miss-btn" onclick="cricketMiss()">IŞKAL</button>
+    </div>
+  `;
 
   root.innerHTML = `
     <div class="board-header">
@@ -556,61 +594,69 @@ function renderCricketMatch(m) {
 
     <div class="cr-wrap">
       <div class="cr-scores">
-        <div class="cr-score-col${isTurn1 ? ' cr-active' : ''}">
+        <div class="cr-score-col${isTurn1 ? ' cr-flip-active' : ''}">
           <div class="cr-name">${e1}</div>
           <div class="cr-pts">${state.p1_score || 0}</div>
           <div class="cr-legs">${m.p1_legs || 0} leg</div>
         </div>
-        <div class="cr-score-col${!isTurn1 ? ' cr-active' : ''}">
+        <div class="cr-score-col${!isTurn1 ? ' cr-flip-active' : ''}">
           <div class="cr-name">${e2}</div>
           <div class="cr-pts">${state.p2_score || 0}</div>
           <div class="cr-legs">${m.p2_legs || 0} leg</div>
         </div>
       </div>
 
-      <table class="cr-table">
-        <tbody>${rows}</tbody>
-      </table>
+      <div class="cr-targets">${rows}</div>
 
-      ${isReadonly ? '' : `
-        <div class="cr-input">
-          <div class="cr-btns">${inputButtons}</div>
-          <div class="cr-actions">
-            <button class="btn secondary" onclick="cricketClear()" style="flex:1;">Temizle</button>
-            <button class="btn${hasInput ? '' : ' secondary'}" onclick="submitCricketVisit()"
-              style="flex:2; ${hasInput ? 'background:var(--accent);color:#000;font-weight:800;' : 'opacity:0.45;'}">
-              Enter
-            </button>
-          </div>
-        </div>
-      `}
+      ${bottomBar}
     </div>
   `;
 }
 
-function cricketToggle(num) {
-  const cur = cricketVisit[num] || 0;
-  const next = (cur + 1) % 4;
-  if (next === 0) delete cricketVisit[num];
-  else cricketVisit[num] = next;
+// Dart girişi: target=null ışkal, mult=1 single / 2 double / 3 triple
+function cricketDart(target, mult) {
+  if (isReadonly || !currentMatch) return;
+  if (cricketDarts.length >= 3) return;
+  cricketDarts.push({ target, mult });
+  if (cricketDarts.length === 3) {
+    submitCricketDarts();
+  } else {
+    renderMatch();
+  }
+}
+
+function cricketMiss() {
+  cricketDart(null, 0);
+}
+
+function cricketUndoDart() {
+  if (cricketDarts.length === 0) return;
+  cricketDarts.pop();
   renderMatch();
 }
 
-function cricketClear() {
-  cricketVisit = {};
-  renderMatch();
-}
-
-async function submitCricketVisit() {
+async function submitCricketDarts() {
   if (!currentMatch) return;
-  if (!Object.keys(cricketVisit).length) return toast('Vurulan sayıları seçin');
   const slot = currentMatch.current_turn;
+  // Dartları hits objesine roll-up
+  const hits = {};
+  for (const d of cricketDarts) {
+    if (d.target == null || d.mult <= 0) continue;
+    hits[d.target] = (hits[d.target] || 0) + d.mult;
+  }
+  // Visit'i temizle (server cevabı gelmeden önce — UI takılmasın)
+  const sentDarts = cricketDarts.slice();
+  cricketDarts = [];
   const res = await api.post(`/api/matches/${currentMatch.id}/cricket-throw`, {
     playerSlot: slot,
-    hits: cricketVisit,
+    hits,
   });
-  if (res.error) return toast('Hata: ' + res.error);
-  cricketVisit = {};
+  if (res.error) {
+    // Hata durumunda dartları geri yükle
+    cricketDarts = sentDarts;
+    renderMatch();
+    return toast('Hata: ' + res.error);
+  }
   if (res.legFinished && !res.matchFinished && res.legSummary) {
     await showLegSummary(res.legSummary);
   }

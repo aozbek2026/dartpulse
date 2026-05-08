@@ -1349,6 +1349,172 @@ body.board-page #root.board-screen {
 .fb-score-input::placeholder { color: #3a3f58; }
 
 /* ========================================================
+   Cricket — yeni dart-bazlı UI (DartConnect tarzı)
+   ======================================================== */
+
+/* Skor blokları aktifte beyaz/koyu kontrast (DartConnect referansı) */
+.cr-score-col.cr-flip-active {
+  background: #f5f5f5;
+  border-color: #f5f5f5;
+}
+.cr-score-col.cr-flip-active .cr-name { color: #333; font-weight: 700; }
+.cr-score-col.cr-flip-active .cr-pts  { color: #000; }
+.cr-score-col.cr-flip-active .cr-legs { color: #555; }
+
+/* Hedef satırları kapsayıcısı */
+.cr-targets {
+  flex: 1 1 0;
+  min-height: 0;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: clamp(2px, 0.6vmin, 8px);
+  padding: clamp(2px, 0.5vmin, 6px) 0;
+}
+
+/* Her satır: marks-sol | D | büyük sayı | T | marks-sağ */
+.cr-target-row {
+  display: grid;
+  grid-template-columns: clamp(28px, 7vmin, 60px) clamp(40px, 9vmin, 76px) 1fr clamp(40px, 9vmin, 76px) clamp(28px, 7vmin, 60px);
+  align-items: center;
+  gap: clamp(4px, 1vmin, 10px);
+  padding: clamp(2px, 0.5vmin, 6px) clamp(2px, 0.5vmin, 8px);
+  border-bottom: 1px solid #1e2236;
+  min-height: clamp(44px, 9vmin, 80px);
+}
+.cr-target-row.cr-target-done { opacity: 0.42; }
+
+.cr-marks-l, .cr-marks-r {
+  text-align: center;
+  font-size: clamp(18px, 4.8vmin, 36px);
+  font-weight: 800;
+  line-height: 1;
+}
+.cr-marks-l.cr-active, .cr-marks-r.cr-active {
+  color: #ffd200;
+  text-shadow: 0 0 10px rgba(255, 210, 0, 0.45);
+}
+
+/* Marks sembolleri: 0 / 1 / 2 / 3 (closed) */
+.cr-m0 { color: #2c3146; }
+.cr-m1 { color: #cbd5e0; }
+.cr-m2 { color: #cbd5e0; }
+.cr-m3 { color: #48bb78; }
+
+.cr-tap-num {
+  text-align: center;
+  font-size: clamp(28px, 7.5vmin, 60px);
+  font-weight: 700;
+  letter-spacing: 1px;
+  color: #f0f4ff;
+  background: transparent;
+  border: 0;
+  padding: clamp(4px, 1vmin, 10px) 0;
+  cursor: pointer;
+  user-select: none;
+  -webkit-tap-highlight-color: transparent;
+  border-radius: 6px;
+}
+.cr-tap-num:active { background: rgba(255,255,255,0.05); }
+
+.cr-tap-d, .cr-tap-t {
+  background: #c81e28;
+  color: #fff;
+  border: 0;
+  border-radius: 8px;
+  padding: clamp(8px, 1.8vmin, 16px) 0;
+  font-size: clamp(15px, 3.4vmin, 26px);
+  font-weight: 800;
+  cursor: pointer;
+  user-select: none;
+  -webkit-tap-highlight-color: transparent;
+  letter-spacing: 1px;
+}
+.cr-tap-d:active, .cr-tap-t:active { background: #9c1620; }
+
+.cr-tap-dbull {
+  background: #c81e28;
+  color: #fff;
+  border: 0;
+  border-radius: 8px;
+  padding: clamp(8px, 1.8vmin, 16px) 0;
+  font-size: clamp(11px, 2.4vmin, 18px);
+  font-weight: 800;
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+  letter-spacing: 0.5px;
+}
+.cr-tap-dbull:active { background: #9c1620; }
+
+/* Alt aksiyon barı: GERİ | nokta progress | IŞKAL */
+.cr-bottom-bar {
+  flex: 0 0 auto;
+  display: grid;
+  grid-template-columns: 1fr auto 1fr;
+  gap: clamp(6px, 1.5vmin, 14px);
+  align-items: stretch;
+  padding-top: clamp(4px, 1vmin, 10px);
+}
+.cr-undo-btn {
+  background: #1a1d2e;
+  color: #e2e8f0;
+  border: 2px solid #2a2e42;
+  border-radius: 10px;
+  padding: clamp(10px, 2.2vmin, 18px);
+  font-size: clamp(13px, 3vmin, 22px);
+  font-weight: 700;
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+}
+.cr-undo-btn:disabled { opacity: 0.35; cursor: default; }
+.cr-undo-btn:not(:disabled):active { background: #2a2e42; }
+
+.cr-miss-btn {
+  background: #5a1a1a;
+  color: #fff;
+  border: 0;
+  border-radius: 10px;
+  padding: clamp(10px, 2.2vmin, 18px);
+  font-size: clamp(13px, 3vmin, 22px);
+  font-weight: 800;
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+  letter-spacing: 0.5px;
+}
+.cr-miss-btn:active { background: #3f0f0f; }
+
+.cr-dots {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: clamp(8px, 2vmin, 16px);
+  padding: 0 clamp(8px, 2vmin, 18px);
+}
+.cr-dot {
+  width: clamp(14px, 3vmin, 22px);
+  height: clamp(14px, 3vmin, 22px);
+  border-radius: 50%;
+  background: #1a1d2e;
+  border: 2px solid #2a2e42;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: clamp(8px, 1.6vmin, 12px);
+  color: #888;
+  font-weight: 700;
+}
+.cr-dot.cr-dot-hit {
+  background: #ffd200;
+  border-color: #ffd200;
+  color: #000;
+}
+.cr-dot.cr-dot-miss {
+  background: #5a1a1a;
+  border-color: #5a1a1a;
+  color: #fff;
+}
+
+/* ========================================================
    Tablet board ekranı — her iki yön, tüm tablet boyutları
    ======================================================== */
 @media (max-width: 1100px) {
