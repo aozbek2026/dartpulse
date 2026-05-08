@@ -353,17 +353,19 @@ function renderMatch() {
   const visCount = Math.max(vis1.length, vis2.length, 0);
   const visOffset = Math.max(visits1.length, visits2.length) - visCount;
 
-  // Her oyuncu için throw satırları — son atış "last" class'ı alır
-  const buildThrows = (visits) => visits.map((v, i) => {
-    const isLast = i === visits.length - 1;
-    const cls = v.bust ? ' bust' : (isLast ? ' last' : '');
-    return `<div class="dp-throw${cls}">${v.bust ? 'Bust' : v.score}</div>`;
-  }).join('');
-
-  // Orta sütun ok sayıları (3, 6, 9 ...)
-  let visitNums = '';
+  // Her visit = tek satır: sol skor | ok sayısı | sağ skor — hizalama otomatik
+  let visitRows = '';
   for (let i = 0; i < visCount; i++) {
-    visitNums += `<div class="dp-visit-num">${(visOffset + i + 1) * 3}</div>`;
+    const v1 = vis1[i];
+    const v2 = vis2[i];
+    const num = (visOffset + i + 1) * 3;
+    const cls1 = !v1 ? '' : (v1.bust ? ' bust' : (i === vis1.length - 1 ? ' last' : ''));
+    const cls2 = !v2 ? '' : (v2.bust ? ' bust' : (i === vis2.length - 1 ? ' last' : ''));
+    visitRows += `<div class="dp-visit-row">
+      <div class="dp-throw${cls1}">${v1 ? (v1.bust ? 'Bust' : v1.score) : ''}</div>
+      <div class="dp-visit-num">${num}</div>
+      <div class="dp-throw dp-throw-r${cls2}">${v2 ? (v2.bust ? 'Bust' : v2.score) : ''}</div>
+    </div>`;
   }
 
   const boardName = isReadonly ? '👁 Canlı İzleme' : currentBoard.name;
@@ -415,15 +417,14 @@ function renderMatch() {
         </div>
       </div>
 
-      <div class="dp-scores">
-        <div class="dp-score-col${isTurn1 ? ' active' : ''}">
+      <div class="dp-scores${isTurn1 ? ' p1-active' : ' p2-active'}">
+        <div class="dp-rem-row">
           <div class="dp-rem">${rem1}</div>
-          <div class="dp-throws">${buildThrows(vis1)}</div>
+          <div></div>
+          <div class="dp-rem dp-rem-r">${rem2}</div>
         </div>
-        <div class="dp-middle"><div class="dp-rem-ghost"></div><div class="dp-middle-nums">${visitNums}</div></div>
-        <div class="dp-score-col${!isTurn1 ? ' active' : ''}">
-          <div class="dp-rem">${rem2}</div>
-          <div class="dp-throws">${buildThrows(vis2)}</div>
+        <div class="dp-visit-table">
+          ${visitRows}
         </div>
       </div>
 
@@ -456,13 +457,10 @@ function renderMatch() {
     </div>
   `;
 
-  // Atışlar yukarıdan aşağı akar; overflow olduğunda eskiler üstten kırpılır.
-  // innerHTML set edildikten sonra her .dp-throws sütununu en alta kaydır.
+  // Atış tablosu: en son satır görünsün
   requestAnimationFrame(() => {
-    // Atış sütunları ve ok numaraları aynı anda aşağı kaydırılır → satırlar hizalı kalır
-    document.querySelectorAll('.dp-throws, .dp-middle-nums').forEach(el => {
-      el.scrollTop = el.scrollHeight;
-    });
+    const t = document.querySelector('.dp-visit-table');
+    if (t) t.scrollTop = t.scrollHeight;
   });
 }
 
