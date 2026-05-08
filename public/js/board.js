@@ -702,9 +702,11 @@ function renderFBCezaliMatch(m) {
         </div>
       </div>
 
-      <table class="cr-table">
-        <tbody>${rows}</tbody>
-      </table>
+      <div class="cr-table-wrap">
+        <table class="cr-table">
+          <tbody>${rows}</tbody>
+        </table>
+      </div>
 
       ${isReadonly ? '' : `
         <div class="cr-input">

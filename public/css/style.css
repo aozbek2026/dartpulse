@@ -1196,9 +1196,15 @@ body.board-page #root.board-screen {
   margin-top: 2px;
 }
 
+/* Tablo kapsayıcı — flex büyümesini bu div üstlenir, tablo sadece scroll edilir */
+.cr-table-wrap {
+  flex: 1 1 0;
+  min-height: 0;
+  overflow-y: auto;
+}
+
 /* Cricket tablo (sütun: marks-sol | sayı | marks-sağ) */
 .cr-table {
-  flex: 1 1 0;
   width: 100%;
   border-collapse: collapse;
   table-layout: fixed;
