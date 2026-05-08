@@ -1387,7 +1387,9 @@ body.board-page #root.board-screen {
   padding: 0 clamp(4px, 1vmin, 10px);
   border-bottom: 1px solid #1e2236;
 }
-.cr-target-row.cr-target-done { opacity: 0.42; }
+/* Hedef her iki tarafta kapansa da butonlar tam renkte kalır
+   (D/T/H meta hedefine allocate yapma veya D-target'tan puan üretme imkânı sürebilir) */
+.cr-target-row.cr-target-done { opacity: 1; }
 
 /* Marks sütunları — esner, ortalı */
 .cr-marks-l, .cr-marks-r {

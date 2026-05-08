@@ -831,16 +831,50 @@ function fbUndoDart() {
 async function submitFBCezaliDarts() {
   if (!currentMatch) return;
   const slot = currentMatch.current_turn;
+  const pKey = `p${slot}`;
+  const oppKey = slot === 1 ? 'p2' : 'p1';
+
+  // Visit'in başındaki state — fallback puan hesabı için pre-visit mark'lara bak
+  let preState;
+  try { preState = currentMatch.cricket_state_json ? JSON.parse(currentMatch.cricket_state_json) : null; } catch { preState = null; }
+  if (!preState) preState = { marks: {} };
+  const myDClosed   = (preState.marks?.['D']?.[pKey]   || 0) >= 3;
+  const oppDOpen    = (preState.marks?.['D']?.[oppKey] || 0) <  3;
+  const myTClosed   = (preState.marks?.['T']?.[pKey]   || 0) >= 3;
+  const oppTOpen    = (preState.marks?.['T']?.[oppKey] || 0) <  3;
+  const dFallbackOK = myDClosed && oppDOpen;
+  const tFallbackOK = myTClosed && oppTOpen;
+
   const marksObj = {};
+  let fallbackScore = 0;
+  // Visit içinde aynı sayıya birden fazla dart gelebilir — running tracking
+  const runMarks = {};
   for (const d of fbDarts) {
     if (d.target == null || d.mult <= 0) continue;
     marksObj[d.target] = (marksObj[d.target] || 0) + d.mult;
+
+    // Fallback hesabı SADECE sayı hedefleri için (10-20, 25)
+    const N = parseInt(d.target);
+    if (isNaN(N)) continue;
+
+    const oppMarks = preState.marks?.[d.target]?.[oppKey] || 0;
+    if (oppMarks < 3) continue; // Sayı rakipte açık — engine zaten number-path puanlar
+
+    // Sayı her iki tarafta kapalı (rakip 3+, ben de kapatmışım veya bu visit'te kapatıyorum)
+    // → number-path puan üretmez, meta-target fallback'i dene
+    if (d.mult === 2 && dFallbackOK) {
+      fallbackScore += 2 * N; // D-target fallback (D17=34, D-Bull=50, ...)
+    } else if (d.mult === 3 && tFallbackOK) {
+      fallbackScore += 3 * N; // T-target fallback (T20=60, ...)
+    }
+    runMarks[d.target] = (runMarks[d.target] || 0) + d.mult;
   }
+
   const sentDarts = fbDarts.slice();
   fbDarts = [];
   const res = await api.post(`/api/matches/${currentMatch.id}/fb-cezali-throw`, {
     playerSlot: slot,
-    allocation: { marks: marksObj, score: 0 },
+    allocation: { marks: marksObj, score: fallbackScore },
   });
   if (res.error) {
     fbDarts = sentDarts;
