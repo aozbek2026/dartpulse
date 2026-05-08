@@ -485,6 +485,15 @@ function renderPlayer(name, remaining, legs, sets, active, m, showSets) {
 // ---- Cricket ekranı (yeni dart-bazlı UI — DartConnect tarzı) ----
 const CRICKET_NUMBERS = [20, 19, 18, 17, 16, 15, 25];
 
+// Eski API uyumluluğu — FB Cezalı ve Karambol hâlâ bu fonksiyonu kullanıyor.
+// Yeni cricket UI'a geçtikten sonra (task #5/#6) silinecek.
+function cricketMarksHtml(count, active) {
+  if (count <= 0) return '<span class="cr-mark-empty">·</span>';
+  if (count === 1) return `<span class="cr-mark${active ? ' cr-mark-act' : ''}">/</span>`;
+  if (count === 2) return `<span class="cr-mark${active ? ' cr-mark-act' : ''}">╳</span>`;
+  return `<span class="cr-mark cr-mark-closed">⊗</span>`;
+}
+
 // Marks sembolü: /, X, O (closed). Boşken zayıf nokta.
 function cricketMarkSym(count) {
   if (count <= 0) return { sym: '·', cls: 'cr-m0' };
