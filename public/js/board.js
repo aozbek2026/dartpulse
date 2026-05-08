@@ -585,7 +585,7 @@ function renderCricketMatch(m) {
     <div class="cr-bottom-bar">
       <button class="cr-undo-btn" onclick="cricketUndoDart()" ${cricketDarts.length === 0 ? 'disabled' : ''}>← GERİ</button>
       <div class="cr-dots">${dotsHtml}</div>
-      <button class="cr-miss-btn" onclick="cricketMiss()">IŞKAL</button>
+      <button class="cr-miss-btn" onclick="cricketMiss()">ISKA</button>
     </div>
   `;
 
@@ -678,6 +678,10 @@ async function submitCricketDarts() {
 const FB_TARGETS_ALL  = ['20','19','18','17','16','15','14','13','12','11','10','D','T','25','H'];
 const FB_TARGET_LABEL = { '25':'BULL', 'D':'D', 'T':'T', 'H':'H' };
 let fbDarts = []; // [{target:'20'|..., mult:1|2|3} | {target:null,mult:0}]
+// "Ceza yazma modu" — D / T / H meta hedefi bende kapalı + rakipte açık iken
+// meta butona basıp dart taps'leri puan olarak yazma akışı
+let fbMetaMode  = null;  // 'D' | 'T' | 'H' | null
+let fbMetaScore = 0;     // mod aktifken biriken toplam puan
 
 function fbTargetLabel(t) { return FB_TARGET_LABEL[t] || t; }
 function fbIsNumberTarget(t) { return !isNaN(parseInt(t)); }  // 10-20, 25
@@ -731,11 +735,13 @@ function renderFBCezaliMatch(m) {
     }
 
     if (isMeta) {
-      // D / T / H — tek geniş buton (sub-D/T yok, çünkü "double of D" anlamsız)
+      // D / T / H — tek geniş buton. Akıllı handler: meta hedefi açıksa +1 mark,
+      // kapalı + rakipte açık ise "ceza yazma modu"nu açar/kapatır.
+      const modeOn = (fbMetaMode === t);
       return `
         <div class="cr-target-row cr-target-meta${bothClosed ? ' cr-target-done' : ''}">
           <div class="cr-marks-l ${lSym.cls}${isTurn1 ? ' cr-active' : ''}">${lSym.sym}</div>
-          <button class="cr-tap-num cr-tap-meta" onclick="fbDart('${t}', 1)">${label}</button>
+          <button class="cr-tap-num cr-tap-meta${modeOn ? ' cr-tap-meta-active' : ''}" onclick="fbMetaTap('${t}')">${label}${modeOn ? ' ✓' : ''}</button>
           <div class="cr-marks-r ${rSym.cls}${!isTurn1 ? ' cr-active' : ''}">${rSym.sym}</div>
         </div>`;
     }
@@ -772,11 +778,20 @@ function renderFBCezaliMatch(m) {
     return `<div class="cr-dot cr-dot-hit">${pre}${tLabel}</div>`;
   }).join('');
 
+  const modeBar = fbMetaMode
+    ? `<div class="cr-mode-bar">
+         <span class="cr-mode-label">${fbMetaMode} CEZA</span>
+         <span class="cr-mode-tip">— atışlarını tuşla</span>
+         <span class="cr-mode-score">${fbMetaScore}</span>
+       </div>`
+    : '';
+
   const bottomBar = isReadonly ? '' : `
+    ${modeBar}
     <div class="cr-bottom-bar">
       <button class="cr-undo-btn" onclick="fbUndoDart()" ${fbDarts.length === 0 ? 'disabled' : ''}>← GERİ</button>
       <div class="cr-dots">${dotsHtml}</div>
-      <button class="cr-miss-btn" onclick="fbMiss()">IŞKAL</button>
+      <button class="cr-miss-btn" onclick="fbMiss()">ISKA</button>
     </div>`;
 
   root.innerHTML = `
@@ -812,9 +827,83 @@ function renderFBCezaliMatch(m) {
   `;
 }
 
+// Big D / T / H meta butona basıldığında akıllı handler
+function fbMetaTap(metaTarget) {
+  if (isReadonly || !currentMatch) return;
+
+  // Mod aktifken aynı meta'ya tekrar basmak iptal
+  if (fbMetaMode === metaTarget) {
+    fbMetaMode = null;
+    fbMetaScore = 0;
+    fbDarts = [];
+    renderMatch();
+    return;
+  }
+
+  // Mevcut state — mod açma kararı için
+  let state;
+  try { state = currentMatch.cricket_state_json ? JSON.parse(currentMatch.cricket_state_json) : null; } catch { state = null; }
+  if (!state) state = { marks: {} };
+
+  const slot = currentMatch.current_turn;
+  const pKey = `p${slot}`;
+  const oppKey = slot === 1 ? 'p2' : 'p1';
+  const myMeta  = state.marks?.[metaTarget]?.[pKey]   || 0;
+  const oppMeta = state.marks?.[metaTarget]?.[oppKey] || 0;
+
+  if (myMeta >= 3 && oppMeta < 3) {
+    // Ceza yazma modu — explicit
+    fbMetaMode = metaTarget;
+    fbMetaScore = 0;
+    fbDarts = [];
+    renderMatch();
+  } else {
+    // Normal +1 mark akışı
+    fbDart(metaTarget, 1);
+  }
+}
+
 function fbDart(target, mult) {
   if (isReadonly || !currentMatch) return;
   if (fbDarts.length >= 3) return;
+
+  // Ceza yazma modu — dart taps puan ekler, mark eklemez
+  if (fbMetaMode) {
+    if (target == null) {
+      // ISKA — boş slot, puan eklemez
+      fbDarts.push({ target: null, mult: 0 });
+    } else {
+      const N = parseInt(target);
+      if (isNaN(N)) {
+        toast(`${fbMetaMode} ceza modu için sayıya bas`);
+        return;
+      }
+      let valid = false;
+      let value = 0;
+      if (fbMetaMode === 'D') {
+        if (mult === 2) { valid = true; value = 2 * N; } // D-on-N veya D-Bull (N=25, mult=2)
+      } else if (fbMetaMode === 'T') {
+        if (mult === 3) { valid = true; value = 3 * N; }
+      } else if (fbMetaMode === 'H') {
+        const firstValid = fbDarts.find(d => d.target != null && d.mult > 0);
+        if (!firstValid)                                                       { valid = true; value = mult * N; }
+        else if (firstValid.target === String(target) && firstValid.mult === mult) { valid = true; value = mult * N; }
+      }
+      if (!valid) {
+        if      (fbMetaMode === 'D') toast('D ceza modu: D butonu ya da D-BULL atışı gerekli');
+        else if (fbMetaMode === 'T') toast('T ceza modu: T butonu atışı gerekli');
+        else if (fbMetaMode === 'H') toast('H ceza modu: 3 ok aynı segmentte olmalı');
+        return;
+      }
+      fbDarts.push({ target: String(target), mult });
+      fbMetaScore += value;
+    }
+    if (fbDarts.length === 3) submitFBCezaliDarts();
+    else renderMatch();
+    return;
+  }
+
+  // Normal mark modu
   fbDarts.push({ target: target == null ? null : String(target), mult });
   if (fbDarts.length === 3) submitFBCezaliDarts();
   else renderMatch();
@@ -824,60 +913,67 @@ function fbMiss() { fbDart(null, 0); }
 
 function fbUndoDart() {
   if (fbDarts.length === 0) return;
-  fbDarts.pop();
+  const last = fbDarts.pop();
+  if (fbMetaMode && last && last.target != null && last.mult > 0) {
+    const N = parseInt(last.target);
+    if (!isNaN(N)) {
+      fbMetaScore -= last.mult * N;
+      if (fbMetaScore < 0) fbMetaScore = 0;
+    }
+  }
   renderMatch();
 }
 
 async function submitFBCezaliDarts() {
   if (!currentMatch) return;
   const slot = currentMatch.current_turn;
-  const pKey = `p${slot}`;
-  const oppKey = slot === 1 ? 'p2' : 'p1';
 
-  // Visit'in başındaki state — fallback puan hesabı için pre-visit mark'lara bak
-  let preState;
-  try { preState = currentMatch.cricket_state_json ? JSON.parse(currentMatch.cricket_state_json) : null; } catch { preState = null; }
-  if (!preState) preState = { marks: {} };
-  const myDClosed   = (preState.marks?.['D']?.[pKey]   || 0) >= 3;
-  const oppDOpen    = (preState.marks?.['D']?.[oppKey] || 0) <  3;
-  const myTClosed   = (preState.marks?.['T']?.[pKey]   || 0) >= 3;
-  const oppTOpen    = (preState.marks?.['T']?.[oppKey] || 0) <  3;
-  const dFallbackOK = myDClosed && oppDOpen;
-  const tFallbackOK = myTClosed && oppTOpen;
+  let payload;
 
-  const marksObj = {};
-  let fallbackScore = 0;
-  // Visit içinde aynı sayıya birden fazla dart gelebilir — running tracking
-  const runMarks = {};
-  for (const d of fbDarts) {
-    if (d.target == null || d.mult <= 0) continue;
-    marksObj[d.target] = (marksObj[d.target] || 0) + d.mult;
+  if (fbMetaMode) {
+    // Ceza yazma modu — sadece skor, mark yok
+    payload = { playerSlot: slot, allocation: { marks: {}, score: fbMetaScore } };
+  } else {
+    // Normal mark modu (+ D/T fallback puan otomasyonu)
+    const pKey   = `p${slot}`;
+    const oppKey = slot === 1 ? 'p2' : 'p1';
+    let preState;
+    try { preState = currentMatch.cricket_state_json ? JSON.parse(currentMatch.cricket_state_json) : null; } catch { preState = null; }
+    if (!preState) preState = { marks: {} };
+    const myDClosed   = (preState.marks?.['D']?.[pKey]   || 0) >= 3;
+    const oppDOpen    = (preState.marks?.['D']?.[oppKey] || 0) <  3;
+    const myTClosed   = (preState.marks?.['T']?.[pKey]   || 0) >= 3;
+    const oppTOpen    = (preState.marks?.['T']?.[oppKey] || 0) <  3;
+    const dFallbackOK = myDClosed && oppDOpen;
+    const tFallbackOK = myTClosed && oppTOpen;
 
-    // Fallback hesabı SADECE sayı hedefleri için (10-20, 25)
-    const N = parseInt(d.target);
-    if (isNaN(N)) continue;
-
-    const oppMarks = preState.marks?.[d.target]?.[oppKey] || 0;
-    if (oppMarks < 3) continue; // Sayı rakipte açık — engine zaten number-path puanlar
-
-    // Sayı her iki tarafta kapalı (rakip 3+, ben de kapatmışım veya bu visit'te kapatıyorum)
-    // → number-path puan üretmez, meta-target fallback'i dene
-    if (d.mult === 2 && dFallbackOK) {
-      fallbackScore += 2 * N; // D-target fallback (D17=34, D-Bull=50, ...)
-    } else if (d.mult === 3 && tFallbackOK) {
-      fallbackScore += 3 * N; // T-target fallback (T20=60, ...)
+    const marksObj = {};
+    let fallbackScore = 0;
+    for (const d of fbDarts) {
+      if (d.target == null || d.mult <= 0) continue;
+      marksObj[d.target] = (marksObj[d.target] || 0) + d.mult;
+      const N = parseInt(d.target);
+      if (isNaN(N)) continue;
+      const oppMarks = preState.marks?.[d.target]?.[oppKey] || 0;
+      if (oppMarks < 3) continue; // sayı rakipte açık — engine zaten halleder
+      if (d.mult === 2 && dFallbackOK)      fallbackScore += 2 * N;
+      else if (d.mult === 3 && tFallbackOK) fallbackScore += 3 * N;
     }
-    runMarks[d.target] = (runMarks[d.target] || 0) + d.mult;
+    payload = { playerSlot: slot, allocation: { marks: marksObj, score: fallbackScore } };
   }
 
   const sentDarts = fbDarts.slice();
+  const sentMode  = fbMetaMode;
+  const sentScore = fbMetaScore;
   fbDarts = [];
-  const res = await api.post(`/api/matches/${currentMatch.id}/fb-cezali-throw`, {
-    playerSlot: slot,
-    allocation: { marks: marksObj, score: fallbackScore },
-  });
+  fbMetaMode = null;
+  fbMetaScore = 0;
+
+  const res = await api.post(`/api/matches/${currentMatch.id}/fb-cezali-throw`, payload);
   if (res.error) {
     fbDarts = sentDarts;
+    fbMetaMode = sentMode;
+    fbMetaScore = sentScore;
     renderMatch();
     return toast('Hata: ' + res.error);
   }
@@ -992,7 +1088,7 @@ function renderKarambolMatch(m) {
     <div class="cr-bottom-bar">
       <button class="cr-undo-btn" onclick="karambolUndoDart()" ${karambolDarts.length === 0 ? 'disabled' : ''}>← GERİ</button>
       <div class="cr-dots">${dotsHtml}</div>
-      <button class="cr-miss-btn" onclick="karambolMiss()">IŞKAL</button>
+      <button class="cr-miss-btn" onclick="karambolMiss()">ISKA</button>
     </div>`;
 
   root.innerHTML = `

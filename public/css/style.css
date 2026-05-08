@@ -1486,6 +1486,47 @@ body.board-page #root.board-screen {
 .cr-target-row.cr-target-meta .cr-tap-num.cr-tap-meta:active {
   background: #3d4d70;
 }
+/* Ceza yazma modu aktif iken meta buton turuncu */
+.cr-target-row.cr-target-meta .cr-tap-num.cr-tap-meta.cr-tap-meta-active {
+  background: #d97706;
+  border-color: #fbbf24;
+  color: #fff;
+}
+
+/* Ceza yazma modu üst bandı */
+.cr-mode-bar {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  background: #d97706;
+  color: #fff;
+  border-radius: 8px;
+  padding: clamp(4px, 1vmin, 10px) clamp(8px, 2vmin, 16px);
+  margin-bottom: clamp(2px, 0.5vmin, 6px);
+  font-weight: 700;
+  letter-spacing: 0.5px;
+}
+.cr-mode-label {
+  font-size: clamp(13px, 3vmin, 22px);
+  font-weight: 800;
+  letter-spacing: 1.5px;
+}
+.cr-mode-tip {
+  font-size: clamp(10px, 2.2vmin, 16px);
+  opacity: 0.9;
+  flex: 1;
+  text-align: center;
+}
+.cr-mode-score {
+  font-size: clamp(18px, 4.5vmin, 36px);
+  font-weight: 900;
+  background: rgba(0,0,0,0.25);
+  border-radius: 6px;
+  padding: 0 clamp(8px, 2vmin, 14px);
+  min-width: clamp(50px, 10vmin, 80px);
+  text-align: center;
+}
 
 /* FB Cezalı/Karambol için ek not: aynı CSS — flex satır dağıtımı 15 satırı
    da otomatik küçültür. Ek bir override gerekmiyor. */
