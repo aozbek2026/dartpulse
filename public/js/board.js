@@ -673,14 +673,20 @@ async function submitCricketDarts() {
 }
 
 
-// ---- Cricket Full Board Cezalı ekranı ----
+// ---- Cricket Full Board Cezalı ekranı (yeni dart-bazlı UI) ----
 // Sıralama: 20→10, sonra D, T, B (Bull), H (House)
 const FB_TARGETS_ALL  = ['20','19','18','17','16','15','14','13','12','11','10','D','T','25','H'];
-const FB_TARGET_LABEL = { '25':'B', 'D':'D', 'T':'T', 'H':'H' };
-let fbVisit = {}; // { target: markCount }
-let fbScore = 0;
+const FB_TARGET_LABEL = { '25':'BULL', 'D':'D', 'T':'T', 'H':'H' };
+let fbDarts = []; // [{target:'20'|..., mult:1|2|3} | {target:null,mult:0}]
 
 function fbTargetLabel(t) { return FB_TARGET_LABEL[t] || t; }
+function fbIsNumberTarget(t) { return !isNaN(parseInt(t)); }  // 10-20, 25
+function fbIsMetaTarget(t)   { return t === 'D' || t === 'T' || t === 'H'; }
+function fbPendingForTarget(target) {
+  let extra = 0;
+  for (const d of fbDarts) if (d.target === target && d.mult > 0) extra += d.mult;
+  return extra;
+}
 
 function renderFBCezaliMatch(m) {
   const e1 = entryLabel(m.entry1);
@@ -700,37 +706,78 @@ function renderFBCezaliMatch(m) {
     return true;
   });
 
-  const pKey = isTurn1 ? 'p1' : 'p2';
-
   const rows = activeTargets.map(t => {
     const p1m = state.marks[t]?.p1 || 0;
     const p2m = state.marks[t]?.p2 || 0;
-    const bothClosed = p1m >= 3 && p2m >= 3;
+    const pendingForMe = isReadonly ? 0 : fbPendingForTarget(t);
+    const leftCount  = Math.min(3, p1m + (isTurn1 ? pendingForMe : 0));
+    const rightCount = Math.min(3, p2m + (isTurn1 ? 0 : pendingForMe));
+    const lSym = cricketMarkSym(leftCount);
+    const rSym = cricketMarkSym(rightCount);
+    const bothClosed = leftCount >= 3 && rightCount >= 3;
     const label = fbTargetLabel(t);
+    const isBull = (t === '25');
+    const isMeta = fbIsMetaTarget(t);
+
+    if (isReadonly) {
+      return `
+        <div class="cr-target-row${bothClosed ? ' cr-target-done' : ''}">
+          <div class="cr-marks-l ${lSym.cls}${isTurn1 ? ' cr-active' : ''}">${lSym.sym}</div>
+          <div></div>
+          <div class="cr-tap-num" style="cursor:default;">${label}</div>
+          <div></div>
+          <div class="cr-marks-r ${rSym.cls}${!isTurn1 ? ' cr-active' : ''}">${rSym.sym}</div>
+        </div>`;
+    }
+
+    if (isMeta) {
+      // D / T / H — tek geniş buton (sub-D/T yok, çünkü "double of D" anlamsız)
+      return `
+        <div class="cr-target-row cr-target-meta${bothClosed ? ' cr-target-done' : ''}">
+          <div class="cr-marks-l ${lSym.cls}${isTurn1 ? ' cr-active' : ''}">${lSym.sym}</div>
+          <button class="cr-tap-num cr-tap-meta" onclick="fbDart('${t}', 1)">${label}</button>
+          <div class="cr-marks-r ${rSym.cls}${!isTurn1 ? ' cr-active' : ''}">${rSym.sym}</div>
+        </div>`;
+    }
+
+    if (isBull) {
+      return `
+        <div class="cr-target-row${bothClosed ? ' cr-target-done' : ''}">
+          <div class="cr-marks-l ${lSym.cls}${isTurn1 ? ' cr-active' : ''}">${lSym.sym}</div>
+          <button class="cr-tap-dbull" onclick="fbDart('25', 2)">D-BULL</button>
+          <button class="cr-tap-num" onclick="fbDart('25', 1)">${label}</button>
+          <div></div>
+          <div class="cr-marks-r ${rSym.cls}${!isTurn1 ? ' cr-active' : ''}">${rSym.sym}</div>
+        </div>`;
+    }
+
+    // 10-20 — standart row: D / NUM / T
     return `
-      <tr class="cr-row${bothClosed ? ' cr-row-done' : ''}">
-        <td class="cr-cell cr-left">${cricketMarksHtml(p1m, isTurn1)}</td>
-        <td class="cr-num"><span>${label}</span></td>
-        <td class="cr-cell cr-right">${cricketMarksHtml(p2m, !isTurn1)}</td>
-      </tr>`;
+      <div class="cr-target-row${bothClosed ? ' cr-target-done' : ''}">
+        <div class="cr-marks-l ${lSym.cls}${isTurn1 ? ' cr-active' : ''}">${lSym.sym}</div>
+        <button class="cr-tap-d" onclick="fbDart('${t}', 2)">D</button>
+        <button class="cr-tap-num" onclick="fbDart('${t}', 1)">${label}</button>
+        <button class="cr-tap-t" onclick="fbDart('${t}', 3)">T</button>
+        <div class="cr-marks-r ${rSym.cls}${!isTurn1 ? ' cr-active' : ''}">${rSym.sym}</div>
+      </div>`;
   }).join('');
 
-  const inputBtns = isReadonly ? '' : activeTargets.map(t => {
-    const myMarks = state.marks[t]?.[pKey] || 0;
-    const vHits   = fbVisit[t] || 0;
-    const isClosed = myMarks >= 3;
-    const label    = fbTargetLabel(t);
-    return `
-      <button class="cr-btn${vHits > 0 ? ' cr-btn-sel' : ''}${isClosed ? ' cr-btn-ok' : ''}"
-        onclick="fbToggle('${t}')">
-        <span class="cr-btn-num">${label}</span>
-        ${vHits > 0 ? `<span class="cr-btn-mark">${vHits === 1 ? '/' : vHits === 2 ? '╳' : '⊗'}</span>` : ''}
-        ${isClosed && !vHits ? '<span class="cr-btn-mark">⊗</span>' : ''}
-      </button>`;
+  // Visit dot indicators
+  const dotsHtml = [0,1,2].map(i => {
+    const d = fbDarts[i];
+    if (!d) return `<div class="cr-dot"></div>`;
+    if (d.target == null) return `<div class="cr-dot cr-dot-miss">×</div>`;
+    const pre = d.mult === 2 ? 'D' : d.mult === 3 ? 'T' : '';
+    const tLabel = d.target === '25' ? (d.mult === 2 ? 'DB' : 'B') : d.target;
+    return `<div class="cr-dot cr-dot-hit">${pre}${tLabel}</div>`;
   }).join('');
 
-  const hasInput = Object.values(fbVisit).some(v => v > 0) || fbScore > 0;
-  const colCount = activeTargets.length <= 12 ? activeTargets.length : Math.ceil(activeTargets.length / 2);
+  const bottomBar = isReadonly ? '' : `
+    <div class="cr-bottom-bar">
+      <button class="cr-undo-btn" onclick="fbUndoDart()" ${fbDarts.length === 0 ? 'disabled' : ''}>← GERİ</button>
+      <div class="cr-dots">${dotsHtml}</div>
+      <button class="cr-miss-btn" onclick="fbMiss()">IŞKAL</button>
+    </div>`;
 
   root.innerHTML = `
     <div class="board-header">
@@ -746,79 +793,60 @@ function renderFBCezaliMatch(m) {
 
     <div class="cr-wrap">
       <div class="cr-scores">
-        <div class="cr-score-col${isTurn1 ? ' cr-active' : ''}">
+        <div class="cr-score-col${isTurn1 ? ' cr-flip-active' : ''}">
           <div class="cr-name">${e1}</div>
           <div class="cr-pts">${state.p1_score || 0}</div>
           <div class="cr-legs">${m.p1_legs || 0} leg</div>
         </div>
-        <div class="cr-score-col${!isTurn1 ? ' cr-active' : ''}">
+        <div class="cr-score-col${!isTurn1 ? ' cr-flip-active' : ''}">
           <div class="cr-name">${e2}</div>
           <div class="cr-pts">${state.p2_score || 0}</div>
           <div class="cr-legs">${m.p2_legs || 0} leg</div>
         </div>
       </div>
 
-      <div class="cr-table-wrap">
-        <table class="cr-table">
-          <tbody>${rows}</tbody>
-        </table>
-      </div>
+      <div class="cr-targets cr-targets-fb">${rows}</div>
 
-      ${isReadonly ? '' : `
-        <div class="cr-input">
-          <div class="cr-btns fb-btns" style="grid-template-columns: repeat(${colCount}, 1fr);">
-            ${inputBtns}
-          </div>
-          <div class="fb-score-row">
-            <label class="fb-score-label">Puan</label>
-            <input id="fb-score-input" class="fb-score-input" type="number" min="0" max="999"
-              value="${fbScore || ''}" placeholder="0"
-              oninput="fbScore = +this.value || 0" />
-          </div>
-          <div class="cr-actions">
-            <button class="btn secondary" onclick="fbClear()" style="flex:1;">Temizle</button>
-            <button class="btn${hasInput ? '' : ' secondary'}" onclick="submitFBCezaliVisit()"
-              style="flex:2;${hasInput ? 'background:var(--accent);color:#000;font-weight:800;' : 'opacity:0.45;'}">
-              Enter
-            </button>
-          </div>
-        </div>
-      `}
+      ${bottomBar}
     </div>
   `;
 }
 
-function fbToggle(target) {
-  const current = fbVisit[target] || 0;
-  if (current >= 3) {
-    delete fbVisit[target];
-  } else {
-    fbVisit[target] = current + 1;
-  }
-  renderMatch();
-  // Puan inputunu koru
-  const inp = document.getElementById('fb-score-input');
-  if (inp) inp.value = fbScore || '';
+function fbDart(target, mult) {
+  if (isReadonly || !currentMatch) return;
+  if (fbDarts.length >= 3) return;
+  fbDarts.push({ target: target == null ? null : String(target), mult });
+  if (fbDarts.length === 3) submitFBCezaliDarts();
+  else renderMatch();
 }
 
-function fbClear() {
-  fbVisit = {};
-  fbScore = 0;
+function fbMiss() { fbDart(null, 0); }
+
+function fbUndoDart() {
+  if (fbDarts.length === 0) return;
+  fbDarts.pop();
   renderMatch();
 }
 
-async function submitFBCezaliVisit() {
+async function submitFBCezaliDarts() {
   if (!currentMatch) return;
-  const hasMarks = Object.values(fbVisit).some(v => v > 0);
-  if (!hasMarks && !fbScore) return toast('En az bir mark veya puan girin');
   const slot = currentMatch.current_turn;
+  const marksObj = {};
+  for (const d of fbDarts) {
+    if (d.target == null || d.mult <= 0) continue;
+    marksObj[d.target] = (marksObj[d.target] || 0) + d.mult;
+  }
+  const sentDarts = fbDarts.slice();
+  fbDarts = [];
   const res = await api.post(`/api/matches/${currentMatch.id}/fb-cezali-throw`, {
     playerSlot: slot,
-    allocation: { marks: { ...fbVisit }, score: fbScore },
+    allocation: { marks: marksObj, score: 0 },
   });
-  if (res.error) return toast('Hata: ' + res.error);
-  fbVisit = {};
-  fbScore = 0;
+  if (res.error) {
+    fbDarts = sentDarts;
+    renderMatch();
+    return toast('Hata: ' + res.error);
+  }
   if (res.legFinished && !res.matchFinished && res.legSummary) {
     await showLegSummary(res.legSummary);
     if (currentMatch?.entry1?.player2 || currentMatch?.entry2?.player2) {
@@ -835,9 +863,15 @@ async function submitFBCezaliVisit() {
 }
 
 
-// ---- Cricket Full Board Karambol ekranı ----
-// Cezalı ile aynı görünüm — fark: puan satırı yok, endpoint farklı
-let karambolVisit = {};
+// ---- Cricket Full Board Karambol ekranı (yeni dart-bazlı UI) ----
+// FB Cezalı ile aynı görünüm/akış — fark: skor yok (sadece leg sayısı), endpoint farklı
+let karambolDarts = [];
+
+function karambolPendingForTarget(target) {
+  let extra = 0;
+  for (const d of karambolDarts) if (d.target === target && d.mult > 0) extra += d.mult;
+  return extra;
+}
 
 function renderKarambolMatch(m) {
   const e1 = entryLabel(m.entry1);
@@ -857,36 +891,75 @@ function renderKarambolMatch(m) {
     return true;
   });
 
-  const pKey = isTurn1 ? 'p1' : 'p2';
-
   const rows = activeTargets.map(t => {
     const p1m = state.marks[t]?.p1 || 0;
     const p2m = state.marks[t]?.p2 || 0;
-    const bothClosed = p1m >= 3 && p2m >= 3;
+    const pendingForMe = isReadonly ? 0 : karambolPendingForTarget(t);
+    const leftCount  = Math.min(3, p1m + (isTurn1 ? pendingForMe : 0));
+    const rightCount = Math.min(3, p2m + (isTurn1 ? 0 : pendingForMe));
+    const lSym = cricketMarkSym(leftCount);
+    const rSym = cricketMarkSym(rightCount);
+    const bothClosed = leftCount >= 3 && rightCount >= 3;
+    const label = fbTargetLabel(t);
+    const isBull = (t === '25');
+    const isMeta = fbIsMetaTarget(t);
+
+    if (isReadonly) {
+      return `
+        <div class="cr-target-row${bothClosed ? ' cr-target-done' : ''}">
+          <div class="cr-marks-l ${lSym.cls}${isTurn1 ? ' cr-active' : ''}">${lSym.sym}</div>
+          <div></div>
+          <div class="cr-tap-num" style="cursor:default;">${label}</div>
+          <div></div>
+          <div class="cr-marks-r ${rSym.cls}${!isTurn1 ? ' cr-active' : ''}">${rSym.sym}</div>
+        </div>`;
+    }
+
+    if (isMeta) {
+      return `
+        <div class="cr-target-row cr-target-meta${bothClosed ? ' cr-target-done' : ''}">
+          <div class="cr-marks-l ${lSym.cls}${isTurn1 ? ' cr-active' : ''}">${lSym.sym}</div>
+          <button class="cr-tap-num cr-tap-meta" onclick="karambolDart('${t}', 1)">${label}</button>
+          <div class="cr-marks-r ${rSym.cls}${!isTurn1 ? ' cr-active' : ''}">${rSym.sym}</div>
+        </div>`;
+    }
+
+    if (isBull) {
+      return `
+        <div class="cr-target-row${bothClosed ? ' cr-target-done' : ''}">
+          <div class="cr-marks-l ${lSym.cls}${isTurn1 ? ' cr-active' : ''}">${lSym.sym}</div>
+          <button class="cr-tap-dbull" onclick="karambolDart('25', 2)">D-BULL</button>
+          <button class="cr-tap-num" onclick="karambolDart('25', 1)">${label}</button>
+          <div></div>
+          <div class="cr-marks-r ${rSym.cls}${!isTurn1 ? ' cr-active' : ''}">${rSym.sym}</div>
+        </div>`;
+    }
+
     return `
-      <tr class="cr-row${bothClosed ? ' cr-row-done' : ''}">
-        <td class="cr-cell cr-left">${cricketMarksHtml(p1m, isTurn1)}</td>
-        <td class="cr-num"><span>${fbTargetLabel(t)}</span></td>
-        <td class="cr-cell cr-right">${cricketMarksHtml(p2m, !isTurn1)}</td>
-      </tr>`;
+      <div class="cr-target-row${bothClosed ? ' cr-target-done' : ''}">
+        <div class="cr-marks-l ${lSym.cls}${isTurn1 ? ' cr-active' : ''}">${lSym.sym}</div>
+        <button class="cr-tap-d" onclick="karambolDart('${t}', 2)">D</button>
+        <button class="cr-tap-num" onclick="karambolDart('${t}', 1)">${label}</button>
+        <button class="cr-tap-t" onclick="karambolDart('${t}', 3)">T</button>
+        <div class="cr-marks-r ${rSym.cls}${!isTurn1 ? ' cr-active' : ''}">${rSym.sym}</div>
+      </div>`;
   }).join('');
 
-  const colCount = activeTargets.length <= 12 ? activeTargets.length : Math.ceil(activeTargets.length / 2);
-
-  const inputBtns = isReadonly ? '' : activeTargets.map(t => {
-    const myMarks  = state.marks[t]?.[pKey] || 0;
-    const vHits    = karambolVisit[t] || 0;
-    const isClosed = myMarks >= 3;
-    return `
-      <button class="cr-btn${vHits > 0 ? ' cr-btn-sel' : ''}${isClosed ? ' cr-btn-ok' : ''}"
-        onclick="karambolToggle('${t}')">
-        <span class="cr-btn-num">${fbTargetLabel(t)}</span>
-        ${vHits > 0 ? `<span class="cr-btn-mark">${vHits === 1 ? '/' : vHits === 2 ? '╳' : '⊗'}</span>` : ''}
-        ${isClosed && !vHits ? '<span class="cr-btn-mark">⊗</span>' : ''}
-      </button>`;
+  const dotsHtml = [0,1,2].map(i => {
+    const d = karambolDarts[i];
+    if (!d) return `<div class="cr-dot"></div>`;
+    if (d.target == null) return `<div class="cr-dot cr-dot-miss">×</div>`;
+    const pre = d.mult === 2 ? 'D' : d.mult === 3 ? 'T' : '';
+    const tLabel = d.target === '25' ? (d.mult === 2 ? 'DB' : 'B') : d.target;
+    return `<div class="cr-dot cr-dot-hit">${pre}${tLabel}</div>`;
   }).join('');
 
-  const hasInput = Object.values(karambolVisit).some(v => v > 0);
+  const bottomBar = isReadonly ? '' : `
+    <div class="cr-bottom-bar">
+      <button class="cr-undo-btn" onclick="karambolUndoDart()" ${karambolDarts.length === 0 ? 'disabled' : ''}>← GERİ</button>
+      <div class="cr-dots">${dotsHtml}</div>
+      <button class="cr-miss-btn" onclick="karambolMiss()">IŞKAL</button>
+    </div>`;
 
   root.innerHTML = `
     <div class="board-header">
@@ -902,59 +975,58 @@ function renderKarambolMatch(m) {
 
     <div class="cr-wrap">
       <div class="cr-scores">
-        <div class="cr-score-col${isTurn1 ? ' cr-active' : ''}">
+        <div class="cr-score-col${isTurn1 ? ' cr-flip-active' : ''}">
           <div class="cr-name">${e1}</div>
           <div class="cr-pts" style="font-size:clamp(20px,5vmin,38px);">${m.p1_legs || 0} leg</div>
         </div>
-        <div class="cr-score-col${!isTurn1 ? ' cr-active' : ''}">
+        <div class="cr-score-col${!isTurn1 ? ' cr-flip-active' : ''}">
           <div class="cr-name">${e2}</div>
           <div class="cr-pts" style="font-size:clamp(20px,5vmin,38px);">${m.p2_legs || 0} leg</div>
         </div>
       </div>
 
-      <table class="cr-table">
-        <tbody>${rows}</tbody>
-      </table>
+      <div class="cr-targets cr-targets-fb">${rows}</div>
 
-      ${isReadonly ? '' : `
-        <div class="cr-input">
-          <div class="cr-btns fb-btns" style="grid-template-columns: repeat(${colCount}, 1fr);">
-            ${inputBtns}
-          </div>
-          <div class="cr-actions">
-            <button class="btn secondary" onclick="karambolClear()" style="flex:1;">Temizle</button>
-            <button class="btn${hasInput ? '' : ' secondary'}" onclick="submitKarambolVisit()"
-              style="flex:2;${hasInput ? 'background:var(--accent);color:#000;font-weight:800;' : 'opacity:0.45;'}">
-              Enter
-            </button>
-          </div>
-        </div>
-      `}
+      ${bottomBar}
     </div>
   `;
 }
 
-function karambolToggle(target) {
-  const current = karambolVisit[target] || 0;
-  if (current >= 3) { delete karambolVisit[target]; } else { karambolVisit[target] = current + 1; }
+function karambolDart(target, mult) {
+  if (isReadonly || !currentMatch) return;
+  if (karambolDarts.length >= 3) return;
+  karambolDarts.push({ target: target == null ? null : String(target), mult });
+  if (karambolDarts.length === 3) submitKarambolDarts();
+  else renderMatch();
+}
+
+function karambolMiss() { karambolDart(null, 0); }
+
+function karambolUndoDart() {
+  if (karambolDarts.length === 0) return;
+  karambolDarts.pop();
   renderMatch();
 }
 
-function karambolClear() {
-  karambolVisit = {};
-  renderMatch();
-}
-
-async function submitKarambolVisit() {
+async function submitKarambolDarts() {
   if (!currentMatch) return;
-  if (!Object.values(karambolVisit).some(v => v > 0)) return toast('En az bir mark seçin');
   const slot = currentMatch.current_turn;
+  const marksObj = {};
+  for (const d of karambolDarts) {
+    if (d.target == null || d.mult <= 0) continue;
+    marksObj[d.target] = (marksObj[d.target] || 0) + d.mult;
+  }
+  const sentDarts = karambolDarts.slice();
+  karambolDarts = [];
   const res = await api.post(`/api/matches/${currentMatch.id}/karambol-throw`, {
     playerSlot: slot,
-    allocation: { marks: { ...karambolVisit } },
+    allocation: { marks: marksObj },
   });
-  if (res.error) return toast('Hata: ' + res.error);
-  karambolVisit = {};
+  if (res.error) {
+    karambolDarts = sentDarts;
+    renderMatch();
+    return toast('Hata: ' + res.error);
+  }
   if (res.legFinished && !res.matchFinished && res.legSummary) {
     await showLegSummary(res.legSummary);
     if (currentMatch?.entry1?.player2 || currentMatch?.entry2?.player2) {

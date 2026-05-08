@@ -33,6 +33,14 @@ function initFBCezaliState(includeLow) {
 }
 
 // allocation: { marks: { '20': 2, 'D': 1, ... }, score: 40 }
+// Auto-score: kapanma sonrası fazla mark'lar (rakip açıksa) puana otomatik döner
+// (klasik cricket gibi). Sayı hedefleri için target değeri = sayının kendisi.
+// Meta hedefler (D, T, H) puan üretmez. score alanı manual override için durur.
+function fbTargetValue(key) {
+  const n = parseInt(key);
+  return isNaN(n) ? null : n;  // 10-20 ve 25 (Bull) → numerik, D/T/H → null
+}
+
 function recordFBCezaliVisit(matchId, playerSlot, allocation) {
   const match = db.matchById(matchId);
   if (!match) throw new Error('Maç bulunamadı');
@@ -45,17 +53,33 @@ function recordFBCezaliVisit(matchId, playerSlot, allocation) {
   let state = parseCricketState(match.cricket_state_json) || initFBCezaliState(false);
   const targets = fbTargets(state.include_low);
 
-  // Mark ekle
+  // Mark ekle + auto-score (kapanma sonrası fazla mark'lar puana döner)
   const marksAlloc = allocation.marks || {};
+  let autoScored = 0;
   for (const [target, count] of Object.entries(marksAlloc)) {
     if (!targets.map(String).includes(String(target))) continue;
     const key = String(target);
     if (!state.marks[key]) state.marks[key] = { p1: 0, p2: 0 };
-    const current = state.marks[key][pKey] || 0;
-    state.marks[key][pKey] = Math.min(3, current + (count || 0));
+    const current  = state.marks[key][pKey] || 0;
+    const oppMarks = state.marks[key][oppKey] || 0;
+    const addMarks = count || 0;
+    const newMarks = current + addMarks;
+    state.marks[key][pKey] = Math.min(3, newMarks);
+
+    // Fazla mark (rakip açıksa) puana döner
+    if (oppMarks < 3 && newMarks > 3) {
+      const tval = fbTargetValue(key);
+      if (tval !== null) {
+        const extraMarks = newMarks - Math.max(3, current);
+        autoScored += extraMarks * tval;
+      }
+    }
+  }
+  if (autoScored > 0) {
+    state[`${pKey}_score`] = (state[`${pKey}_score`] || 0) + autoScored;
   }
 
-  // Puan ekle (sadece rakip ilgili hedefi kapatmamışsa geçerli — honor system)
+  // Manual puan override (nadir kullanım — yeni UI'da kapalı)
   const addScore = Math.max(0, +(allocation.score) || 0);
   if (addScore > 0) {
     state[`${pKey}_score`] = (state[`${pKey}_score`] || 0) + addScore;
