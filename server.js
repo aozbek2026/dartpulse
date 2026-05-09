@@ -306,12 +306,19 @@ app.post('/api/matches/:id/begin', (req, res) => {
     if (tour?.game_mode === 'cricket_fb_cezali' && !m.cricket_state_json) {
       let cfg = {};
       try { cfg = tour.config_json ? JSON.parse(tour.config_json) : {}; } catch {}
-      patch.cricket_state_json = JSON.stringify(engine.initFBCezaliState(cfg.include_low !== false));
+      // İstek body'sinde explicit gelirse onu kullan, yoksa tournament config, yoksa true
+      const includeLow = (req.body && typeof req.body.include_low === 'boolean')
+        ? req.body.include_low
+        : (cfg.include_low !== false);
+      patch.cricket_state_json = JSON.stringify(engine.initFBCezaliState(includeLow));
     }
     if (tour?.game_mode === 'cricket_fb_karambol' && !m.cricket_state_json) {
       let cfg = {};
       try { cfg = tour.config_json ? JSON.parse(tour.config_json) : {}; } catch {}
-      patch.cricket_state_json = JSON.stringify(engine.initKarambolState(cfg.include_low !== false));
+      const includeLow = (req.body && typeof req.body.include_low === 'boolean')
+        ? req.body.include_low
+        : (cfg.include_low !== false);
+      patch.cricket_state_json = JSON.stringify(engine.initKarambolState(includeLow));
     }
     db.updateMatch(id, patch);
     if (m.board_id) {

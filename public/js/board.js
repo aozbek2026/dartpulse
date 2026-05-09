@@ -15,6 +15,7 @@ let cricketDarts = [];          // [{target: 20, mult: 1|2|3} | {target: null, m
 let selectedStarter = null;    // 1 veya 2 — hangi takım başlıyor
 let selectedSubStarter1 = null; // 1 veya 2 — takım 1'de kim başlıyor (doubles)
 let selectedSubStarter2 = null; // 1 veya 2 — takım 2'de kim başlıyor (doubles)
+let selectedIncludeLow = true;  // FB Cezalı / Karambol: 10 ve 11 segmentleri dahil mi (default evet)
 
 socket.on('state', (s) => {
   allBoards = s.boards;
@@ -197,6 +198,28 @@ function renderPreMatch() {
         </div>
       </div>
 
+      ${(() => {
+        const tt = allTournaments.find(tx => tx.id === m.tournament_id);
+        const gm = tt?.game_mode;
+        const isFBMode = gm === 'cricket_fb_cezali' || gm === 'cricket_fb_karambol';
+        if (!isFBMode) return '';
+        return `
+        <div style="width: 100%; max-width: 780px;">
+          <div class="card" style="background: var(--surface-2); padding: 1.25rem;">
+            <div style="font-size: 0.78rem; color: var(--text-dim); letter-spacing: 0.1em; text-transform: uppercase; margin-bottom: 0.75rem;">🎯 Hedef segmentleri</div>
+            <label style="display: flex; align-items: center; gap: 0.85rem; cursor: pointer; padding: 0.4rem 0;">
+              <input type="checkbox" ${selectedIncludeLow ? 'checked' : ''}
+                onchange="selectIncludeLow(this.checked)"
+                style="width: 1.4rem; height: 1.4rem; cursor: pointer; accent-color: var(--accent);" />
+              <span style="font-size: 1.05rem; font-weight: 600;">10 ve 11 segmentleri dahil</span>
+            </label>
+            <div style="font-size: 0.82rem; color: var(--text-dim); margin-top: 0.3rem; padding-left: 2.25rem;">
+              Kapatılırsa oyun 12-20 + Bull + D + T + H ile oynanır.
+            </div>
+          </div>
+        </div>`;
+      })()}
+
       ${isDoubles ? `
       <div style="width: 100%; max-width: 780px; display: grid; grid-template-columns: 1fr 1fr; gap: 1rem;">
         ${[1, 2].map(slot => {
@@ -266,6 +289,11 @@ function selectStarter(slot) {
   renderPreMatch();
 }
 
+function selectIncludeLow(val) {
+  selectedIncludeLow = !!val;
+  renderPreMatch();
+}
+
 function selectSubStarter(teamSlot, playerSlot) {
   if (teamSlot === 1) selectedSubStarter1 = playerSlot;
   else selectedSubStarter2 = playerSlot;
@@ -283,6 +311,8 @@ async function beginMatch() {
     body.p1_sub_turn = selectedSubStarter1;
     body.p2_sub_turn = selectedSubStarter2;
   }
+  // FB Cezalı / Karambol için 10-11 dahil tercihi (varsayılan: dahil)
+  body.include_low = !!selectedIncludeLow;
   const res = await api.post(`/api/matches/${currentMatch.id}/begin`, body);
   if (res.error) return toast('Hata: ' + res.error);
   selectedStarter = null;
