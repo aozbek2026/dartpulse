@@ -52,6 +52,21 @@ dart pulse/
 
 ## Kod konvansiyonları (uy)
 
+### 0. Cricket logic duplikasyonu (ÖNEMLİ)
+`scorer.html` (Hızlı Skor) **board.js** içindeki cricket / FB Cezalı / Karambol render + engine kodunu **birebir kopya** olarak içerir. Local-only çalıştığı için server'a bağlı değil.
+
+**Cricket UI veya engine kuralı değiştirilirse iki yerde de değiştirilmeli:**
+- `public/js/board.js` — turnuva skor ekranı (server'a bağlı)
+- `public/scorer.html` — Hızlı Skor (local)
+
+Etkilenen fonksiyonlar:
+- Render: `renderCricketMatch`, `renderFBCezaliMatch`, `renderKarambolMatch`
+- Helpers: `cricketMarkSym`, `cricketMarksHtml`, `fbTargetLabel`, `fbIsMetaTarget`, `cricketPendingForTarget`, `fbPendingForTarget`, `karambolPendingForTarget`
+- Dart handlers: `cricketDart`, `fbDart`, `fbMetaTap`, `karambolDart`, `cricketUndoDart`, `fbUndoDart`, `karambolUndoDart`
+- Engine: `applyCricketHits`, `submitFBCezaliDarts`, `submitKarambolDarts` (scorer'da local; board.js'de server'a POST)
+
+İleride paylaşımlı modüle (`public/js/cricket-shared.js`) refactor planlanıyor — yapıldığında bu duplikasyon kalkar.
+
 ### 1. Multi-tenant scope
 **Her DB sorgusu `userId` ile scope edilmiştir.** `db.js` içinde tüm `select`/`update`/`delete` fonksiyonları `userId` parametresi alır ve `WHERE user_id = ?` filtresi uygular. Yeni endpoint eklerken `req.session.userId` kullan, asla atla.
 
