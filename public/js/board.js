@@ -956,7 +956,11 @@ function fbMetaTap(metaTarget) {
     fbDarts = [];
     renderMatch();
   } else {
-    // Normal +1 mark akışı
+    // Normal +1 mark akışı — H için visit başına 1 kez (3 ok = 1 H mark)
+    if (metaTarget === 'H' && fbDarts.some(d => d.target === 'H')) {
+      toast('H bu visit\'te zaten kaydedildi');
+      return;
+    }
     fbDart(metaTarget, 1);
   }
 }
@@ -1228,6 +1232,11 @@ function renderKarambolMatch(m) {
 function karambolDart(target, mult) {
   if (isReadonly || !currentMatch) return;
   if (karambolDarts.length >= 3) return;
+  // H için visit başına 1 kez (3 ok = 1 H mark)
+  if (target === 'H' && karambolDarts.some(d => d.target === 'H')) {
+    toast('H bu visit\'te zaten kaydedildi');
+    return;
+  }
   karambolDarts.push({ target: target == null ? null : String(target), mult });
   if (karambolDarts.length === 3) submitKarambolDarts();
   else renderMatch();
