@@ -27,8 +27,8 @@ function assignPendingMatches(io = ioRef, userId = null) {
 }
 
 function assignForUser(io, userId) {
-  const boards = db.allBoards(userId).filter(b => b.status === 'idle' || !b.current_match_id);
-  if (boards.length === 0) return;
+  const allIdleBoards = db.allBoards(userId).filter(b => b.status === 'idle' || !b.current_match_id);
+  if (allIdleBoards.length === 0) return;
 
   // Halihazırda aktif (ready/live) olan oyuncuları ve scorer'ları meşgul say
   const busy = new Set();
@@ -38,18 +38,29 @@ function assignForUser(io, userId) {
     if (m.scorer_entry_id) busy.add(m.scorer_entry_id);
   }
 
-  // AŞAMA 1: maçları board'lara ata (sadece oyuncu çakışması kontrolü)
+  // AŞAMA 1: maçları board'lara ata
+  // Board → turnuva eşlemesi: önce SAME_TOURNAMENT, sonra GENEL (tournament_id=null)
+  // Maç tournament_id !== board tournament_id ise atama yapma
   const readyMatches = db.pendingReadyMatches(userId).filter(m => !m.board_id);
   const newlyAssigned = [];
-  let boardIx = 0;
+  const usedBoards = new Set();
   for (const match of readyMatches) {
-    if (boardIx >= boards.length) break;
     if ((match.entry1_id && busy.has(match.entry1_id)) ||
         (match.entry2_id && busy.has(match.entry2_id))) continue;
 
-    const board = boards[boardIx++];
-    const patch = { board_id: board.id };
-    db.updateMatch(match.id, patch);
+    // Bu turnuvaya bağlı boş board'lar (tournament_id === match.tournament_id)
+    const tied = allIdleBoards.find(b =>
+      !usedBoards.has(b.id) && b.tournament_id === match.tournament_id
+    );
+    // Eğer turnuvaya özel yoksa, GENEL board'lardan al (tournament_id null)
+    const general = !tied ? allIdleBoards.find(b =>
+      !usedBoards.has(b.id) && b.tournament_id == null
+    ) : null;
+    const board = tied || general;
+    if (!board) continue; // bu turnuva için uygun board yok
+
+    usedBoards.add(board.id);
+    db.updateMatch(match.id, { board_id: board.id });
     db.setBoardMatch(board.id, match.id);
     if (match.entry1_id) busy.add(match.entry1_id);
     if (match.entry2_id) busy.add(match.entry2_id);

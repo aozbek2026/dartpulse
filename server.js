@@ -176,11 +176,39 @@ app.get('/api/boards', (req, res) => {
   res.json(db.allBoards(uid));
 });
 app.post('/api/boards', auth.requireAuth, (req, res) => {
-  const { name } = req.body;
+  const { name, tournament_id } = req.body;
   if (!name || !name.trim()) return res.status(400).json({ error: 'Board ismi gerekli' });
-  const b = db.createBoard(name.trim(), req.user.id);
+  let tid = null;
+  if (tournament_id != null && tournament_id !== '') {
+    const t = db.tournamentById(+tournament_id);
+    if (!t || (t.user_id && t.user_id !== req.user.id)) {
+      return res.status(403).json({ error: 'Geçersiz turnuva' });
+    }
+    tid = +tournament_id;
+  }
+  const b = db.createBoard(name.trim(), req.user.id, tid);
   broadcastState();
   res.json(b);
+});
+app.patch('/api/boards/:id', auth.requireAuth, (req, res) => {
+  const b = db.boardById(+req.params.id);
+  if (!b) return res.status(404).json({ error: 'Board bulunamadı' });
+  if (b.user_id && b.user_id !== req.user.id) {
+    return res.status(403).json({ error: 'Yetkiniz yok' });
+  }
+  if ('tournament_id' in (req.body || {})) {
+    let tid = null;
+    if (req.body.tournament_id != null && req.body.tournament_id !== '') {
+      const t = db.tournamentById(+req.body.tournament_id);
+      if (!t || (t.user_id && t.user_id !== req.user.id)) {
+        return res.status(403).json({ error: 'Geçersiz turnuva' });
+      }
+      tid = +req.body.tournament_id;
+    }
+    db.setBoardTournament(b.id, tid);
+  }
+  broadcastState();
+  res.json({ ok: true });
 });
 app.delete('/api/boards/:id', auth.requireAuth, (req, res) => {
   const b = db.boardById(+req.params.id);

@@ -86,14 +86,17 @@
 
       <div class="card">
         <div class="row">
-          <input id="board-name" placeholder="Örn: Board 1" style="flex: 1;" />
+          <input id="board-name" placeholder="Örn: Board 1" style="flex: 1; min-width: 140px;" />
+          <select id="board-tournament" style="min-width: 200px; padding: 0.5rem;">
+            <option value="">— Genel (her turnuva) —</option>
+          </select>
           <button class="primary" onclick="addBoard()">Ekle</button>
         </div>
       </div>
 
       <div class="card">
         <h3>Kayıtlı board'lar (<span id="board-count">0</span>)</h3>
-        <div id="board-list" class="grid cols-3"></div>
+        <div id="board-list"></div>
       </div>
     </section>
 

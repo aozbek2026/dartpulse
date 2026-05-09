@@ -73,12 +73,19 @@ async function bulkAddPlayers() {
 async function addBoard() {
   const name = document.getElementById('board-name').value.trim();
   if (!name) return toast('İsim gerekli');
-  await api.post('/api/boards', { name });
+  const tidRaw = document.getElementById('board-tournament').value;
+  const tid = tidRaw ? +tidRaw : null;
+  await api.post('/api/boards', { name, tournament_id: tid });
   document.getElementById('board-name').value = '';
+  // Seçili turnuvayı sıfırlama: aynı turnuvaya birden fazla board peş peşe eklemek kolay olsun
 }
 async function deleteBoard(id) {
   if (!await showOrgConfirm('Silinsin mi?', 'Sil', 'İptal')) return;
   await api.del('/api/boards/' + id);
+}
+async function changeBoardTournament(boardId, tidRaw) {
+  const tid = tidRaw ? +tidRaw : null;
+  await api.patch('/api/boards/' + boardId, { tournament_id: tid });
 }
 
 // ---- Stages wizard (basit format seçici) ----
@@ -882,27 +889,76 @@ function renderPlayers() {
 function renderBoards() {
   document.getElementById('board-count').textContent = state.boards.length;
   const host = document.getElementById('board-list');
+
+  // Add Board form'undaki turnuva dropdown'unu doldur (aktif turnuvalar)
+  const tSel = document.getElementById('board-tournament');
+  if (tSel) {
+    const activeTours = state.tournaments.filter(t => t.status !== 'finished');
+    const currentVal = tSel.value;
+    tSel.innerHTML = '<option value="">— Genel (her turnuva) —</option>'
+      + activeTours.map(t => `<option value="${t.id}">${t.name}</option>`).join('');
+    if (currentVal) tSel.value = currentVal;
+  }
+
   if (!state.boards.length) {
     host.innerHTML = '<div class="empty">Henüz board yok</div>';
     return;
   }
-  host.innerHTML = state.boards.map(b => `
-    <div class="card" style="margin: 0;">
-      <div class="row between">
-        <h3 style="margin: 0;">${b.name}</h3>
-        <span class="chip ${b.status === 'busy' ? 'live' : 'success'}">${b.status === 'busy' ? 'MEŞGUL' : 'BOŞ'}</span>
+
+  // Turnuvaya göre grupla
+  const tourMap = new Map();
+  for (const t of state.tournaments) tourMap.set(t.id, t);
+  const groups = new Map(); // key: tournament_id veya 'general'
+  for (const b of state.boards) {
+    const key = b.tournament_id || 'general';
+    if (!groups.has(key)) groups.set(key, []);
+    groups.get(key).push(b);
+  }
+
+  // Sıralama: önce aktif turnuvalar (id'ye göre), sonra finish olmuş, sonra Genel en sonda
+  const orderedKeys = [];
+  for (const t of state.tournaments) {
+    if (groups.has(t.id) && t.status !== 'finished') orderedKeys.push(t.id);
+  }
+  for (const t of state.tournaments) {
+    if (groups.has(t.id) && t.status === 'finished') orderedKeys.push(t.id);
+  }
+  if (groups.has('general')) orderedKeys.push('general');
+
+  const activeTours = state.tournaments.filter(t => t.status !== 'finished');
+  const tourOptions = (selectedId) =>
+    `<option value=""${selectedId == null ? ' selected' : ''}>— Genel —</option>` +
+    activeTours.map(t => `<option value="${t.id}"${selectedId === t.id ? ' selected' : ''}>${t.name}</option>`).join('');
+
+  host.innerHTML = orderedKeys.map(k => {
+    const groupBoards = groups.get(k);
+    const groupName = (k === 'general') ? '🔓 Genel (her turnuva)' : (tourMap.get(k)?.name || `Turnuva #${k}`);
+    const cards = groupBoards.map(b => `
+      <div class="card" style="margin: 0;">
+        <div class="row between">
+          <h3 style="margin: 0;">${b.name}</h3>
+          <span class="chip ${b.status === 'busy' ? 'live' : 'success'}">${b.status === 'busy' ? 'MEŞGUL' : 'BOŞ'}</span>
+        </div>
+        <div style="margin-top: 0.75rem; color: var(--text-dim); font-size: 0.88rem;">
+          ${b.currentMatch
+            ? `Aktif: ${entryLabel(b.currentMatch.entry1)} vs ${entryLabel(b.currentMatch.entry2)}`
+            : 'Boşta bekliyor'}
+        </div>
+        <div class="row" style="margin-top: 0.75rem; gap: 0.5rem; flex-wrap: wrap;">
+          <select onchange="changeBoardTournament(${b.id}, this.value)" style="flex: 1; min-width: 140px; padding: 0.45rem; font-size: 0.82rem;">
+            ${tourOptions(b.tournament_id)}
+          </select>
+          <a class="btn secondary" href="/board.html?id=${b.id}" target="_blank" style="font-size: 0.85rem;">Tablet ↗</a>
+          <button class="icon danger" onclick="deleteBoard(${b.id})">Sil</button>
+        </div>
       </div>
-      <div style="margin-top: 0.75rem; color: var(--text-dim); font-size: 0.88rem;">
-        ${b.currentMatch
-          ? `Aktif: ${entryLabel(b.currentMatch.entry1)} vs ${entryLabel(b.currentMatch.entry2)}`
-          : 'Boşta bekliyor'}
-      </div>
-      <div class="row" style="margin-top: 0.75rem;">
-        <a class="btn secondary" href="/board.html?id=${b.id}" target="_blank" style="font-size: 0.85rem;">Tablet ekranını aç ↗</a>
-        <button class="icon danger" onclick="deleteBoard(${b.id})">Sil</button>
-      </div>
-    </div>
-  `).join('');
+    `).join('');
+    return `
+      <div style="margin-bottom: 1.25rem;">
+        <h4 style="margin: 0 0 0.6rem 0; padding: 0.4rem 0.75rem; background: var(--surface-2); border-radius: 6px; font-size: 0.95rem;">${groupName} <span style="color: var(--text-dim); font-weight: 400; font-size: 0.85rem;">(${groupBoards.length})</span></h4>
+        <div class="grid cols-3">${cards}</div>
+      </div>`;
+  }).join('');
 }
 
 function renderTournaments() {

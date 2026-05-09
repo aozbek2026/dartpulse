@@ -86,19 +86,46 @@ function renderBoardPicker() {
     </div>`;
     return;
   }
-  root.innerHTML = `
-    <div style="max-width: 600px; margin: 4rem auto;">
-      <h2 style="text-align: center; margin-bottom: 2rem;">Bu tablet hangi board için?</h2>
-      <div class="grid cols-2">
-        ${allBoards.map(b => `
-          <a class="card" href="/board.html?id=${b.id}" style="text-decoration: none; color: inherit;">
-            <h3>${b.name}</h3>
-            <div style="color: var(--text-dim); margin-top: 0.5rem;">
-              ${b.status === 'busy' ? '⚡ Meşgul' : '💤 Boşta'}
-            </div>
-          </a>
-        `).join('')}
+  // Turnuvaya göre grupla
+  const tourMap = new Map();
+  for (const t of allTournaments) tourMap.set(t.id, t);
+  const groups = new Map();
+  for (const b of allBoards) {
+    const key = b.tournament_id || 'general';
+    if (!groups.has(key)) groups.set(key, []);
+    groups.get(key).push(b);
+  }
+  const orderedKeys = [];
+  for (const t of allTournaments) {
+    if (groups.has(t.id) && t.status !== 'finished') orderedKeys.push(t.id);
+  }
+  for (const t of allTournaments) {
+    if (groups.has(t.id) && t.status === 'finished') orderedKeys.push(t.id);
+  }
+  if (groups.has('general')) orderedKeys.push('general');
+
+  const groupHtml = orderedKeys.map(k => {
+    const gName = (k === 'general') ? '🔓 Genel' : (tourMap.get(k)?.name || `Turnuva #${k}`);
+    const cards = groups.get(k).map(b => `
+      <a class="card" href="/board.html?id=${b.id}" style="text-decoration: none; color: inherit;">
+        <h3>${b.name}</h3>
+        <div style="color: var(--text-dim); margin-top: 0.5rem;">
+          ${b.status === 'busy' ? '⚡ Meşgul' : '💤 Boşta'}
+        </div>
+      </a>
+    `).join('');
+    return `
+      <div style="margin-bottom: 1.5rem;">
+        <h4 style="margin: 0 0 0.75rem 0; padding: 0.5rem 0.85rem; background: var(--surface-2); border-radius: 6px; font-size: 1rem;">${gName}</h4>
+        <div class="grid cols-2">${cards}</div>
       </div>
+    `;
+  }).join('');
+
+  root.innerHTML = `
+    <div style="max-width: 720px; margin: 3rem auto; padding: 0 1rem;">
+      <h2 style="text-align: center; margin-bottom: 1.5rem;">Bu tablet hangi board için?</h2>
+      ${groupHtml}
     </div>
   `;
 }

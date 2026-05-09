@@ -42,11 +42,13 @@ function init() {
     CREATE TABLE IF NOT EXISTS boards (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       user_id INTEGER,
+      tournament_id INTEGER,        -- null = "Genel" (her turnuvaya atanabilir)
       name TEXT NOT NULL,
       status TEXT DEFAULT 'idle',  -- idle | busy
       current_match_id INTEGER,
       created_at TEXT DEFAULT CURRENT_TIMESTAMP,
-      FOREIGN KEY(user_id) REFERENCES users(id) ON DELETE CASCADE
+      FOREIGN KEY(user_id) REFERENCES users(id) ON DELETE CASCADE,
+      FOREIGN KEY(tournament_id) REFERENCES tournaments(id) ON DELETE SET NULL
     );
 
     CREATE TABLE IF NOT EXISTS tournaments (
@@ -260,6 +262,11 @@ function init() {
   if (!matchCols.includes('cricket_undo_json')) {
     try { db.exec('ALTER TABLE matches ADD COLUMN cricket_undo_json TEXT'); } catch {}
   }
+  // Board turnuvaya bağlama (boş = genel)
+  const boardCols0 = db.prepare("PRAGMA table_info(boards)").all().map(c => c.name);
+  if (!boardCols0.includes('tournament_id')) {
+    try { db.exec('ALTER TABLE boards ADD COLUMN tournament_id INTEGER'); } catch {}
+  }
 
   // Visit başına dart sayısı: bitiren visit için 1/2/3 olabilir; eski kayıtlar için varsayılan 3.
   const throwCols = db.prepare("PRAGMA table_info(throws)").all().map(c => c.name);
@@ -346,11 +353,15 @@ function deletePlayer(id) {
 }
 
 // --- Board ---
-function createBoard(name, userId = null) {
+function createBoard(name, userId = null, tournamentId = null) {
   const info = db.prepare(
-    'INSERT INTO boards (user_id, name) VALUES (?, ?)'
-  ).run(userId, name);
+    'INSERT INTO boards (user_id, name, tournament_id) VALUES (?, ?, ?)'
+  ).run(userId, name, tournamentId || null);
   return db.prepare('SELECT * FROM boards WHERE id = ?').get(info.lastInsertRowid);
+}
+function setBoardTournament(boardId, tournamentId) {
+  db.prepare('UPDATE boards SET tournament_id = ? WHERE id = ?')
+    .run(tournamentId || null, boardId);
 }
 function allBoards(userId = null) {
   if (userId == null) {
@@ -934,7 +945,7 @@ module.exports = {
   setResetToken, getUserByResetToken, clearResetToken,
   updatePassword, deleteUser,
   createPlayer, allPlayers, playerById, deletePlayer,
-  createBoard, allBoards, boardById, deleteBoard, setBoardMatch, clearUserBoards,
+  createBoard, allBoards, boardById, deleteBoard, setBoardMatch, clearUserBoards, setBoardTournament,
   createTournament, allTournaments, tournamentById, updateTournamentStatus, updateTournament, deleteTournament,
   addEntry, entriesForTournament, entryById,
   createStage, stagesForTournament, stageById, updateStageStatus,
