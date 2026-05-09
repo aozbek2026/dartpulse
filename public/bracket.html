@@ -1,0 +1,1303 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Bağımsız Bracket — Dart Core Pro</title>
+<link rel="stylesheet" href="/css/style.css" />
+<style>
+  body {
+    background: var(--bg);
+    color: var(--text);
+    margin: 0;
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+  }
+  .bb-nav {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 0.9rem 1.5rem;
+    border-bottom: 1px solid var(--border);
+    background: var(--bg);
+    position: sticky;
+    top: 0;
+    z-index: 50;
+  }
+  .bb-brand {
+    color: var(--text);
+    text-decoration: none;
+    font-weight: 800;
+    font-size: 1.05rem;
+    display: flex;
+    align-items: center;
+    gap: 0.4rem;
+  }
+  .bb-brand .dot { color: var(--accent); }
+  .bb-nav-actions { display: flex; gap: 0.5rem; }
+  .bb-btn {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    color: var(--text);
+    padding: 0.5rem 1rem;
+    border-radius: 8px;
+    font-size: 0.9rem;
+    font-weight: 600;
+    cursor: pointer;
+    text-decoration: none;
+    display: inline-flex;
+    align-items: center;
+    gap: 0.3rem;
+    font-family: inherit;
+  }
+  .bb-btn:hover { border-color: var(--accent-2); }
+  .bb-btn.primary {
+    background: linear-gradient(135deg, var(--accent), var(--accent-3));
+    color: #fff;
+    border: 0;
+  }
+  .bb-btn.primary:hover { opacity: 0.92; }
+  .bb-btn.danger { color: #ff7a8a; }
+
+  /* === SETUP === */
+  .bb-setup {
+    max-width: 720px;
+    margin: 2rem auto;
+    padding: 0 1.5rem 3rem;
+  }
+  .bb-setup h1 {
+    font-size: clamp(1.6rem, 4vw, 2.25rem);
+    margin: 0 0 0.5rem;
+    font-weight: 800;
+  }
+  .bb-setup p.lede {
+    color: var(--text-dim);
+    margin: 0 0 2rem;
+  }
+  .bb-card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    padding: 1.25rem 1.4rem;
+    margin-bottom: 1rem;
+  }
+  .bb-card h3 {
+    font-size: 1rem;
+    margin: 0 0 0.85rem;
+    font-weight: 700;
+    color: var(--text);
+  }
+  .bb-formats {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(170px, 1fr));
+    gap: 0.5rem;
+  }
+  .bb-format {
+    background: var(--bg-2);
+    border: 2px solid var(--border);
+    border-radius: 8px;
+    padding: 0.85rem 0.75rem;
+    cursor: pointer;
+    text-align: left;
+    transition: border-color 0.15s, background 0.15s;
+    color: var(--text);
+    font-family: inherit;
+  }
+  .bb-format:hover { border-color: var(--accent-2); }
+  .bb-format.on {
+    border-color: var(--accent);
+    background: var(--surface-2);
+  }
+  .bb-format .nm { font-weight: 700; font-size: 0.95rem; margin-bottom: 0.2rem; }
+  .bb-format .desc { font-size: 0.75rem; color: var(--text-dim); }
+  .bb-textarea {
+    width: 100%;
+    min-height: 130px;
+    background: var(--bg-2);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 0.7rem 0.85rem;
+    color: var(--text);
+    font-family: inherit;
+    font-size: 0.95rem;
+    resize: vertical;
+    box-sizing: border-box;
+  }
+  .bb-textarea:focus { outline: none; border-color: var(--accent-2); }
+  .bb-input-row {
+    display: flex;
+    gap: 0.75rem;
+    flex-wrap: wrap;
+    align-items: center;
+  }
+  .bb-input-row label {
+    color: var(--text-dim);
+    font-size: 0.85rem;
+  }
+  .bb-input-row input[type=number] {
+    width: 70px;
+    background: var(--bg-2);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    padding: 0.45rem 0.6rem;
+    color: var(--text);
+    font-size: 0.9rem;
+  }
+  .bb-meta {
+    color: var(--text-dim);
+    font-size: 0.82rem;
+    margin-top: 0.5rem;
+  }
+  .bb-actions {
+    display: flex;
+    gap: 0.75rem;
+    margin-top: 1.25rem;
+  }
+
+  /* === BRACKET VIEW === */
+  .bb-view { padding: 1rem; }
+  .bb-toolbar {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 0.75rem 1rem;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    margin-bottom: 1rem;
+    flex-wrap: wrap;
+    gap: 0.5rem;
+  }
+  .bb-toolbar h2 { font-size: 1.1rem; margin: 0; font-weight: 700; }
+  .bb-toolbar .meta { color: var(--text-dim); font-size: 0.85rem; margin-left: 0.5rem; }
+
+  /* Bracket canvas — scroll horizontally */
+  .bb-canvas {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 1.25rem;
+    overflow-x: auto;
+  }
+  .bb-section-h {
+    font-weight: 700;
+    color: var(--text-dim);
+    text-transform: uppercase;
+    letter-spacing: 0.1em;
+    font-size: 0.78rem;
+    margin: 0 0 0.85rem;
+  }
+
+  .bb-bracket {
+    display: flex;
+    gap: 36px;
+    align-items: stretch;
+    min-height: 320px;
+  }
+  .bb-round {
+    display: flex;
+    flex-direction: column;
+    min-width: 200px;
+    flex-shrink: 0;
+  }
+  .bb-round-h {
+    font-size: 0.72rem;
+    color: var(--text-dim);
+    text-transform: uppercase;
+    letter-spacing: 0.1em;
+    font-weight: 700;
+    margin-bottom: 0.55rem;
+    text-align: center;
+  }
+  .bb-round-body {
+    flex: 1 1 0;
+    display: flex;
+    flex-direction: column;
+    min-height: 0;
+  }
+  .bb-mw { flex: 1 1 0; display: flex; align-items: center; justify-content: center; }
+  .bb-match {
+    width: 100%;
+    background: var(--bg-2);
+    border: 1px solid var(--border);
+    border-radius: 7px;
+    padding: 0;
+    cursor: pointer;
+    transition: border-color 0.15s, transform 0.15s;
+    font-family: inherit;
+    color: var(--text);
+    text-align: left;
+    overflow: hidden;
+  }
+  .bb-match:hover:not(.locked) { border-color: var(--accent-2); transform: translateY(-1px); }
+  .bb-match.played { border-color: rgba(255,56,96,0.45); }
+  .bb-match.locked { cursor: not-allowed; opacity: 0.55; }
+  .bb-row {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 0.55rem 0.75rem;
+    font-size: 0.92rem;
+  }
+  .bb-row + .bb-row { border-top: 1px solid var(--border); }
+  .bb-row .nm {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    flex: 1;
+    font-weight: 500;
+  }
+  .bb-row.won .nm { font-weight: 800; color: var(--text); }
+  .bb-row.won { background: rgba(255,56,96,0.07); }
+  .bb-row.lost .nm { color: var(--text-dim); }
+  .bb-row .legs {
+    margin-left: 0.5rem;
+    font-weight: 700;
+    color: var(--text-dim);
+    min-width: 20px;
+    text-align: right;
+  }
+  .bb-row.won .legs { color: var(--accent); }
+  .bb-bye .nm { color: var(--text-dim); font-style: italic; }
+
+  /* Round Robin layouts */
+  .bb-rr-wrap {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+    gap: 1rem;
+    align-items: start;
+  }
+  .bb-rr-group h4 {
+    margin: 0 0 0.5rem;
+    font-size: 0.95rem;
+    font-weight: 700;
+  }
+  .bb-rr-matches {
+    display: flex;
+    flex-direction: column;
+    gap: 0.4rem;
+    margin-bottom: 0.85rem;
+  }
+  .bb-standings {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 0.82rem;
+    background: var(--bg-2);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    overflow: hidden;
+  }
+  .bb-standings th, .bb-standings td {
+    padding: 0.4rem 0.55rem;
+    text-align: left;
+    border-bottom: 1px solid var(--border);
+  }
+  .bb-standings th {
+    background: var(--surface-2);
+    color: var(--text-dim);
+    font-weight: 700;
+    font-size: 0.72rem;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+  }
+  .bb-standings tr:last-child td { border-bottom: 0; }
+  .bb-standings td.center, .bb-standings th.center { text-align: center; }
+  .bb-standings .qual {
+    background: rgba(255,56,96,0.1);
+  }
+  .bb-standings .qual td:first-child::before {
+    content: '✓ ';
+    color: var(--accent);
+  }
+
+  /* Champion banner */
+  .bb-champion {
+    background: linear-gradient(135deg, rgba(255,56,96,0.12), rgba(124,92,255,0.12));
+    border: 1px solid var(--accent);
+    border-radius: 12px;
+    padding: 1.25rem;
+    text-align: center;
+    margin-bottom: 1.25rem;
+  }
+  .bb-champion .label {
+    color: var(--text-dim);
+    font-size: 0.78rem;
+    text-transform: uppercase;
+    letter-spacing: 0.15em;
+    margin-bottom: 0.4rem;
+  }
+  .bb-champion .name {
+    font-size: clamp(1.4rem, 3.5vw, 2rem);
+    font-weight: 800;
+    background: linear-gradient(135deg, var(--accent), var(--accent-3));
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    background-clip: text;
+  }
+
+  /* === MODAL === */
+  .bb-modal-bg {
+    position: fixed;
+    inset: 0;
+    background: rgba(0,0,0,0.7);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 1rem;
+    z-index: 1000;
+  }
+  .bb-modal {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 14px;
+    padding: 1.5rem;
+    max-width: 460px;
+    width: 100%;
+    box-shadow: 0 20px 60px -12px rgba(0,0,0,0.7);
+  }
+  .bb-modal h3 {
+    margin: 0 0 0.4rem;
+    font-size: 1.1rem;
+  }
+  .bb-modal .meta { color: var(--text-dim); font-size: 0.85rem; margin-bottom: 1.2rem; }
+  .bb-player-row {
+    display: grid;
+    grid-template-columns: 1fr auto;
+    gap: 0.85rem;
+    align-items: center;
+    padding: 0.85rem;
+    background: var(--bg-2);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    margin-bottom: 0.6rem;
+  }
+  .bb-player-row .pname {
+    font-weight: 700;
+    font-size: 1.05rem;
+  }
+  .bb-player-row input {
+    width: 84px;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    padding: 0.55rem 0.7rem;
+    color: var(--text);
+    font-size: 1.05rem;
+    font-weight: 700;
+    text-align: center;
+  }
+  .bb-player-row input:focus { outline: none; border-color: var(--accent-2); }
+  .bb-modal-actions {
+    display: flex;
+    gap: 0.6rem;
+    justify-content: flex-end;
+    margin-top: 1.1rem;
+  }
+  .bb-modal .hint {
+    text-align: center;
+    color: var(--text-dim);
+    font-size: 0.82rem;
+    margin: 0.5rem 0 0;
+  }
+  .bb-modal .clear-btn {
+    background: transparent;
+    border: 0;
+    color: var(--text-dim);
+    cursor: pointer;
+    font-size: 0.85rem;
+    text-decoration: underline;
+    margin-top: 0.6rem;
+    font-family: inherit;
+  }
+  .bb-modal .clear-btn:hover { color: var(--accent); }
+</style>
+</head>
+<body>
+
+<nav class="bb-nav">
+  <a class="bb-brand" href="/"><span class="dot">🎯</span> Dart Core Pro</a>
+  <div class="bb-nav-actions">
+    <a class="bb-btn" href="/">Anasayfa</a>
+  </div>
+</nav>
+
+<!-- ====== SETUP ====== -->
+<div class="bb-setup" id="bb-setup">
+  <h1>Bağımsız Bracket</h1>
+  <p class="lede">Tablet ya da hesap gerekmez. Format ve oyuncuları seç, bracket'i manuel ilerlet.</p>
+
+  <div class="bb-card">
+    <h3>1. Format</h3>
+    <div class="bb-formats" id="bb-formats">
+      <button class="bb-format on" data-fmt="single_elim">
+        <div class="nm">Tek Eleme</div>
+        <div class="desc">Klasik knockout</div>
+      </button>
+      <button class="bb-format" data-fmt="double_elim">
+        <div class="nm">Çift Eleme</div>
+        <div class="desc">İki şans, GF reset</div>
+      </button>
+      <button class="bb-format" data-fmt="round_robin">
+        <div class="nm">Round Robin</div>
+        <div class="desc">Herkes herkesle</div>
+      </button>
+      <button class="bb-format" data-fmt="rr_single">
+        <div class="nm">RR + Tek Eleme</div>
+        <div class="desc">Grup → eleme</div>
+      </button>
+      <button class="bb-format" data-fmt="rr_double">
+        <div class="nm">RR + Çift Eleme</div>
+        <div class="desc">Grup → çift eleme</div>
+      </button>
+    </div>
+  </div>
+
+  <div class="bb-card">
+    <h3>2. Oyuncular</h3>
+    <textarea class="bb-textarea" id="bb-players" placeholder="Her satıra bir oyuncu&#10;Ali&#10;Veli&#10;Ayşe&#10;Mehmet&#10;..."></textarea>
+    <div class="bb-meta" id="bb-player-meta">0 oyuncu</div>
+  </div>
+
+  <div class="bb-card" id="bb-cfg-card">
+    <h3>3. Ayarlar</h3>
+    <div class="bb-input-row">
+      <label>Leg sayısı (BO):</label>
+      <input id="bb-legs" type="number" min="1" max="9" value="3" />
+      <span class="bb-meta" id="bb-legs-meta">Best of 5 (3 leg kazanma)</span>
+    </div>
+    <div id="bb-rr-cfg" hidden style="margin-top: 0.85rem;">
+      <div class="bb-input-row">
+        <label>Grup büyüklüğü:</label>
+        <input id="bb-group-size" type="number" min="3" max="8" value="4" />
+        <label style="margin-left: 0.75rem;">Her gruptan kaç kişi geçer:</label>
+        <input id="bb-qualifiers" type="number" min="1" max="4" value="2" />
+      </div>
+      <div class="bb-meta" style="margin-top: 0.4rem;">RR + eleme formatlarında geçerli.</div>
+    </div>
+  </div>
+
+  <div class="bb-actions">
+    <button class="bb-btn primary" onclick="generateAndStart()">Bracket Oluştur →</button>
+  </div>
+</div>
+
+<!-- ====== BRACKET VIEW ====== -->
+<div class="bb-view" id="bb-view" hidden>
+  <div class="bb-toolbar">
+    <div>
+      <h2 id="bb-title">Bracket</h2>
+      <span class="meta" id="bb-subtitle"></span>
+    </div>
+    <div class="bb-nav-actions">
+      <button class="bb-btn" onclick="newBracket()">Yeni Bracket</button>
+      <button class="bb-btn danger" onclick="resetBracket()">Sıfırla</button>
+    </div>
+  </div>
+  <div id="bb-content"></div>
+</div>
+
+<!-- ====== MODAL ====== -->
+<div class="bb-modal-bg" id="bb-modal-bg" hidden onclick="closeModalIfBg(event)">
+  <div class="bb-modal" id="bb-modal" onclick="event.stopPropagation()">
+    <h3>Maç Sonucu</h3>
+    <div class="meta" id="bb-modal-meta"></div>
+    <div id="bb-modal-body"></div>
+    <div class="hint">Best of <span id="bb-modal-bo"></span> · İlk <span id="bb-modal-ltw"></span> leg kazanan oyuncu maçı kazanır.</div>
+    <div style="text-align:center;">
+      <button class="clear-btn" id="bb-modal-clear" onclick="clearMatchResult()" hidden>Sonucu sil</button>
+    </div>
+    <div class="bb-modal-actions">
+      <button class="bb-btn" onclick="closeModal()">İptal</button>
+      <button class="bb-btn primary" onclick="saveMatchFromModal()">Kaydet</button>
+    </div>
+  </div>
+</div>
+
+<script>
+// ====================================================================
+//  STATE
+// ====================================================================
+const STORAGE_KEY = 'dcp_standalone_bracket_v1';
+let state = {
+  format: 'single_elim',
+  players: [],
+  legsToWin: 3,
+  groupSize: 4,
+  qualifiers: 2,
+  bracket: null,        // computed structure
+  createdAt: null,
+};
+let editingMatchId = null;
+
+// ====================================================================
+//  BOOT
+// ====================================================================
+function load() {
+  try {
+    const s = localStorage.getItem(STORAGE_KEY);
+    if (!s) return null;
+    return JSON.parse(s);
+  } catch { return null; }
+}
+function persist() {
+  try { localStorage.setItem(STORAGE_KEY, JSON.stringify(state)); } catch {}
+}
+
+function init() {
+  const saved = load();
+  if (saved && saved.bracket) {
+    state = saved;
+    showView();
+  } else {
+    showSetup();
+  }
+  // Format radio
+  document.querySelectorAll('.bb-format').forEach(b => {
+    b.addEventListener('click', () => selectFormat(b.dataset.fmt));
+  });
+  // Player count meta
+  document.getElementById('bb-players').addEventListener('input', updatePlayerMeta);
+  document.getElementById('bb-legs').addEventListener('input', updateLegsMeta);
+  updateLegsMeta();
+  updatePlayerMeta();
+  document.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape' && !document.getElementById('bb-modal-bg').hidden) closeModal();
+  });
+}
+
+function selectFormat(fmt) {
+  state.format = fmt;
+  document.querySelectorAll('.bb-format').forEach(b => {
+    b.classList.toggle('on', b.dataset.fmt === fmt);
+  });
+  const isRRElim = (fmt === 'rr_single' || fmt === 'rr_double');
+  document.getElementById('bb-rr-cfg').hidden = !(isRRElim || fmt === 'round_robin');
+}
+
+function updatePlayerMeta() {
+  const ta = document.getElementById('bb-players').value;
+  const list = ta.split('\n').map(s => s.trim()).filter(Boolean);
+  document.getElementById('bb-player-meta').textContent = `${list.length} oyuncu`;
+}
+function updateLegsMeta() {
+  const v = +document.getElementById('bb-legs').value || 1;
+  const bo = 2 * v - 1;
+  document.getElementById('bb-legs-meta').textContent = `Best of ${bo} (${v} leg kazanma)`;
+}
+
+function showSetup() {
+  document.getElementById('bb-setup').hidden = false;
+  document.getElementById('bb-view').hidden = true;
+}
+function showView() {
+  document.getElementById('bb-setup').hidden = true;
+  document.getElementById('bb-view').hidden = false;
+  render();
+}
+
+// ====================================================================
+//  GENERATION
+// ====================================================================
+function nextPow2(n) { let p = 1; while (p < n) p *= 2; return p; }
+
+// Standart seeding (1v8, 4v5, 2v7, 3v6 gibi) — power-of-2 boyut için
+function seedOrder(N) {
+  // Returns 1-based seed positions in bracket order
+  let arr = [1];
+  while (arr.length < N) {
+    const next = [];
+    const total = arr.length * 2 + 1;
+    for (const s of arr) {
+      next.push(s);
+      next.push(total - s);
+    }
+    arr = next;
+  }
+  return arr;
+}
+
+function generateAndStart() {
+  const ta = document.getElementById('bb-players').value;
+  const players = ta.split('\n').map(s => s.trim()).filter(Boolean);
+  if (players.length < 3) { alert('En az 3 oyuncu gir'); return; }
+  state.players = players;
+  state.legsToWin = Math.max(1, +document.getElementById('bb-legs').value || 3);
+  state.groupSize = Math.max(3, +document.getElementById('bb-group-size').value || 4);
+  state.qualifiers = Math.max(1, +document.getElementById('bb-qualifiers').value || 2);
+
+  state.bracket = generateBracket(state.format, players);
+  state.createdAt = new Date().toISOString();
+  persist();
+  showView();
+}
+
+function generateBracket(format, players) {
+  switch (format) {
+    case 'single_elim':  return genSingle(players);
+    case 'double_elim':  return genDouble(players);
+    case 'round_robin':  return genRR(players, false);
+    case 'rr_single':    return genRRElim(players, 'single');
+    case 'rr_double':    return genRRElim(players, 'double');
+  }
+}
+
+// Match objesi: { id, p1, p2, p1Legs, p2Legs, winner, loser, played, label }
+let matchIdCounter = 0;
+function newMatch(p1, p2, label) {
+  return {
+    id: 'm' + (++matchIdCounter),
+    p1: p1 || null, p2: p2 || null,
+    p1Legs: 0, p2Legs: 0,
+    winner: null, loser: null, played: false,
+    label: label || '',
+  };
+}
+
+// --- Single Elim ---
+function genSingle(players) {
+  matchIdCounter = 0;
+  const N = nextPow2(players.length);
+  const order = seedOrder(N);
+  // Position seeds: order[i]-1 -> players[i] (or BYE if missing)
+  const slots = order.map(s => players[s - 1] || null); // null = BYE
+
+  const rounds = [];
+  // Round 1
+  const r1 = [];
+  for (let i = 0; i < slots.length; i += 2) {
+    const m = newMatch(slots[i], slots[i + 1], roundLabel(0, Math.log2(N)));
+    // Auto-resolve byes (opponent automatically wins)
+    if (m.p1 && !m.p2) { m.winner = m.p1; m.loser = null; m.played = true; m.p1Legs = 0; m.p2Legs = 0; }
+    else if (!m.p1 && m.p2) { m.winner = m.p2; m.loser = null; m.played = true; }
+    r1.push(m);
+  }
+  rounds.push(r1);
+  // Subsequent rounds
+  let prev = r1;
+  for (let r = 1; prev.length > 1; r++) {
+    const cur = [];
+    for (let i = 0; i < prev.length; i += 2) {
+      const m = newMatch(null, null, roundLabel(r, Math.log2(N)));
+      m.parents = [prev[i].id, prev[i + 1].id];
+      cur.push(m);
+    }
+    rounds.push(cur);
+    // Link parents to children
+    for (let i = 0; i < prev.length; i += 2) {
+      prev[i].nextMatch = cur[i / 2].id;
+      prev[i].nextSlot = 1;
+      prev[i + 1].nextMatch = cur[i / 2].id;
+      prev[i + 1].nextSlot = 2;
+    }
+    prev = cur;
+  }
+  // Auto-fill bye winners into round 2 slots
+  for (let i = 0; i < r1.length; i++) {
+    if (r1[i].played && r1[i].nextMatch) {
+      writeNext(rounds, r1[i]);
+    }
+  }
+  return { format: 'single_elim', rounds, byeCount: N - players.length };
+}
+
+function roundLabel(r, totalRounds) {
+  const remaining = totalRounds - r;
+  if (remaining === 1) return 'FİNAL';
+  if (remaining === 2) return 'YARI FİNAL';
+  if (remaining === 3) return 'ÇEYREK FİNAL';
+  return `Round ${r + 1}`;
+}
+
+// --- Double Elim ---
+function genDouble(players) {
+  matchIdCounter = 0;
+  const N = nextPow2(players.length);
+  const order = seedOrder(N);
+  const slots = order.map(s => players[s - 1] || null);
+  const totalRounds = Math.log2(N);
+
+  // WB
+  const wb = [];
+  const wb1 = [];
+  for (let i = 0; i < slots.length; i += 2) {
+    const m = newMatch(slots[i], slots[i + 1], 'WB R1');
+    if (m.p1 && !m.p2) { m.winner = m.p1; m.played = true; }
+    else if (!m.p1 && m.p2) { m.winner = m.p2; m.played = true; }
+    wb1.push(m);
+  }
+  wb.push(wb1);
+  let wbPrev = wb1;
+  for (let r = 1; wbPrev.length > 1; r++) {
+    const cur = [];
+    for (let i = 0; i < wbPrev.length; i += 2) {
+      const lbl = (wbPrev.length === 2) ? 'WB FİNAL' : `WB R${r + 1}`;
+      const m = newMatch(null, null, lbl);
+      cur.push(m);
+    }
+    wb.push(cur);
+    for (let i = 0; i < wbPrev.length; i += 2) {
+      wbPrev[i].nextMatch = cur[i / 2].id;
+      wbPrev[i].nextSlot = 1;
+      wbPrev[i + 1].nextMatch = cur[i / 2].id;
+      wbPrev[i + 1].nextSlot = 2;
+    }
+    wbPrev = cur;
+  }
+
+  // LB — alternating "feed" and "consolidation" rounds
+  // For N=2^k, LB has 2k-2 rounds (k>=2), or 1 for N=2
+  const lb = [];
+  if (N >= 2) {
+    let lbPrev = null;
+    let lbRoundIdx = 0;
+    let wbFeedRound = 0; // which WB round's losers feed in next
+    while (true) {
+      // Feed round: WB R(wbFeedRound+1) losers come in
+      const wbRound = wb[wbFeedRound]; // losers from this WB round
+      const cur = [];
+      if (wbFeedRound === 0) {
+        // Pure feed: pair WB R1 losers
+        for (let i = 0; i < wbRound.length; i += 2) {
+          const m = newMatch(null, null, `LB R${lbRoundIdx + 1}`);
+          m.feeds = [
+            { from: wbRound[i].id, kind: 'loser', slot: 1 },
+            { from: wbRound[i + 1].id, kind: 'loser', slot: 2 },
+          ];
+          cur.push(m);
+          wbRound[i].lbDestMatch = m.id; wbRound[i].lbDestSlot = 1;
+          wbRound[i + 1].lbDestMatch = m.id; wbRound[i + 1].lbDestSlot = 2;
+        }
+      } else {
+        // LB winners face WB Round (wbFeedRound) losers
+        // Pair: lbPrev[i] vs wbRound[i] (or reverse for variety)
+        for (let i = 0; i < lbPrev.length; i++) {
+          const m = newMatch(null, null, `LB R${lbRoundIdx + 1}`);
+          // LB winner from previous LB round
+          lbPrev[i].nextMatch = m.id;
+          lbPrev[i].nextSlot = 1;
+          // WB Round (wbFeedRound) loser drops in (cross-pair to avoid rematch when possible)
+          const wbIdx = (lbPrev.length - 1 - i); // reverse for cross-pairing
+          const wbMatch = wbRound[wbIdx];
+          wbMatch.lbDestMatch = m.id; wbMatch.lbDestSlot = 2;
+          cur.push(m);
+        }
+      }
+      lb.push(cur);
+      lbPrev = cur;
+      lbRoundIdx++;
+      wbFeedRound++;
+
+      if (cur.length === 1 && wbFeedRound >= wb.length) break;
+
+      // Consolidation round: pair lbPrev winners (no WB feeding)
+      if (cur.length > 1) {
+        const cons = [];
+        for (let i = 0; i < lbPrev.length; i += 2) {
+          const m = newMatch(null, null, `LB R${lbRoundIdx + 1}`);
+          lbPrev[i].nextMatch = m.id; lbPrev[i].nextSlot = 1;
+          lbPrev[i + 1].nextMatch = m.id; lbPrev[i + 1].nextSlot = 2;
+          cons.push(m);
+        }
+        lb.push(cons);
+        lbPrev = cons;
+        lbRoundIdx++;
+      }
+
+      if (wbFeedRound >= wb.length) break;
+    }
+    // Mark last LB round as LB FINAL
+    if (lb.length) lb[lb.length - 1].forEach(m => m.label = 'LB FİNAL');
+  }
+
+  // Grand Final + reset
+  const gf = newMatch(null, null, 'GRAND FİNAL');
+  gf.gf = true;
+  // WB winner -> gf slot 1
+  if (wb.length) wb[wb.length - 1][0].nextMatch = gf.id, wb[wb.length - 1][0].nextSlot = 1;
+  // LB winner -> gf slot 2
+  if (lb.length) {
+    const lbFinal = lb[lb.length - 1][0];
+    lbFinal.nextMatch = gf.id;
+    lbFinal.nextSlot = 2;
+  }
+  const reset = newMatch(null, null, 'RESET');
+  reset.reset = true;
+  reset.hidden = true;
+
+  // Auto-resolve byes already done; if winner of WB R1 byes flow into next WB rounds, do that
+  // Handle byes: any wb[0] match that's already played, propagate
+  for (const round of wb) {
+    for (const m of round) {
+      if (m.played && m.nextMatch) writeNext({ rounds: wb, lbRounds: lb, gf, reset }, m);
+    }
+  }
+
+  return { format: 'double_elim', wb, lb, gf, reset, byeCount: N - players.length };
+}
+
+// --- Round Robin ---
+function genRR(players, returnGroups) {
+  matchIdCounter = 0;
+  if (returnGroups) {
+    // Split players into groups
+    const groupSize = state.groupSize;
+    const groups = [];
+    for (let i = 0; i < players.length; i += groupSize) {
+      const groupPlayers = players.slice(i, i + groupSize);
+      if (groupPlayers.length >= 2) {
+        groups.push({
+          name: `Grup ${String.fromCharCode(65 + groups.length)}`,
+          players: groupPlayers,
+          matches: rrPairings(groupPlayers),
+        });
+      }
+    }
+    return { format: 'round_robin_groups', groups };
+  }
+  // Single group RR
+  return {
+    format: 'round_robin',
+    groups: [{ name: 'Round Robin', players, matches: rrPairings(players) }],
+  };
+}
+
+function rrPairings(players) {
+  // Berger-style pairings: each player plays every other once
+  const matches = [];
+  for (let i = 0; i < players.length; i++) {
+    for (let j = i + 1; j < players.length; j++) {
+      matches.push(newMatch(players[i], players[j], 'RR'));
+    }
+  }
+  return matches;
+}
+
+// --- RR + Elim ---
+function genRRElim(players, elimType) {
+  const rr = genRR(players, true);
+  rr.format = 'rr_' + elimType;
+  rr.elimType = elimType;
+  rr.elim = null; // bracket built after RR completes
+  rr.qualifiers = state.qualifiers;
+  return rr;
+}
+
+// ====================================================================
+//  ADVANCEMENT
+// ====================================================================
+function findMatchById(id) {
+  if (!state.bracket) return null;
+  const all = collectMatches(state.bracket);
+  return all.find(m => m.id === id) || null;
+}
+function collectMatches(b) {
+  const out = [];
+  if (!b) return out;
+  if (b.format === 'single_elim') {
+    for (const r of b.rounds) for (const m of r) out.push(m);
+  } else if (b.format === 'double_elim') {
+    for (const r of b.wb) for (const m of r) out.push(m);
+    for (const r of b.lb) for (const m of r) out.push(m);
+    out.push(b.gf, b.reset);
+  } else if (b.format === 'round_robin' || b.format === 'round_robin_groups') {
+    for (const g of b.groups) for (const m of g.matches) out.push(m);
+  } else if (b.format === 'rr_single' || b.format === 'rr_double') {
+    for (const g of b.groups) for (const m of g.matches) out.push(m);
+    if (b.elim) out.push(...collectMatches(b.elim));
+  }
+  return out;
+}
+
+function writeNext(_unused, m) {
+  // Use winner/loser pointers stored on m to set p1/p2 of next matches
+  if (m.nextMatch && m.winner) {
+    const target = findMatchById(m.nextMatch);
+    if (target) {
+      if (m.nextSlot === 1) target.p1 = m.winner;
+      else target.p2 = m.winner;
+    }
+  }
+  if (m.lbDestMatch && m.loser) {
+    const target = findMatchById(m.lbDestMatch);
+    if (target) {
+      if (m.lbDestSlot === 1) target.p1 = m.loser;
+      else target.p2 = m.loser;
+    }
+  }
+}
+
+// ====================================================================
+//  MATCH MODAL
+// ====================================================================
+function openMatch(id) {
+  const m = findMatchById(id);
+  if (!m) return;
+  if (!m.p1 || !m.p2) {
+    alert('Bu maç için oyuncular henüz belli değil.');
+    return;
+  }
+  editingMatchId = id;
+  const ltw = state.legsToWin;
+  const bo = 2 * ltw - 1;
+  document.getElementById('bb-modal-bg').hidden = false;
+  document.getElementById('bb-modal-meta').textContent = m.label || '';
+  document.getElementById('bb-modal-bo').textContent = bo;
+  document.getElementById('bb-modal-ltw').textContent = ltw;
+  document.getElementById('bb-modal-clear').hidden = !m.played;
+  document.getElementById('bb-modal-body').innerHTML = `
+    <div class="bb-player-row">
+      <div class="pname">${escapeHtml(m.p1)}</div>
+      <input type="number" id="bb-l1" min="0" max="${ltw}" value="${m.p1Legs || 0}" />
+    </div>
+    <div class="bb-player-row">
+      <div class="pname">${escapeHtml(m.p2)}</div>
+      <input type="number" id="bb-l2" min="0" max="${ltw}" value="${m.p2Legs || 0}" />
+    </div>
+  `;
+  setTimeout(() => document.getElementById('bb-l1').focus(), 50);
+}
+
+function closeModal() {
+  editingMatchId = null;
+  document.getElementById('bb-modal-bg').hidden = true;
+}
+function closeModalIfBg(e) { if (e.target === document.getElementById('bb-modal-bg')) closeModal(); }
+
+function saveMatchFromModal() {
+  if (!editingMatchId) return;
+  const m = findMatchById(editingMatchId);
+  if (!m) return;
+  const l1 = +document.getElementById('bb-l1').value || 0;
+  const l2 = +document.getElementById('bb-l2').value || 0;
+  const ltw = state.legsToWin;
+  if (l1 < 0 || l2 < 0 || l1 > ltw || l2 > ltw) {
+    alert(`Leg sayısı 0 - ${ltw} arasında olmalı.`); return;
+  }
+  if (l1 === l2) { alert('Berabere olamaz, kazanan belli olmalı.'); return; }
+  if (l1 < ltw && l2 < ltw) {
+    alert(`En az bir oyuncu ${ltw} leg kazanmalı.`); return;
+  }
+  m.p1Legs = l1;
+  m.p2Legs = l2;
+  m.played = true;
+  m.winner = (l1 > l2) ? m.p1 : m.p2;
+  m.loser  = (l1 > l2) ? m.p2 : m.p1;
+
+  // Propagate
+  writeNext(null, m);
+
+  // RR + Elim: when all RR matches played, build elim
+  if ((state.bracket.format === 'rr_single' || state.bracket.format === 'rr_double') && !state.bracket.elim) {
+    const allDone = state.bracket.groups.every(g => g.matches.every(mm => mm.played));
+    if (allDone) buildElimFromRR();
+  }
+  // Double elim grand final logic
+  if (state.bracket.format === 'double_elim') {
+    handleDoubleElimGF(m);
+  }
+
+  persist();
+  closeModal();
+  render();
+}
+
+function clearMatchResult() {
+  if (!editingMatchId) return;
+  const m = findMatchById(editingMatchId);
+  if (!m) return;
+  if (!confirm('Bu maçın sonucu silinsin mi? İlerideki maçlar etkilenebilir.')) return;
+  // Clear this match
+  m.p1Legs = 0; m.p2Legs = 0; m.played = false; m.winner = null; m.loser = null;
+  // Also clear downstream slots that this match feeds (best effort — user may want to redo)
+  if (m.nextMatch) {
+    const t = findMatchById(m.nextMatch);
+    if (t) {
+      if (m.nextSlot === 1) t.p1 = null;
+      else t.p2 = null;
+      // Also reset the downstream match
+      if (t.played) { t.p1Legs = 0; t.p2Legs = 0; t.played = false; t.winner = null; t.loser = null; }
+    }
+  }
+  if (m.lbDestMatch) {
+    const t = findMatchById(m.lbDestMatch);
+    if (t) {
+      if (m.lbDestSlot === 1) t.p1 = null;
+      else t.p2 = null;
+      if (t.played) { t.p1Legs = 0; t.p2Legs = 0; t.played = false; t.winner = null; t.loser = null; }
+    }
+  }
+  persist();
+  closeModal();
+  render();
+}
+
+// Double elim: GF reset logic
+function handleDoubleElimGF(m) {
+  const b = state.bracket;
+  if (m.id === b.gf.id && m.played) {
+    // WB winner is in slot 1, LB winner in slot 2
+    const wbWinner = b.gf.p1;
+    const lbWinner = b.gf.p2;
+    if (m.winner === lbWinner) {
+      // LB winner won → reset match needed
+      b.reset.hidden = false;
+      b.reset.p1 = wbWinner;
+      b.reset.p2 = lbWinner;
+    } else {
+      // WB winner won → tournament over
+      b.reset.hidden = true;
+    }
+  }
+}
+
+// RR + Elim: build elim bracket once RR done
+function buildElimFromRR() {
+  const b = state.bracket;
+  const standings = computeAllStandings(b.groups);
+  // Top N from each group qualify
+  const qualifiers = [];
+  for (let i = 0; i < b.groups.length; i++) {
+    const groupStand = standings[i];
+    for (let j = 0; j < state.qualifiers && j < groupStand.length; j++) {
+      qualifiers.push(groupStand[j].player);
+    }
+  }
+  // Build elim
+  if (b.elimType === 'single') b.elim = genSingle(qualifiers);
+  else                          b.elim = genDouble(qualifiers);
+}
+
+// ====================================================================
+//  STANDINGS
+// ====================================================================
+function computeStandings(group) {
+  const stats = {};
+  for (const p of group.players) {
+    stats[p] = { player: p, p: 0, w: 0, l: 0, lf: 0, la: 0, ld: 0, pts: 0 };
+  }
+  for (const m of group.matches) {
+    if (!m.played) continue;
+    const a = stats[m.p1], b = stats[m.p2];
+    if (!a || !b) continue;
+    a.p++; b.p++;
+    a.lf += m.p1Legs; a.la += m.p2Legs;
+    b.lf += m.p2Legs; b.la += m.p1Legs;
+    if (m.winner === m.p1) { a.w++; b.l++; a.pts += 2; }
+    else                   { b.w++; a.l++; b.pts += 2; }
+  }
+  for (const p of group.players) stats[p].ld = stats[p].lf - stats[p].la;
+  // Sort: pts desc, ld desc, lf desc
+  return group.players.map(p => stats[p]).sort((a, b) =>
+    b.pts - a.pts || b.ld - a.ld || b.lf - a.lf
+  );
+}
+function computeAllStandings(groups) { return groups.map(computeStandings); }
+
+// ====================================================================
+//  RENDER
+// ====================================================================
+function escapeHtml(s) {
+  if (s == null) return '';
+  return String(s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+}
+
+function render() {
+  const b = state.bracket;
+  if (!b) return;
+  document.getElementById('bb-title').textContent = formatTitle(b.format);
+  document.getElementById('bb-subtitle').textContent =
+    `${state.players.length} oyuncu · BO${2*state.legsToWin-1} (${state.legsToWin} leg)`;
+  const host = document.getElementById('bb-content');
+  let html = '';
+  // Champion if known
+  const champ = findChampion(b);
+  if (champ) {
+    html += `<div class="bb-champion"><div class="label">Şampiyon</div><div class="name">🏆 ${escapeHtml(champ)}</div></div>`;
+  }
+  if (b.format === 'single_elim') html += renderSingle(b);
+  else if (b.format === 'double_elim') html += renderDouble(b);
+  else if (b.format === 'round_robin' || b.format === 'round_robin_groups') html += renderRR(b);
+  else if (b.format === 'rr_single' || b.format === 'rr_double') html += renderRRElim(b);
+  host.innerHTML = html;
+}
+
+function formatTitle(f) {
+  return ({
+    'single_elim': 'Tek Eleme',
+    'double_elim': 'Çift Eleme',
+    'round_robin': 'Round Robin',
+    'round_robin_groups': 'Round Robin (Gruplar)',
+    'rr_single': 'RR + Tek Eleme',
+    'rr_double': 'RR + Çift Eleme',
+  }[f] || f);
+}
+
+function findChampion(b) {
+  if (b.format === 'single_elim') {
+    const last = b.rounds[b.rounds.length - 1];
+    if (last && last[0] && last[0].played) return last[0].winner;
+  }
+  if (b.format === 'double_elim') {
+    if (b.reset && !b.reset.hidden && b.reset.played) return b.reset.winner;
+    if (b.gf && b.gf.played) {
+      // If LB winner won GF, reset needed (champion only after reset played)
+      if (b.gf.winner === b.gf.p2 && (!b.reset || !b.reset.played)) return null;
+      return b.gf.winner;
+    }
+  }
+  if (b.format === 'rr_single' || b.format === 'rr_double') {
+    if (b.elim) return findChampion(b.elim);
+  }
+  return null;
+}
+
+function renderSingle(b) {
+  let html = `<div class="bb-canvas"><div class="bb-bracket">`;
+  for (let r = 0; r < b.rounds.length; r++) {
+    html += `<div class="bb-round"><div class="bb-round-h">${b.rounds[r][0].label}</div><div class="bb-round-body">`;
+    for (const m of b.rounds[r]) {
+      html += `<div class="bb-mw">${matchHtml(m)}</div>`;
+    }
+    html += `</div></div>`;
+  }
+  html += `</div></div>`;
+  return html;
+}
+
+function renderDouble(b) {
+  let html = '';
+  // Winners
+  html += `<p class="bb-section-h">Kazananlar Bracket'i</p>`;
+  html += `<div class="bb-canvas"><div class="bb-bracket">`;
+  for (let r = 0; r < b.wb.length; r++) {
+    html += `<div class="bb-round"><div class="bb-round-h">${b.wb[r][0].label}</div><div class="bb-round-body">`;
+    for (const m of b.wb[r]) html += `<div class="bb-mw">${matchHtml(m)}</div>`;
+    html += `</div></div>`;
+  }
+  html += `</div></div>`;
+  // Losers
+  if (b.lb && b.lb.length) {
+    html += `<p class="bb-section-h" style="margin-top:1.5rem;">Kaybedenler Bracket'i</p>`;
+    html += `<div class="bb-canvas"><div class="bb-bracket">`;
+    for (let r = 0; r < b.lb.length; r++) {
+      html += `<div class="bb-round"><div class="bb-round-h">${b.lb[r][0].label}</div><div class="bb-round-body">`;
+      for (const m of b.lb[r]) html += `<div class="bb-mw">${matchHtml(m)}</div>`;
+      html += `</div></div>`;
+    }
+    html += `</div></div>`;
+  }
+  // Grand Final + Reset
+  html += `<p class="bb-section-h" style="margin-top:1.5rem;">Grand Final</p>`;
+  html += `<div class="bb-canvas"><div class="bb-bracket">`;
+  html += `<div class="bb-round"><div class="bb-round-h">${b.gf.label}</div><div class="bb-round-body"><div class="bb-mw">${matchHtml(b.gf)}</div></div></div>`;
+  if (b.reset && !b.reset.hidden) {
+    html += `<div class="bb-round"><div class="bb-round-h">${b.reset.label}</div><div class="bb-round-body"><div class="bb-mw">${matchHtml(b.reset)}</div></div></div>`;
+  }
+  html += `</div></div>`;
+  return html;
+}
+
+function renderRR(b) {
+  let html = `<div class="bb-canvas"><div class="bb-rr-wrap">`;
+  for (let i = 0; i < b.groups.length; i++) {
+    const g = b.groups[i];
+    html += renderRRGroup(g, computeStandings(g), 0);
+  }
+  html += `</div></div>`;
+  return html;
+}
+
+function renderRRElim(b) {
+  let html = '';
+  // RR groups
+  html += `<p class="bb-section-h">Grup Aşaması</p>`;
+  html += `<div class="bb-canvas"><div class="bb-rr-wrap">`;
+  for (let i = 0; i < b.groups.length; i++) {
+    const g = b.groups[i];
+    html += renderRRGroup(g, computeStandings(g), state.qualifiers);
+  }
+  html += `</div></div>`;
+  // Elim phase
+  if (b.elim) {
+    html += `<p class="bb-section-h" style="margin-top:1.5rem;">Eleme Aşaması</p>`;
+    if (b.elimType === 'single') html += renderSingle(b.elim);
+    else                          html += renderDouble(b.elim);
+  } else {
+    html += `<div class="bb-canvas" style="margin-top:1.5rem;text-align:center;color:var(--text-dim);">
+      Tüm grup maçları tamamlanınca eleme bracket'i otomatik oluşur.
+    </div>`;
+  }
+  return html;
+}
+
+function renderRRGroup(g, standings, quals) {
+  let html = `<div class="bb-rr-group"><h4>${escapeHtml(g.name)}</h4>`;
+  html += `<div class="bb-rr-matches">`;
+  for (const m of g.matches) html += matchHtml(m);
+  html += `</div>`;
+  html += `<table class="bb-standings">`;
+  html += `<tr><th>Oyuncu</th><th class="center">O</th><th class="center">G</th><th class="center">M</th><th class="center">L</th><th class="center">P</th></tr>`;
+  for (let i = 0; i < standings.length; i++) {
+    const s = standings[i];
+    const isQual = quals > 0 && i < quals;
+    html += `<tr class="${isQual ? 'qual' : ''}">
+      <td>${escapeHtml(s.player)}</td>
+      <td class="center">${s.p}</td>
+      <td class="center">${s.w}</td>
+      <td class="center">${s.l}</td>
+      <td class="center">${s.ld > 0 ? '+' : ''}${s.ld}</td>
+      <td class="center"><strong>${s.pts}</strong></td>
+    </tr>`;
+  }
+  html += `</table></div>`;
+  return html;
+}
+
+function matchHtml(m) {
+  if (!m) return '';
+  if (m.hidden) return '';
+  const p1 = m.p1 || 'TBD';
+  const p2 = m.p2 || 'TBD';
+  const isReady = !!(m.p1 && m.p2);
+  const w1 = m.played && m.winner === m.p1;
+  const w2 = m.played && m.winner === m.p2;
+  const c1 = m.played ? (w1 ? 'won' : 'lost') : '';
+  const c2 = m.played ? (w2 ? 'won' : 'lost') : '';
+  const cls = `bb-match${m.played ? ' played' : ''}${!isReady ? ' locked' : ''}`;
+  const onclick = isReady ? `onclick="openMatch('${m.id}')"` : '';
+  return `<button class="${cls}" ${onclick}>
+    <div class="bb-row ${c1} ${!m.p1 ? 'bb-bye' : ''}"><span class="nm">${escapeHtml(p1)}</span><span class="legs">${m.played ? m.p1Legs : ''}</span></div>
+    <div class="bb-row ${c2} ${!m.p2 ? 'bb-bye' : ''}"><span class="nm">${escapeHtml(p2)}</span><span class="legs">${m.played ? m.p2Legs : ''}</span></div>
+  </button>`;
+}
+
+// ====================================================================
+//  ACTIONS
+// ====================================================================
+function newBracket() {
+  if (!confirm('Mevcut bracket silinsin mi? Yeni bracket başlatılacak.')) return;
+  localStorage.removeItem(STORAGE_KEY);
+  state = {
+    format: state.format || 'single_elim',
+    players: [],
+    legsToWin: 3,
+    groupSize: 4,
+    qualifiers: 2,
+    bracket: null,
+    createdAt: null,
+  };
+  document.getElementById('bb-players').value = '';
+  updatePlayerMeta();
+  showSetup();
+}
+
+function resetBracket() {
+  if (!confirm('Tüm maç sonuçları silinsin mi? Bracket yeniden oluşturulacak (oyuncular korunur).')) return;
+  state.bracket = generateBracket(state.format, state.players);
+  persist();
+  render();
+}
+
+init();
+</script>
+</body>
+</html>
