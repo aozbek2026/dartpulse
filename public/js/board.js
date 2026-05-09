@@ -915,20 +915,21 @@ function fbDart(target, mult) {
       } else if (fbMetaMode === 'T') {
         if (mult === 3) { valid = true; value = 3 * N; }
       } else if (fbMetaMode === 'H') {
-        // H = 3 ok toplamı → tek dart tıklaması yeter, sistem ×3 hesaplar
-        valid = true;
-        value = 3 * mult * N;
+        // H = 3 ok aynı segmentte olmak zorunda; 3 dart girilir, her biri dart değerini ekler
+        const firstValid = fbDarts.find(d => d.target != null && d.mult > 0);
+        if (!firstValid)                                                            { valid = true; value = mult * N; }
+        else if (firstValid.target === String(target) && firstValid.mult === mult)  { valid = true; value = mult * N; }
       }
       if (!valid) {
         if      (fbMetaMode === 'D') toast('D ceza modu: D butonu ya da D-BULL atışı gerekli');
         else if (fbMetaMode === 'T') toast('T ceza modu: T butonu atışı gerekli');
+        else if (fbMetaMode === 'H') toast('H ceza modu: 3 ok aynı segmentte olmalı');
         return;
       }
       fbDarts.push({ target: String(target), mult });
       fbMetaScore += value;
     }
-    // H modu tek tıkla submit, D/T 3 darta kadar
-    if (fbMetaMode === 'H' || fbDarts.length === 3) submitFBCezaliDarts();
+    if (fbDarts.length === 3) submitFBCezaliDarts();
     else renderMatch();
     return;
   }
