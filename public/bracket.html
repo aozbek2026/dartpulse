@@ -634,6 +634,7 @@ function generateAndStart() {
 }
 
 function generateBracket(format, players) {
+  matchIdCounter = 0; // her yeni bracket'te ID sayacı sıfırlanır
   switch (format) {
     case 'single_elim':  return genSingle(players);
     case 'double_elim':  return genDouble(players);
@@ -657,7 +658,6 @@ function newMatch(p1, p2, label) {
 
 // --- Single Elim ---
 function genSingle(players) {
-  matchIdCounter = 0;
   const N = nextPow2(players.length);
   const order = seedOrder(N);
   // Position seeds: order[i]-1 -> players[i] (or BYE if missing)
@@ -712,7 +712,6 @@ function roundLabel(r, totalRounds) {
 
 // --- Double Elim ---
 function genDouble(players) {
-  matchIdCounter = 0;
   const N = nextPow2(players.length);
   const order = seedOrder(N);
   const slots = order.map(s => players[s - 1] || null);
@@ -839,7 +838,6 @@ function genDouble(players) {
 
 // --- Round Robin ---
 function genRR(players, returnGroups) {
-  matchIdCounter = 0;
   if (returnGroups) {
     // Split players into groups
     const groupSize = state.groupSize;
