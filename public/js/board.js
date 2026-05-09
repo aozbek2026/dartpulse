@@ -712,8 +712,6 @@ let fbDarts = []; // [{target:'20'|..., mult:1|2|3} | {target:null,mult:0}]
 // meta butona basıp dart taps'leri puan olarak yazma akışı
 let fbMetaMode  = null;  // 'D' | 'T' | 'H' | null
 let fbMetaScore = 0;     // mod aktifken biriken toplam puan
-// H talep flag'i — H açıkken visit'te 1 kez basılabilir, dart slot tüketmez
-let fbHClaim = false;
 
 function fbTargetLabel(t) { return FB_TARGET_LABEL[t] || t; }
 function fbIsNumberTarget(t) { return !isNaN(parseInt(t)); }  // 10-20, 25
@@ -769,13 +767,11 @@ function renderFBCezaliMatch(m) {
     if (isMeta) {
       // D / T / H — tek geniş buton. Akıllı handler: meta hedefi açıksa +1 mark,
       // kapalı + rakipte açık ise "ceza yazma modu"nu açar/kapatır.
-      const modeOn  = (fbMetaMode === t);
-      const hClaim  = (t === 'H' && fbHClaim);  // sadece H için claim göstergesi
-      const showOk  = modeOn || hClaim;
+      const modeOn = (fbMetaMode === t);
       return `
         <div class="cr-target-row cr-target-meta${bothClosed ? ' cr-target-done' : ''}">
           <div class="cr-marks-l ${lSym.cls}${isTurn1 ? ' cr-active' : ''}">${lSym.sym}</div>
-          <button class="cr-tap-num cr-tap-meta${showOk ? ' cr-tap-meta-active' : ''}" onclick="fbMetaTap('${t}')">${label}${showOk ? ' ✓' : ''}</button>
+          <button class="cr-tap-num cr-tap-meta${modeOn ? ' cr-tap-meta-active' : ''}" onclick="fbMetaTap('${t}')">${label}${modeOn ? ' ✓' : ''}</button>
           <div class="cr-marks-r ${rSym.cls}${!isTurn1 ? ' cr-active' : ''}">${rSym.sym}</div>
         </div>`;
     }
@@ -825,7 +821,7 @@ function renderFBCezaliMatch(m) {
     <div class="cr-bottom-bar">
       <button class="cr-undo-btn" onclick="fbUndoDart()" ${fbDarts.length === 0 ? 'disabled' : ''}>← GERİ</button>
       <div class="cr-dots">${dotsHtml}</div>
-      <button class="cr-miss-btn" onclick="submitFBCezaliDarts()" ${fbDarts.length === 0 && !fbHClaim ? 'disabled' : ''}>Enter</button>
+      <button class="cr-miss-btn" onclick="submitFBCezaliDarts()" ${fbDarts.length === 0 ? 'disabled' : ''}>Enter</button>
     </div>`;
 
   root.innerHTML = `
@@ -891,18 +887,10 @@ function fbMetaTap(metaTarget) {
     fbMetaScore = 0;
     fbDarts = [];
     renderMatch();
-    return;
+  } else {
+    // Normal +1 mark akışı
+    fbDart(metaTarget, 1);
   }
-
-  // H özel: visit'te bir kez talep edilebilir, dart slot tüketmez (toggle)
-  if (metaTarget === 'H') {
-    fbHClaim = !fbHClaim;
-    renderMatch();
-    return;
-  }
-
-  // D, T meta — normal +1 mark akışı (dart slot tüketir)
-  fbDart(metaTarget, 1);
 }
 
 function fbDart(target, mult) {
@@ -927,10 +915,11 @@ function fbDart(target, mult) {
       } else if (fbMetaMode === 'T') {
         if (mult === 3) { valid = true; value = 3 * N; }
       } else if (fbMetaMode === 'H') {
-        // H = 3 ok aynı segmentte olmak zorunda; 3 dart girilir, her biri dart değerini ekler
+        // H = 3 ok aynı segmentte (sayıda) olmak zorunda; multiplier (S/D/T) fark etmez
+        // Skor her dart için kendi değeri (D20=40, T20=60, S20=20)
         const firstValid = fbDarts.find(d => d.target != null && d.mult > 0);
-        if (!firstValid)                                                            { valid = true; value = mult * N; }
-        else if (firstValid.target === String(target) && firstValid.mult === mult)  { valid = true; value = mult * N; }
+        if (!firstValid)                              { valid = true; value = mult * N; }
+        else if (firstValid.target === String(target)) { valid = true; value = mult * N; }
       }
       if (!valid) {
         if      (fbMetaMode === 'D') toast('D ceza modu: D butonu ya da D-BULL atışı gerekli');
@@ -1002,28 +991,21 @@ async function submitFBCezaliDarts() {
       if (d.mult === 2 && dFallbackOK)      fallbackScore += 2 * N;
       else if (d.mult === 3 && tFallbackOK) fallbackScore += 3 * N;
     }
-    // H talebi → +1 mark (dart slot tüketmez ama bu visit'in marks objesine ekle)
-    if (fbHClaim) {
-      marksObj['H'] = (marksObj['H'] || 0) + 1;
-    }
     payload = { playerSlot: slot, allocation: { marks: marksObj, score: fallbackScore } };
   }
 
   const sentDarts  = fbDarts.slice();
   const sentMode   = fbMetaMode;
   const sentScore  = fbMetaScore;
-  const sentHClaim = fbHClaim;
   fbDarts = [];
   fbMetaMode = null;
   fbMetaScore = 0;
-  fbHClaim = false;
 
   const res = await api.post(`/api/matches/${currentMatch.id}/fb-cezali-throw`, payload);
   if (res.error) {
     fbDarts = sentDarts;
     fbMetaMode = sentMode;
     fbMetaScore = sentScore;
-    fbHClaim = sentHClaim;
     renderMatch();
     return toast('Hata: ' + res.error);
   }
