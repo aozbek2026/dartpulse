@@ -613,7 +613,7 @@ function renderCricketMatch(m) {
 
   const bottomBar = isReadonly ? '' : `
     <div class="cr-bottom-bar">
-      <button class="cr-undo-btn" onclick="cricketUndoDart()" ${cricketDarts.length === 0 ? 'disabled' : ''}>← GERİ</button>
+      <button class="cr-undo-btn" onclick="cricketUndoDart()" ${cricketDarts.length === 0 && !m.cricket_undo_json ? 'disabled' : ''}>← GERİ</button>
       <div class="cr-dots">${dotsHtml}</div>
       <button class="cr-miss-btn" onclick="submitCricketDarts()" ${cricketDarts.length === 0 ? 'disabled' : ''}>Enter</button>
     </div>
@@ -669,9 +669,50 @@ function cricketMiss() {
 }
 
 function cricketUndoDart() {
-  if (cricketDarts.length === 0) return;
-  cricketDarts.pop();
-  renderMatch();
+  if (cricketDarts.length > 0) {
+    cricketDarts.pop();
+    renderMatch();
+    return;
+  }
+  cricketConfirmAndUndoLastVisit();
+}
+
+// Cricket/FB/Karambol için ortak: önceki visit'i onaylı geri al
+async function cricketConfirmAndUndoLastVisit() {
+  if (!currentMatch) return;
+  if (!currentMatch.cricket_undo_json) return toast('Geri alınacak visit yok');
+  const ok = await cricketConfirm('Önceki visit geri alınsın mı?');
+  if (!ok) return;
+  const res = await api.post(`/api/matches/${currentMatch.id}/cricket-undo`, {});
+  if (res.error) return toast('Hata: ' + res.error);
+}
+
+// Basit promise-based onay dialog'u
+function cricketConfirm(message) {
+  return new Promise((resolve) => {
+    const overlay = document.createElement('div');
+    overlay.style.cssText = 'position:fixed;inset:0;z-index:9999;background:rgba(0,0,0,0.7);display:flex;align-items:center;justify-content:center;padding:1rem;';
+    overlay.innerHTML = `
+      <div style="background:#1a1d2e;border:2px solid #ffd200;border-radius:14px;padding:1.5rem 1.75rem;max-width:420px;text-align:center;font-family:var(--font-sans,system-ui);">
+        <div style="font-size:clamp(15px,3.5vmin,20px);color:#e2e8f0;margin-bottom:1.25rem;font-weight:600;">${message}</div>
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:0.75rem;">
+          <button data-no style="padding:0.85rem;background:#2a2e42;color:#e2e8f0;border:0;border-radius:8px;font-size:clamp(13px,3vmin,18px);font-weight:700;cursor:pointer;">Vazgeç</button>
+          <button data-yes style="padding:0.85rem;background:#ffd200;color:#000;border:0;border-radius:8px;font-size:clamp(13px,3vmin,18px);font-weight:800;cursor:pointer;">Evet, geri al</button>
+        </div>
+      </div>
+    `;
+    document.body.appendChild(overlay);
+    const close = (val) => {
+      overlay.remove();
+      document.removeEventListener('keydown', kh, true);
+      resolve(val);
+    };
+    overlay.querySelector('[data-no]').onclick = () => close(false);
+    overlay.querySelector('[data-yes]').onclick = () => close(true);
+    overlay.onclick = (e) => { if (e.target === overlay) close(false); };
+    const kh = (e) => { if (e.key === 'Escape') close(false); else if (e.key === 'Enter') close(true); };
+    document.addEventListener('keydown', kh, true);
+  });
 }
 
 async function submitCricketDarts() {
@@ -819,7 +860,7 @@ function renderFBCezaliMatch(m) {
   const bottomBar = isReadonly ? '' : `
     ${modeBar}
     <div class="cr-bottom-bar">
-      <button class="cr-undo-btn" onclick="fbUndoDart()" ${fbDarts.length === 0 ? 'disabled' : ''}>← GERİ</button>
+      <button class="cr-undo-btn" onclick="fbUndoDart()" ${fbDarts.length === 0 && !m.cricket_undo_json ? 'disabled' : ''}>← GERİ</button>
       <div class="cr-dots">${dotsHtml}</div>
       <button class="cr-miss-btn" onclick="submitFBCezaliDarts()" ${fbDarts.length === 0 ? 'disabled' : ''}>Enter</button>
     </div>`;
@@ -944,16 +985,19 @@ function fbDart(target, mult) {
 function fbMiss() { fbDart(null, 0); }
 
 function fbUndoDart() {
-  if (fbDarts.length === 0) return;
-  const last = fbDarts.pop();
-  if (fbMetaMode && last && last.target != null && last.mult > 0) {
-    const N = parseInt(last.target);
-    if (!isNaN(N)) {
-      fbMetaScore -= last.mult * N;
-      if (fbMetaScore < 0) fbMetaScore = 0;
+  if (fbDarts.length > 0) {
+    const last = fbDarts.pop();
+    if (fbMetaMode && last && last.target != null && last.mult > 0) {
+      const N = parseInt(last.target);
+      if (!isNaN(N)) {
+        fbMetaScore -= last.mult * N;
+        if (fbMetaScore < 0) fbMetaScore = 0;
+      }
     }
+    renderMatch();
+    return;
   }
-  renderMatch();
+  cricketConfirmAndUndoLastVisit();
 }
 
 async function submitFBCezaliDarts() {
@@ -1118,7 +1162,7 @@ function renderKarambolMatch(m) {
 
   const bottomBar = isReadonly ? '' : `
     <div class="cr-bottom-bar">
-      <button class="cr-undo-btn" onclick="karambolUndoDart()" ${karambolDarts.length === 0 ? 'disabled' : ''}>← GERİ</button>
+      <button class="cr-undo-btn" onclick="karambolUndoDart()" ${karambolDarts.length === 0 && !m.cricket_undo_json ? 'disabled' : ''}>← GERİ</button>
       <div class="cr-dots">${dotsHtml}</div>
       <button class="cr-miss-btn" onclick="submitKarambolDarts()" ${karambolDarts.length === 0 ? 'disabled' : ''}>Enter</button>
     </div>`;
@@ -1165,9 +1209,12 @@ function karambolDart(target, mult) {
 function karambolMiss() { karambolDart(null, 0); }
 
 function karambolUndoDart() {
-  if (karambolDarts.length === 0) return;
-  karambolDarts.pop();
-  renderMatch();
+  if (karambolDarts.length > 0) {
+    karambolDarts.pop();
+    renderMatch();
+    return;
+  }
+  cricketConfirmAndUndoLastVisit();
 }
 
 async function submitKarambolDarts() {

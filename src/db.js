@@ -107,6 +107,7 @@ function init() {
       starter_slot INTEGER DEFAULT 1, -- which player throws first this leg
       current_turn INTEGER DEFAULT 1, -- 1 | 2
       cricket_state_json TEXT,        -- Cricket için marks durumu
+      cricket_undo_json TEXT,         -- Son visit öncesi snapshot (GERİ AL için)
       next_winner_match_id INTEGER,   -- bracket ilerletme
       next_winner_slot INTEGER,
       next_loser_match_id INTEGER,    -- double-elim
@@ -254,6 +255,10 @@ function init() {
   }
   if (!matchCols.includes('p2_sub_turn')) {
     try { db.exec('ALTER TABLE matches ADD COLUMN p2_sub_turn INTEGER DEFAULT 1'); } catch {}
+  }
+  // Cricket/FB/Karambol GERİ AL: son visit öncesi snapshot
+  if (!matchCols.includes('cricket_undo_json')) {
+    try { db.exec('ALTER TABLE matches ADD COLUMN cricket_undo_json TEXT'); } catch {}
   }
 
   // Visit başına dart sayısı: bitiren visit için 1/2/3 olabilir; eski kayıtlar için varsayılan 3.

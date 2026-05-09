@@ -334,12 +334,34 @@ app.post('/api/matches/:id/begin', (req, res) => {
   }
 });
 
+// Cricket/FB/Karambol için son visit öncesi snapshot — GERİ AL için
+function cricketUndoSnapshot(matchId) {
+  const m = db.matchById(matchId);
+  if (!m) return;
+  const snap = {
+    cricket_state_json: m.cricket_state_json || null,
+    current_turn: m.current_turn,
+    p1_legs: m.p1_legs,
+    p2_legs: m.p2_legs,
+    current_leg: m.current_leg,
+    p1_sets: m.p1_sets,
+    p2_sets: m.p2_sets,
+    current_set: m.current_set,
+    status: m.status,
+    winner_entry_id: m.winner_entry_id,
+    p1_sub_turn: m.p1_sub_turn,
+    p2_sub_turn: m.p2_sub_turn,
+  };
+  db.updateMatch(matchId, { cricket_undo_json: JSON.stringify(snap) });
+}
+
 // Cricket: bir visit (3 ok) kaydı — hits: {20: 2, 19: 1, ...}
 app.post('/api/matches/:id/cricket-throw', (req, res) => {
   try {
     const id = +req.params.id;
     const { playerSlot, hits } = req.body;
     if (!hits || typeof hits !== 'object') return res.status(400).json({ error: 'hits gerekli' });
+    cricketUndoSnapshot(id); // önce snapshot
     const result = engine.recordCricketVisit(id, playerSlot, hits);
     const m = db.matchById(id);
     if (m?.board_id) {
@@ -361,6 +383,7 @@ app.post('/api/matches/:id/fb-cezali-throw', (req, res) => {
     const id = +req.params.id;
     const { playerSlot, allocation } = req.body;
     if (!allocation || typeof allocation !== 'object') return res.status(400).json({ error: 'allocation gerekli' });
+    cricketUndoSnapshot(id);
     const result = engine.recordFBCezaliVisit(id, playerSlot, allocation);
     const m = db.matchById(id);
     if (m?.board_id) {
@@ -382,6 +405,7 @@ app.post('/api/matches/:id/karambol-throw', (req, res) => {
     const id = +req.params.id;
     const { playerSlot, allocation } = req.body;
     if (!allocation || typeof allocation !== 'object') return res.status(400).json({ error: 'allocation gerekli' });
+    cricketUndoSnapshot(id);
     const result = engine.recordKarambolVisit(id, playerSlot, allocation);
     const m = db.matchById(id);
     if (m?.board_id) {
@@ -392,6 +416,44 @@ app.post('/api/matches/:id/karambol-throw', (req, res) => {
     }
     broadcastState();
     res.json(result);
+  } catch (e) {
+    res.status(400).json({ error: e.message });
+  }
+});
+
+// Cricket/FB/Karambol — son visit'i geri al (snapshot'tan restore)
+app.post('/api/matches/:id/cricket-undo', (req, res) => {
+  try {
+    const id = +req.params.id;
+    const m = db.matchById(id);
+    if (!m) return res.status(404).json({ error: 'Maç bulunamadı' });
+    if (!m.cricket_undo_json) return res.status(400).json({ error: 'Geri alınacak visit yok' });
+    let snap;
+    try { snap = JSON.parse(m.cricket_undo_json); } catch { return res.status(400).json({ error: 'Snapshot bozuk' }); }
+    db.updateMatch(id, {
+      cricket_state_json: snap.cricket_state_json,
+      current_turn:      snap.current_turn,
+      p1_legs:           snap.p1_legs,
+      p2_legs:           snap.p2_legs,
+      current_leg:       snap.current_leg,
+      p1_sets:           snap.p1_sets,
+      p2_sets:           snap.p2_sets,
+      current_set:       snap.current_set,
+      status:            snap.status,
+      winner_entry_id:   snap.winner_entry_id,
+      p1_sub_turn:       snap.p1_sub_turn,
+      p2_sub_turn:       snap.p2_sub_turn,
+      cricket_undo_json: null, // tek seviye undo, kullanıldı
+    });
+    const updated = db.matchById(id);
+    if (updated?.board_id) {
+      io.to(`board:${updated.board_id}`).emit('board:state', {
+        board: db.boardById(updated.board_id),
+        match: updated,
+      });
+    }
+    broadcastState();
+    res.json({ ok: true });
   } catch (e) {
     res.status(400).json({ error: e.message });
   }
