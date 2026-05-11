@@ -170,7 +170,7 @@ function renderPreMatch() {
       </div>
       <a href="/board.html" class="btn secondary">Board değiştir</a>
     </div>
-    <div style="flex: 1; display: flex; flex-direction: column; justify-content: center; align-items: center; padding: 2rem; gap: 1.5rem;">
+    <div style="flex: 1; display: flex; flex-direction: column; justify-content: flex-start; align-items: center; padding: 1rem; gap: 1rem; overflow-y: auto; min-height: 0;">
       <div style="text-align: center;">
         <div style="font-size: 1rem; letter-spacing: 0.1em; color: var(--text-dim); text-transform: uppercase;">${tName}</div>
         <div style="font-size: 2.5rem; font-weight: 800; margin-top: 0.25rem; color: var(--accent);">${roundLabel}</div>
@@ -1319,7 +1319,7 @@ function renderPostMatch() {
       </div>
       <a href="/board.html" class="btn secondary">Board değiştir</a>
     </div>
-    <div style="flex: 1; display: flex; flex-direction: column; justify-content: center; align-items: center; padding: 2rem; gap: 1.5rem;">
+    <div style="flex: 1; display: flex; flex-direction: column; justify-content: flex-start; align-items: center; padding: 1rem; gap: 1rem; overflow-y: auto; min-height: 0;">
       <div style="text-align: center;">
         <div style="font-size: 1rem; letter-spacing: 0.15em; color: var(--text-dim); text-transform: uppercase;">Maç Sonucu</div>
         <div style="font-size: 2rem; font-weight: 800; margin-top: 0.25rem;">${m.round_label || ''}</div>

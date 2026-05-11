@@ -641,22 +641,28 @@ function renderX01Match(m) {
   const avg2 = G.darts[2] > 0 ? ((G.totalScore[2] / G.darts[2]) * 3).toFixed(1) : '—';
 
   const legHistory = G.history.filter(h => !h.type && h.leg === G.currentLeg);
-  const allVis1 = legHistory.filter(h => h.slot === 1);
-  const allVis2 = legHistory.filter(h => h.slot === 2);
-  const SHOW = 6;
-  const vis1 = allVis1.slice(-SHOW);
-  const vis2 = allVis2.slice(-SHOW);
+  const visits1 = legHistory.filter(h => h.slot === 1);
+  const visits2 = legHistory.filter(h => h.slot === 2);
+  const SHOW = 50;
+  const vis1 = visits1.slice(-SHOW);
+  const vis2 = visits2.slice(-SHOW);
   const visCount = Math.max(vis1.length, vis2.length, 0);
-  const visOffset = Math.max(allVis1.length, allVis2.length) - visCount;
-  let visitNums = '';
+  const visOffset = Math.max(visits1.length, visits2.length) - visCount;
+
+  // Her visit = tek satır: sol skor | ok sayısı | sağ skor — board.js ile aynı yapı
+  let visitRows = '';
   for (let i = 0; i < visCount; i++) {
-    visitNums += `<div class="dp-visit-num">${(visOffset + i + 1) * 3}</div>`;
+    const v1 = vis1[i];
+    const v2 = vis2[i];
+    const num = (visOffset + i + 1) * 3;
+    const cls1 = !v1 ? '' : (v1.bust ? ' bust' : (i === vis1.length - 1 ? ' last' : ''));
+    const cls2 = !v2 ? '' : (v2.bust ? ' bust' : (i === vis2.length - 1 ? ' last' : ''));
+    visitRows += `<div class="dp-visit-row">
+      <div class="dp-throw${cls1}">${v1 ? (v1.bust ? 'Bust' : v1.score) : ''}</div>
+      <div class="dp-visit-num">${num}</div>
+      <div class="dp-throw dp-throw-r${cls2}">${v2 ? (v2.bust ? 'Bust' : v2.score) : ''}</div>
+    </div>`;
   }
-  const buildThrows = (visits) => visits.map((v, i) => {
-    const isLast = i === visits.length - 1;
-    const cls = v.bust ? ' bust' : (isLast ? ' last' : '');
-    return `<div class="dp-throw${cls}">${v.bust ? 'Bust' : v.score}</div>`;
-  }).join('');
 
   root.innerHTML = `
     <div class="board-header">
@@ -683,15 +689,14 @@ function renderX01Match(m) {
           </div>
         </div>
       </div>
-      <div class="dp-scores">
-        <div class="dp-score-col${isTurn1 ? ' active' : ''}">
+      <div class="dp-scores${isTurn1 ? ' p1-active' : ' p2-active'}">
+        <div class="dp-rem-row">
           <div class="dp-rem">${rem1}</div>
-          <div class="dp-throws">${buildThrows(vis1)}</div>
+          <div></div>
+          <div class="dp-rem dp-rem-r">${rem2}</div>
         </div>
-        <div class="dp-middle">${visitNums}</div>
-        <div class="dp-score-col${!isTurn1 ? ' active' : ''}">
-          <div class="dp-rem">${rem2}</div>
-          <div class="dp-throws">${buildThrows(vis2)}</div>
+        <div class="dp-visit-table">
+          ${visitRows}
         </div>
       </div>
       <div class="dp-gap"></div>

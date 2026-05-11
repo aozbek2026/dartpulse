@@ -727,9 +727,10 @@ function showTournamentStats(id) {
 
   const overlay = document.createElement('div');
   overlay.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,0.75);display:flex;align-items:center;justify-content:center;z-index:9999;padding:1rem;';
+  overlay.onclick = (e) => { if (e.target === overlay) overlay.remove(); };
   overlay.innerHTML = `
-    <div style="background:var(--surface);border-radius:16px;padding:2rem;max-width:700px;width:100%;max-height:90vh;overflow-y:auto;position:relative;">
-      <button onclick="this.closest('[style]').remove()" style="position:absolute;top:1rem;right:1rem;background:none;border:none;color:var(--text-dim);font-size:1.5rem;cursor:pointer;line-height:1;">×</button>
+    <div onclick="event.stopPropagation()" style="background:var(--surface);border-radius:16px;padding:2rem;max-width:700px;width:100%;max-height:90vh;overflow-y:auto;position:relative;">
+      <button id="org-stats-close" style="position:absolute;top:1rem;right:1rem;background:none;border:none;color:var(--text-dim);font-size:1.5rem;cursor:pointer;line-height:1;">×</button>
       <h2 style="margin-bottom:0.25rem;">🏆 ${t.name}</h2>
       <div style="color:var(--text-dim);font-size:0.9rem;margin-bottom:1.5rem;">Turnuva istatistikleri</div>
 
@@ -768,6 +769,11 @@ function showTournamentStats(id) {
     </div>
   `;
   document.body.appendChild(overlay);
+  // Close button + Esc
+  const closeIt = () => overlay.remove();
+  overlay.querySelector('#org-stats-close').onclick = closeIt;
+  const escHandler = (e) => { if (e.key === 'Escape') { closeIt(); document.removeEventListener('keydown', escHandler); } };
+  document.addEventListener('keydown', escHandler);
 }
 
 async function deleteTournament(id) {

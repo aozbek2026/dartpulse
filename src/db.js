@@ -420,6 +420,18 @@ function updateTournament(id, fields) {
   db.prepare(sql).run(...updates.map(k => fields[k]), id);
 }
 function deleteTournament(id) {
+  // Bu turnuvanın maçlarına bağlı board'ları temizle (current_match_id NULL, idle)
+  // ÖNEMLİ: matches CASCADE ile silinmeden ÖNCE board ID'lerini topla
+  const matchIds = db.prepare('SELECT id FROM matches WHERE tournament_id = ?').all(id).map(r => r.id);
+  if (matchIds.length) {
+    const placeholders = matchIds.map(() => '?').join(',');
+    db.prepare(
+      `UPDATE boards SET current_match_id = NULL, status = 'idle' WHERE current_match_id IN (${placeholders})`
+    ).run(...matchIds);
+  }
+  // Bu turnuvaya direkt bağlı board'ların tournament_id'sini de NULL'la (FK SET NULL var ama emin olalım)
+  db.prepare('UPDATE boards SET tournament_id = NULL WHERE tournament_id = ?').run(id);
+  // Şimdi turnuva (ve CASCADE ile maçlar/entries/stages) silinir
   db.prepare('DELETE FROM tournaments WHERE id = ?').run(id);
 }
 
