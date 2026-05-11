@@ -37,6 +37,21 @@ app.use((req, res, next) => {
   next();
 });
 
+// Canonical host: production'da sadece CANONICAL_HOST üzerinden serve et,
+// diğer host'lardan (örn. *.onrender.com, eski domain) 301 ile yönlendir.
+// Env var ile değiştirilebilir; default dartcorepro.com.
+const CANONICAL_HOST = (process.env.CANONICAL_HOST || 'dartcorepro.com').toLowerCase();
+app.use((req, res, next) => {
+  if (process.env.NODE_ENV !== 'production') return next();
+  const raw = req.headers.host || '';
+  const host = raw.split(':')[0].toLowerCase();
+  // hem apex hem www kabul
+  if (host === CANONICAL_HOST || host === 'www.' + CANONICAL_HOST) return next();
+  // Sağlık kontrolü için /healthz hep cevap versin (Render check'leri için)
+  if (req.url === '/healthz') return next();
+  return res.redirect(301, 'https://' + CANONICAL_HOST + req.url);
+});
+
 app.use(express.json());
 
 // Session — multi-organizer için kimlik izolasyonu
