@@ -1,10 +1,10 @@
-# Dart Pulse — Agent Context
+# Dart Core Pro — Agent Context
 
 Bu dosya, kod tabanı üzerinde çalışacak ileri sürüm Claude ajanlarının (Sonnet/Haiku/Opus) hızlıca devralabilmesi için yazıldı. Lütfen iş başlamadan **önce** oku.
 
 ## Proje özeti
 
-Dart Pulse, Türkçe bir dart turnuvası yönetim sistemidir. Tek elemeli, çift elemeli ve round-robin formatlarını destekler; tablet üzerinden skor girişi yapılır, TV ekranında bracket gösterilir, organizatör tarayıcıdan kontrol eder.
+Dart Core Pro, Türkçe bir dart turnuvası yönetim sistemidir. Tek elemeli, çift elemeli ve round-robin formatlarını destekler; tablet üzerinden skor girişi yapılır, TV ekranında bracket gösterilir, organizatör tarayıcıdan kontrol eder.
 
 Şu an LAN'da çalışıyor (4 tablet + 1 Mac sunucu + 1 Windows TV). Kullanıcının orta-uzun vadeli hedefi: bunu Render üzerinde public web servisi olarak çalıştırmak, login olan herkes kendi turnuvasını oynatabilsin, ücretsiz sunmak, ileride Google AdSense + opsiyonel premium ($3-5/yıl) ile sunucu maliyetini karşılamak.
 
@@ -27,7 +27,7 @@ Dart Pulse, Türkçe bir dart turnuvası yönetim sistemidir. Tek elemeli, çift
 ## Klasör yapısı
 
 ```
-dart pulse/
+dart-core-pro/
 ├── server.js              # Express + Socket.IO + tüm endpoint'ler
 ├── src/
 │   ├── auth.js            # Kayıt/giriş, session middleware
