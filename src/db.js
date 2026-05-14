@@ -442,6 +442,15 @@ function addEntry(tournamentId, slot, player1Id, player2Id = null, seed = null) 
   ).run(tournamentId, slot, player1Id, player2Id, seed);
   return db.prepare('SELECT * FROM entries WHERE id = ?').get(info.lastInsertRowid);
 }
+// entry sıralamasını güncelle: orderedEntryIds dizisindeki sıra → slot 1, 2, 3, ...
+function updateEntrySlots(tournamentId, orderedEntryIds) {
+  const update = db.prepare('UPDATE entries SET slot = ? WHERE id = ? AND tournament_id = ?');
+  const tx = db.transaction(() => {
+    orderedEntryIds.forEach((id, i) => update.run(i + 1, id, tournamentId));
+  });
+  tx();
+}
+
 function entriesForTournament(tournamentId) {
   const rows = db.prepare('SELECT * FROM entries WHERE tournament_id = ? ORDER BY slot').all(tournamentId);
   return rows.map(r => ({
@@ -959,7 +968,7 @@ module.exports = {
   createPlayer, allPlayers, playerById, deletePlayer,
   createBoard, allBoards, boardById, deleteBoard, setBoardMatch, clearUserBoards, setBoardTournament,
   createTournament, allTournaments, tournamentById, updateTournamentStatus, updateTournament, deleteTournament,
-  addEntry, entriesForTournament, entryById,
+  addEntry, entriesForTournament, entryById, updateEntrySlots,
   createStage, stagesForTournament, stageById, updateStageStatus,
   createMatch, matchById, matchesForTournament, matchesForStage,
   activeMatches, pendingReadyMatches, updateMatch, setMatchEntry, walkoverMatch,

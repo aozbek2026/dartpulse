@@ -1638,3 +1638,118 @@ body.board-page #root.board-screen {
   .visit-score      { font-size: clamp(1rem, 2.6vmin, 1.6rem); }
   .visit-score.visit-last { font-size: clamp(1.2rem, 3.2vmin, 2rem); }
 }
+
+/* ===== Eşleşmeleri Düzenle Modalı ===== */
+.modal-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.72);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 9999;
+  padding: 1rem;
+  animation: fadeIn 0.15s ease;
+}
+
+.modal {
+  background: var(--bg-1, #1a1a2e);
+  border: 1px solid var(--border, #333);
+  border-radius: 12px;
+  padding: 1.5rem;
+  width: 100%;
+  max-height: 90vh;
+  overflow-y: auto;
+}
+
+.mep-modal {
+  max-width: 520px;
+}
+
+.mep-hint {
+  color: var(--text-dim, #888);
+  font-size: 0.85rem;
+  margin-bottom: 1rem;
+  line-height: 1.4;
+}
+
+.mep-toolbar {
+  display: flex;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+  margin-bottom: 1.2rem;
+}
+
+#mep-pairs {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.mep-row {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  padding: 0.4rem 0;
+  border-bottom: 1px solid var(--border, #333);
+}
+
+.mep-num {
+  color: var(--text-dim, #888);
+  font-size: 0.78rem;
+  min-width: 3.5rem;
+  flex-shrink: 0;
+}
+
+.mep-vs {
+  color: var(--text-dim, #888);
+  font-size: 0.78rem;
+  flex-shrink: 0;
+}
+
+.mep-chip {
+  flex: 1;
+  text-align: center;
+  padding: 0.45rem 0.7rem;
+  border-radius: 8px;
+  background: var(--bg-2, #252540);
+  border: 2px solid transparent;
+  font-size: clamp(0.82rem, 2vw, 0.95rem);
+  cursor: pointer;
+  transition: background 0.12s, border-color 0.12s, transform 0.08s;
+  user-select: none;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.mep-chip:hover {
+  background: var(--bg-3, #303055);
+}
+
+.mep-chip:active {
+  transform: scale(0.96);
+}
+
+.mep-chip.mep-sel {
+  border-color: #f59e0b;
+  background: rgba(245, 158, 11, 0.15);
+  color: #f59e0b;
+  font-weight: 600;
+}
+
+.mep-chip.mep-bye {
+  color: var(--text-dim, #888);
+  font-style: italic;
+  cursor: default;
+  pointer-events: none;
+  background: transparent;
+  border-color: transparent;
+}
+
+.mep-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 0.6rem;
+  margin-top: 1.2rem;
+}

@@ -15,6 +15,12 @@ window.api = {
     credentials: 'same-origin',
     body: JSON.stringify(body || {})
   }).then(r => r.json()),
+  put: (url, body) => fetch(url, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    credentials: 'same-origin',
+    body: JSON.stringify(body || {})
+  }).then(r => r.json()),
   del: (url) => fetch(url, { method: 'DELETE', credentials: 'same-origin' }).then(r => r.json()),
   request: (url, opts) => fetch(url, { credentials: 'same-origin', ...opts }).then(r => r.json()),
 };

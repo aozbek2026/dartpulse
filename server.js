@@ -279,6 +279,25 @@ app.patch('/api/tournaments/:id', auth.requireAuth, (req, res) => {
   }
 });
 
+// Katılımcı sırasını yeniden düzenle — sadece draft durumunda
+app.put('/api/tournaments/:id/entries/reorder', auth.requireAuth, (req, res) => {
+  try {
+    const t = db.tournamentById(+req.params.id);
+    if (!t) return res.status(404).json({ error: 'Turnuva bulunamadı' });
+    if (t.user_id !== req.user.id) return res.status(403).json({ error: 'Yetkisiz' });
+    if (t.status !== 'draft') return res.status(400).json({ error: 'Sadece taslak turnuvalar düzenlenebilir' });
+    const { order } = req.body; // entry ID'lerin yeni sıralanmış dizisi
+    if (!Array.isArray(order) || order.length === 0) {
+      return res.status(400).json({ error: 'Geçersiz sıralama dizisi' });
+    }
+    db.updateEntrySlots(+req.params.id, order);
+    broadcastState();
+    res.json({ ok: true });
+  } catch (e) {
+    res.status(400).json({ error: e.message });
+  }
+});
+
 app.delete('/api/tournaments/:id', auth.requireAuth, (req, res) => {
   const t = db.tournamentById(+req.params.id);
   if (t && t.user_id && t.user_id !== req.user.id) {

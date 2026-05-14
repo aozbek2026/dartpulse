@@ -1006,6 +1006,7 @@ function renderTournament(t) {
         </div>
         <div class="row">
           ${t.status === 'draft' ? `<button class="secondary" onclick="showTournamentSettings(${t.id})">⚙️ Ayarlar</button>` : ''}
+          ${t.status === 'draft' && t.entries.length >= 2 ? `<button class="secondary" onclick="showMatchEditModal(${t.id})">🔀 Eşleşmeleri Düzenle</button>` : ''}
           ${t.status === 'draft' ? `<button class="primary" onclick="startTournament(${t.id})">Başlat</button>` : ''}
           ${t.status !== 'draft' ? `<button class="secondary" onclick="toggleReport(${t.id})">📊 Rapor</button>` : ''}
           ${canFinishTournament(t) ? `<button class="btn" style="background: #22c55e; color: #000; font-weight: 700;" onclick="showTournamentStats(${t.id})">🏆 Turnuvayı Bitir</button>` : ''}
@@ -1237,6 +1238,160 @@ function entryLabelById(id) {
     if (e) return entryLabel(e);
   }
   return '?';
+}
+
+// ---- Eşleşmeleri Düzenle Modalı ----
+
+let _editTournamentId = null;   // hangi turnuvanın düzenleniyor
+let _editEntries = [];          // çalışma kopyası (slot sırasına göre)
+let _editSelected = null;       // click-to-swap: seçili entry id
+
+// İstemci tarafında 2'nin katlarına yuvarla (bracket boyutu için)
+function _nextPow2(n) {
+  let p = 1;
+  while (p < n) p *= 2;
+  return p;
+}
+
+// Standart turnuva tohumlaması: [1, N, N/2+1, N/2, ...]
+function _buildSeedOrder(n) {
+  if (n === 1) return [1];
+  const prev = _buildSeedOrder(n / 2);
+  const result = [];
+  for (const s of prev) {
+    result.push(s);
+    result.push(n + 1 - s);
+  }
+  return result;
+}
+
+function showMatchEditModal(tournamentId) {
+  const t = state.tournaments.find(x => x.id === tournamentId);
+  if (!t || t.status !== 'draft') return;
+  _editTournamentId = tournamentId;
+  _editEntries = [...t.entries].sort((a, b) => a.slot - b.slot);
+  _editSelected = null;
+  _renderMatchEditModal();
+}
+
+function _renderMatchEditModal() {
+  document.getElementById('match-edit-overlay')?.remove();
+
+  const t = state.tournaments.find(x => x.id === _editTournamentId);
+  if (!t) return;
+
+  const n = _editEntries.length;
+  const bracketSize = _nextPow2(n);
+  const pairs = [];
+  for (let i = 0; i < bracketSize; i += 2) {
+    pairs.push([_editEntries[i] ?? null, _editEntries[i + 1] ?? null]);
+  }
+
+  const pairsHtml = pairs.map((pair, mi) => {
+    const [e1, e2] = pair;
+    return `
+      <div class="mep-row">
+        <span class="mep-num">Maç ${mi + 1}</span>
+        ${_editEntryChip(e1)}
+        <span class="mep-vs">vs</span>
+        ${_editEntryChip(e2)}
+      </div>`;
+  }).join('');
+
+  const overlay = document.createElement('div');
+  overlay.id = 'match-edit-overlay';
+  overlay.className = 'modal-overlay';
+  overlay.innerHTML = `
+    <div class="modal mep-modal">
+      <h3 style="margin-bottom:0.4rem">🔀 Eşleşmeleri Düzenle</h3>
+      <p class="mep-hint">Bir isme bas → sarıya döner (seçili). Ardından başka bir isme bas → yer değişir.</p>
+      <div class="mep-toolbar">
+        <button class="secondary" onclick="_editShuffle()">🎲 Karıştır</button>
+        <button class="secondary" onclick="_editSortSeq()">🔢 Sıralı</button>
+        <button class="secondary" onclick="_editSortSeeded()">🏆 Seri Başı</button>
+      </div>
+      <div id="mep-pairs">${pairsHtml}</div>
+      <div class="mep-actions">
+        <button class="secondary" onclick="_closeMatchEditModal()">İptal</button>
+        <button class="primary" onclick="_saveMatchEdit()">Kaydet</button>
+      </div>
+    </div>`;
+
+  overlay.addEventListener('click', e => { if (e.target === overlay) _closeMatchEditModal(); });
+  document.body.appendChild(overlay);
+}
+
+function _editEntryChip(entry) {
+  if (!entry) return `<span class="mep-chip mep-bye">BYE</span>`;
+  const p1 = state.players.find(p => p.id === entry.player1_id);
+  const name = p1 ? (p1.nickname || p1.name) : '?';
+  const isSel = _editSelected === entry.id;
+  return `<span class="mep-chip${isSel ? ' mep-sel' : ''}" onclick="_editTap(${entry.id})">${name}</span>`;
+}
+
+function _editTap(entryId) {
+  if (_editSelected === null) {
+    _editSelected = entryId;
+  } else if (_editSelected === entryId) {
+    _editSelected = null; // aynısına basınca iptal
+  } else {
+    // swap
+    const ia = _editEntries.findIndex(e => e.id === _editSelected);
+    const ib = _editEntries.findIndex(e => e.id === entryId);
+    if (ia !== -1 && ib !== -1) {
+      [_editEntries[ia], _editEntries[ib]] = [_editEntries[ib], _editEntries[ia]];
+    }
+    _editSelected = null;
+  }
+  _renderMatchEditModal();
+}
+
+function _editShuffle() {
+  for (let i = _editEntries.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [_editEntries[i], _editEntries[j]] = [_editEntries[j], _editEntries[i]];
+  }
+  _editSelected = null;
+  _renderMatchEditModal();
+}
+
+function _editSortSeq() {
+  // Orijinal ekleniş sırasına dön (slot değerine göre sırala — sunucudaki mevcut slot)
+  const t = state.tournaments.find(x => x.id === _editTournamentId);
+  _editEntries = [...t.entries].sort((a, b) => a.slot - b.slot);
+  _editSelected = null;
+  _renderMatchEditModal();
+}
+
+function _editSortSeeded() {
+  // Standart 1-vs-N seri başı dağılımı
+  const n = _editEntries.length;
+  const bracketSize = _nextPow2(n);
+  const seedOrder = _buildSeedOrder(bracketSize); // [1, N, N/2+1, N/2, ...]
+  const original = [..._editEntries]; // mevcut sıra = "seed 1, seed 2, ..." kabul edilir
+  const result = [];
+  for (const seed of seedOrder) {
+    if (seed <= n) result.push(original[seed - 1]);
+  }
+  _editEntries = result;
+  _editSelected = null;
+  _renderMatchEditModal();
+}
+
+function _closeMatchEditModal() {
+  document.getElementById('match-edit-overlay')?.remove();
+  _editTournamentId = null;
+  _editEntries = [];
+  _editSelected = null;
+}
+
+async function _saveMatchEdit() {
+  if (!_editTournamentId) return;
+  const order = _editEntries.map(e => e.id);
+  const res = await api.put(`/api/tournaments/${_editTournamentId}/entries/reorder`, { order });
+  if (res.error) { toast('Hata: ' + res.error); return; }
+  toast('Eşleşmeler kaydedildi');
+  _closeMatchEditModal();
 }
 
 // Initial render

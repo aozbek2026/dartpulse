@@ -561,31 +561,22 @@ function nextPow2(n) {
   return p;
 }
 
-// Seri başı + kura: seed'liler seed değerine göre sıralı,
-// seed'sizler Fisher-Yates ile karıştırılıp arkaya eklenir
+// Seri başı + sıralama: seed'liler seed değerine göre öne alınır,
+// seed'sizler ekleniş sırasını korur (shuffle yok — varsayılan sıralı mod).
+// "Eşleşmeleri Düzenle" modali ile kullanıcı isterse sonradan karıştırabilir.
 function orderEntriesBySeed(entries) {
   const seeded = entries.filter(e => e.seed).slice().sort((a, b) => a.seed - b.seed);
-  const unseeded = entries.filter(e => !e.seed).slice();
-  // Fisher-Yates shuffle (kura)
-  for (let i = unseeded.length - 1; i > 0; i--) {
-    const j = Math.floor(Math.random() * (i + 1));
-    [unseeded[i], unseeded[j]] = [unseeded[j], unseeded[i]];
-  }
+  const unseeded = entries.filter(e => !e.seed).slice(); // ekleniş sırası korunur
   return [...seeded, ...unseeded];
 }
 
-// Seeds an array of entryIds into bracket positions with byes filled as null
+// Bracket pozisyonlarına ardışık yerleştirme: entryIds[0] slot 0, [1] slot 1, ...
+// Bye'lar en sona eklenir (son slot'lar null).
+// Not: seri başı dağılımı isteniyorsa "Eşleşmeleri Düzenle" → "Seri Başı" butonu kullanılır.
 function seedWithByes(entryIds, bracketSize) {
-  // Standard seeding order for bracketSize
-  const seeds = buildSeedOrder(bracketSize);
   const result = new Array(bracketSize).fill(null);
-  for (let i = 0; i < bracketSize; i++) {
-    const seed = seeds[i]; // 1..bracketSize
-    if (seed <= entryIds.length) {
-      result[i] = entryIds[seed - 1];
-    } else {
-      result[i] = null; // bye
-    }
+  for (let i = 0; i < entryIds.length; i++) {
+    result[i] = entryIds[i];
   }
   return result;
 }
