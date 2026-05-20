@@ -1127,6 +1127,28 @@ body.board-page #root.board-screen {
   font-size: clamp(9px, 2.6vw, 20px);
 }
 
+.dp-finish-row {
+  display: flex;
+  justify-content: center;
+  padding: clamp(4px, 1.5vmin, 10px) clamp(8px, 2vmin, 16px);
+  flex: 0 0 auto;
+}
+.dp-finish-btn {
+  background: transparent;
+  border: 1px solid var(--surface-3, #2a2f3a);
+  color: var(--text-dim);
+  font-size: clamp(11px, 2.5vmin, 14px);
+  padding: clamp(4px, 1.2vmin, 8px) clamp(14px, 3.5vmin, 24px);
+  border-radius: 8px;
+  cursor: pointer;
+  letter-spacing: 0.04em;
+  transition: border-color 0.15s, color 0.15s;
+}
+.dp-finish-btn:active {
+  border-color: #e74c3c;
+  color: #e74c3c;
+}
+
 .dp-safe {
   background: #0b0d14;
   height: max(env(safe-area-inset-bottom, 0px), 6px);

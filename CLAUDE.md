@@ -2,6 +2,9 @@
 
 Bu dosya, kod tabanı üzerinde çalışacak ileri sürüm Claude ajanlarının (Sonnet/Haiku/Opus) hızlıca devralabilmesi için yazıldı. Lütfen iş başlamadan **önce** oku.
 
+**Domain:** [dartcorepro.com](https://dartcorepro.com)  
+**Kaynak klasör (lokal):** `/Users/ahmetozbek/Desktop/dart core pro`
+
 ## Proje özeti
 
 Dart Core Pro, Türkçe bir dart turnuvası yönetim sistemidir. Tek elemeli, çift elemeli ve round-robin formatlarını destekler; tablet üzerinden skor girişi yapılır, TV ekranında bracket gösterilir, organizatör tarayıcıdan kontrol eder.
@@ -183,6 +186,74 @@ Bir takım maçı **3 aşamadan** oluşur. Her aşama opsiyoneldir (organizatör
 - Bracket/playoff aşaması opsiyonel (ileride)
 - Takım isimleri girilecek
 - Bir organizatör aynı anda birden fazla takım maçı yönetebilir (örn. aynı mekanda 4 takımın eş zamanlı maçları). Liste görünümünde her aktif takım maçı ayrı kart olarak gösterilir.
+
+## Lig & Sezon Sistemi — Tasarım Kararları (Mayıs 2026)
+
+Ayrıntılı mimari belge: `mimari_ozet.docx` (klasör kökünde)
+
+### İki format
+
+**Sezon (açık):** Her oturumda yeni oyuncu katılabilir. Organizatör sezon oluştururken kac oturum yapılacağını ve puan sistemini belirler. Bracket o gün gelenlere göre kurulur. Yeni oyuncu ilk katıldığı oturumdan itibaren klasmana girer.
+
+**Lig (kapalı):** Bastan belirlenmiş sabit kadro. Organizatör oyuncu listesini, oturum sayısını ve "herkes birbirleriyle kaç kez karşılaşsın" sayısını girer. Sistem eşleşmeleri planlar.
+
+### Hiyerarşi
+
+```
+competitions (lig/sezon)
+ └── sessions → her oturum mevcut tournaments tablosuna bağlanır
+      └── Bracket, tablet, skor: mevcut altyapı aynen çalışır
+ └── playoffs / Ustalar (Masters)
+ └── Genel Klasman + İstatistikler
+```
+
+### Veri modeli (yeni tablolar)
+
+- `competitions` — tip (`season`|`league`), kategori, puan sistemi (JSON), oturum sayısı, user_id
+- `competition_players` — oyuncu havuzu; birikimli puan + istatistikler; unique per competition
+- `sessions` — competition_id + tournament_id (mevcut tournaments'a FK) + session_number
+- `session_results` — oturum bitis pozisyonu + puan
+- `playoffs` — tip (`standard`|`masters`), katılımcılar (manuel seçim), kendi puan sistemi
+- `league_matchups` — (sadece lig) kimin kiminle kaç kez oynadığı
+
+**Kural:** Tüm yeni sorgular `user_id` ile scope edilmeli (mevcut kurala uygun).
+
+### Puan sistemi
+
+Sezon/lig oluşturulurken JSON olarak girilir: `{1: 10, 2: 7, 3: 5, "default": 1}`. Her sezon/lig farklı puan tablosuna sahip olabilir. Ustalar etkinliği için ayrı puan tablosu tanımlanır.
+
+### Playoff & Ustalar (Masters)
+
+- **Standart playoff:** Sezon bitince klasmandan ilk N oyuncu seçilir, bracket kurulur.
+- **Ustalar:** İki kategorinin en iyileri birleşir (Genç Erkekler + Erkekler → Erkekler Ustalar; Genç Kadınlar + Kadınlar → Kadınlar Ustalar). Kendi puan sistemi var. Nihai sıralama = Sezon puanı + Ustalar puanı. Katılımcılar klasman ekranından manuel seçilir.
+
+### Federasyon kullanımı
+
+Kategoriler: Minikler, Yıldızlar, Genç Erkekler, Genç Kadınlar, Kadınlar, Erkekler, Veteran, Engelli (handicap ileride).
+Her kategori bağımsız bir lig/sezon. Yılda 6 etkinlik, her etkinlik 4 gün, her gün = ayrı oturum = ayrı puan.
+Tek oturumda eş zamanlı 40 maça kadar destek gerekiyor (Socket.IO kaldırır).
+Organizatör yapısı: Faz 1'de tek admin hesabı yeterli. Faz 2'de alt-organizatör yetkilendirmesi eklenebilir.
+
+### Oyuncu istatistikleri (sezon boyunca birikimli)
+
+Klasman: toplam puan, oturum katılım oranı, maç G/M/%, leg G/M/%, 1./2./3. sayısı, podiyum sayısı, galibiyet serisi.
+Atış: sezon 3DA, en yüksek maç 3DA, en yüksek tek ziyaret (High Turn), en yüksek finish, ortalama finish, 180 / 140+ / 100+ sayıları.
+H2H (lig): iki oyuncu arası maç G/M + karşılıklı 3DA.
+
+### Raporlama
+
+- Canlı klasman sayfası (sezon boyunca anlık güncellenir)
+- Excel (.xlsx) raporu indirilebilir — klasman + maç geçmişi + istatistikler ayrı sekmeler
+- Federasyon için tüm kategoriler tek dosyada
+
+### Sonraya bırakılanlar
+
+- Handicap sistemi (kural seti netleştirilmedi)
+- Alt-organizatör yetkilendirmesi
+- Checkout yüzdesi (double deneme sayımı altyapısı gerektirir)
+- Multi-kategori federasyon dashboard'u (Faz 2)
+
+---
 
 ## Tamamlanmış major özellikler
 
