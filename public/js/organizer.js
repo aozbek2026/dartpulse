@@ -18,6 +18,89 @@ socket.on('state', (s) => {
   render();
 });
 
+// Çift eleme bracket reset: GF'de LB kazandı → leg sayısı sor → reset maçını oluştur
+socket.on('tournament:reset_needed', ({ tournamentId, gfMatchId, defaultLegs }) => {
+  showResetFinalModal(tournamentId, gfMatchId, defaultLegs);
+});
+
+function showResetFinalModal(tournamentId, gfMatchId, defaultLegs) {
+  // Zaten açık bir reset modal var mı?
+  if (document.getElementById('reset-final-modal')) return;
+
+  const overlay = document.createElement('div');
+  overlay.id = 'reset-final-modal';
+  overlay.style.cssText = `
+    position:fixed;inset:0;z-index:9000;
+    background:rgba(0,0,0,0.72);
+    display:flex;align-items:center;justify-content:center;
+  `;
+  overlay.innerHTML = `
+    <div style="
+      background:var(--surface);
+      border:1px solid var(--border);
+      border-radius:16px;
+      padding:2rem 2.25rem;
+      max-width:400px;width:92%;
+      box-shadow:0 24px 64px -16px rgba(0,0,0,0.7);
+    ">
+      <div style="font-size:1.5rem;margin-bottom:0.35rem;">🔄 Bracket Reset</div>
+      <p style="color:var(--text-dim);margin:0 0 1.25rem;font-size:0.95rem;line-height:1.5;">
+        Grand Final'i <strong>LB oyuncusu</strong> kazandı — iki oyuncu da 1'er mağlubiyetle eşit.<br>
+        Belirleyici maç oynanacak. Kaç leg oynansın?
+      </p>
+      <div style="display:flex;align-items:center;gap:0.75rem;margin-bottom:1.5rem;">
+        <label style="font-weight:600;font-size:0.95rem;white-space:nowrap;">Leg sayısı (kazanmak için):</label>
+        <input id="reset-legs-input" type="number" min="1" max="20" value="${defaultLegs || 2}"
+          style="width:70px;padding:0.5rem 0.6rem;border-radius:8px;border:1px solid var(--border);
+                 background:var(--surface-2);color:var(--text);font-size:1rem;text-align:center;" />
+      </div>
+      <div style="display:flex;gap:0.75rem;justify-content:flex-end;">
+        <button id="reset-confirm-btn" style="
+          background:linear-gradient(135deg,var(--accent),var(--accent-3));
+          color:#fff;border:0;border-radius:9px;
+          padding:0.7rem 1.5rem;font-weight:700;font-size:0.95rem;cursor:pointer;
+        ">Reset Maçını Oluştur</button>
+      </div>
+    </div>
+  `;
+  document.body.appendChild(overlay);
+
+  const input = document.getElementById('reset-legs-input');
+  input.focus();
+  input.select();
+
+  document.getElementById('reset-confirm-btn').onclick = async () => {
+    const legs = parseInt(input.value, 10);
+    if (!legs || legs < 1 || legs > 20) {
+      input.style.borderColor = 'var(--accent)';
+      input.focus();
+      return;
+    }
+    document.getElementById('reset-confirm-btn').disabled = true;
+    document.getElementById('reset-confirm-btn').textContent = 'Oluşturuluyor…';
+    try {
+      const r = await fetch(`/api/tournament/${tournamentId}/create-reset-final`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'same-origin',
+        body: JSON.stringify({ gfMatchId, legs_to_win: legs }),
+      });
+      const data = await r.json();
+      if (!r.ok) throw new Error(data.error || 'Hata');
+      overlay.remove();
+    } catch (err) {
+      alert('Reset maçı oluşturulamadı: ' + err.message);
+      document.getElementById('reset-confirm-btn').disabled = false;
+      document.getElementById('reset-confirm-btn').textContent = 'Reset Maçını Oluştur';
+    }
+  };
+
+  // Enter ile onayla
+  overlay.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter') document.getElementById('reset-confirm-btn').click();
+  });
+}
+
 // Tab switching
 document.querySelectorAll('.tab-link').forEach(a => {
   a.addEventListener('click', (e) => {

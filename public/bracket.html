@@ -937,10 +937,11 @@ function openMatch(id) {
     return;
   }
   editingMatchId = id;
-  const ltw = state.legsToWin;
+  // Reset maçının kendi leg sayısı varsa onu kullan, yoksa global ayarı al
+  const ltw = (m.legsToWin && m.legsToWin > 0) ? m.legsToWin : state.legsToWin;
   const bo = 2 * ltw - 1;
   document.getElementById('bb-modal-bg').hidden = false;
-  document.getElementById('bb-modal-meta').textContent = m.label || '';
+  document.getElementById('bb-modal-meta').textContent = (m.reset ? '🔄 RESET — ' : '') + (m.label || '');
   document.getElementById('bb-modal-bo').textContent = bo;
   document.getElementById('bb-modal-ltw').textContent = ltw;
   document.getElementById('bb-modal-clear').hidden = !m.played;
@@ -969,7 +970,8 @@ function saveMatchFromModal() {
   if (!m) return;
   const l1 = +document.getElementById('bb-l1').value || 0;
   const l2 = +document.getElementById('bb-l2').value || 0;
-  const ltw = state.legsToWin;
+  // Reset maçının kendi leg sayısı varsa onu kullan
+  const ltw = (m.legsToWin && m.legsToWin > 0) ? m.legsToWin : state.legsToWin;
   if (l1 < 0 || l2 < 0 || l1 > ltw || l2 > ltw) {
     alert(`Leg sayısı 0 - ${ltw} arasında olmalı.`); return;
   }
@@ -1039,13 +1041,21 @@ function handleDoubleElimGF(m) {
     const wbWinner = b.gf.p1;
     const lbWinner = b.gf.p2;
     if (m.winner === lbWinner) {
-      // LB winner won → reset match needed
+      // LB winner won → reset match needed → leg sayısı sor
+      const defLegs = state.legsToWin || 2;
+      const ans = prompt(
+        `🔄 BRACKET RESET\n\nGrand Final'i LB oyuncusu (${lbWinner}) kazandı.\nİki oyuncu da 1'er mağlubiyetle eşit — belirleyici maç oynanacak.\n\nReset maçı kaç leg (kazanmak için)? Varsayılan: ${defLegs}`,
+        defLegs
+      );
+      const resetLegs = (ans !== null && parseInt(ans, 10) > 0) ? parseInt(ans, 10) : defLegs;
+      b.reset.legsToWin = resetLegs;
       b.reset.hidden = false;
       b.reset.p1 = wbWinner;
       b.reset.p2 = lbWinner;
     } else {
       // WB winner won → tournament over
       b.reset.hidden = true;
+      b.reset.legsToWin = null;
     }
   }
 }

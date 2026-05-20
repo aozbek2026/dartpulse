@@ -611,16 +611,25 @@ app.post('/api/matches/:id/throw', (req, res) => {
         // Takım maçı — ayrı işleyici
         onTeamMatchFinished(matchId, m);
       } else {
-        tournament.onMatchFinished(matchId);
-        const t = m ? db.tournamentById(m.tournament_id) : null;
-        if (t && t.status === 'finished') {
-          const boards = db.allBoards(t.user_id);
-          db.clearUserBoards(t.user_id);
-          for (const b of boards) {
-            io.to(`board:${b.id}`).emit('board:state', { board: { ...b, current_match_id: null, status: 'idle' }, match: null });
-          }
+        const resetInfo = tournament.onMatchFinished(matchId);
+        if (resetInfo && resetInfo.needsResetFinal) {
+          // GF bitti, LB kazandı → organizatörden leg sayısı bekle
+          io.emit('tournament:reset_needed', {
+            tournamentId: resetInfo.tournamentId,
+            gfMatchId: resetInfo.gfMatchId,
+            defaultLegs: resetInfo.defaultLegs,
+          });
         } else {
-          scheduler.assignPendingMatches(io, t?.user_id || null);
+          const t = m ? db.tournamentById(m.tournament_id) : null;
+          if (t && t.status === 'finished') {
+            const boards = db.allBoards(t.user_id);
+            db.clearUserBoards(t.user_id);
+            for (const b of boards) {
+              io.to(`board:${b.id}`).emit('board:state', { board: { ...b, current_match_id: null, status: 'idle' }, match: null });
+            }
+          } else {
+            scheduler.assignPendingMatches(io, t?.user_id || null);
+          }
         }
       }
       broadcastState();
@@ -648,21 +657,51 @@ app.post('/api/matches/:id/walkover', (req, res) => {
     if (updated && updated.team_phase_match_id) {
       onTeamMatchFinished(matchId, updated);
     } else {
-      tournament.onMatchFinished(matchId);
-      const t = updated ? db.tournamentById(updated.tournament_id) : null;
-      if (t && t.status === 'finished') {
-        const boards = db.allBoards(t.user_id);
-        db.clearUserBoards(t.user_id);
-        for (const b of boards) {
-          io.to(`board:${b.id}`).emit('board:state', { board: { ...b, current_match_id: null, status: 'idle' }, match: null });
-        }
+      const resetInfo = tournament.onMatchFinished(matchId);
+      if (resetInfo && resetInfo.needsResetFinal) {
+        io.emit('tournament:reset_needed', {
+          tournamentId: resetInfo.tournamentId,
+          gfMatchId: resetInfo.gfMatchId,
+          defaultLegs: resetInfo.defaultLegs,
+        });
       } else {
-        scheduler.assignPendingMatches(io, t?.user_id || null);
+        const t = updated ? db.tournamentById(updated.tournament_id) : null;
+        if (t && t.status === 'finished') {
+          const boards = db.allBoards(t.user_id);
+          db.clearUserBoards(t.user_id);
+          for (const b of boards) {
+            io.to(`board:${b.id}`).emit('board:state', { board: { ...b, current_match_id: null, status: 'idle' }, match: null });
+          }
+        } else {
+          scheduler.assignPendingMatches(io, t?.user_id || null);
+        }
       }
     }
     io.emit('match:update', { matchId });
     broadcastState();
     res.json({ ok: true });
+  } catch (e) {
+    res.status(400).json({ error: e.message });
+  }
+});
+
+// Bracket Reset — organizatör leg sayısını seçip onaylayınca reset maçını oluşturur
+app.post('/api/tournament/:id/create-reset-final', auth.requireAuth, (req, res) => {
+  try {
+    const tId = +req.params.id;
+    const t = db.tournamentById(tId);
+    if (!t) return res.status(404).json({ error: 'Turnuva bulunamadı' });
+    if (t.user_id !== req.session.userId) return res.status(403).json({ error: 'Erişim reddedildi' });
+    const { gfMatchId, legs_to_win } = req.body;
+    if (!gfMatchId) return res.status(400).json({ error: 'gfMatchId gerekli' });
+    const legsNum = legs_to_win ? +legs_to_win : null;
+    if (legsNum !== null && (isNaN(legsNum) || legsNum < 1 || legsNum > 20)) {
+      return res.status(400).json({ error: 'Geçersiz leg sayısı (1-20 arası)' });
+    }
+    const resetMatch = tournament.createResetFinal(+gfMatchId, legsNum);
+    scheduler.assignPendingMatches(io, req.session.userId);
+    broadcastState();
+    res.json({ ok: true, matchId: resetMatch.id });
   } catch (e) {
     res.status(400).json({ error: e.message });
   }
