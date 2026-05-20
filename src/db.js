@@ -495,8 +495,8 @@ function createMatch(m) {
     (tournament_id, stage_id, bracket, round, match_index, entry1_id, entry2_id, status,
      next_winner_match_id, next_winner_slot, next_loser_match_id, next_loser_slot,
      p1_leg_score, p2_leg_score, legs_to_win, sets_to_win, group_index,
-     p1_sub_turn, p2_sub_turn)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+     p1_sub_turn, p2_sub_turn, is_reset_final)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
   `).run(
     m.tournament_id, m.stage_id, m.bracket, m.round, m.match_index,
     m.entry1_id || null, m.entry2_id || null, m.status || 'pending',
@@ -506,6 +506,7 @@ function createMatch(m) {
     m.legs_to_win || null, m.sets_to_win || null,
     m.group_index ?? null,
     1, 1,
+    m.is_reset_final ? 1 : 0,
   );
   const id = info.lastInsertRowid;
   // Match stats init
