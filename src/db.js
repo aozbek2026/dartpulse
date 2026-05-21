@@ -214,6 +214,114 @@ function init() {
       PRIMARY KEY(match_id, player_slot),
       FOREIGN KEY(match_id) REFERENCES matches(id) ON DELETE CASCADE
     );
+
+    -- =========================================================
+    --  LIG & SEZON SISTEMI (Dilim 1: temel tablolar)
+    -- =========================================================
+    -- Bir competition: ya bir sezon (acik katilim) ya da bir lig (kapali kadro).
+    -- Birden fazla oturum (session) icerir. Her oturum mevcut tournaments tablosuna baglanir.
+    CREATE TABLE IF NOT EXISTS competitions (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      user_id INTEGER,
+      name TEXT NOT NULL,
+      type TEXT NOT NULL DEFAULT 'season',     -- 'season' | 'league'
+      category TEXT,                           -- 'Erkekler' | 'Kadinlar' | 'Genc Erkekler' | ... (federasyon)
+      planned_sessions INTEGER DEFAULT 1,      -- kac oturum yapilacak
+      meet_count INTEGER DEFAULT 1,            -- (sadece lig) herkes birbiriyle kac kez
+      game_mode TEXT DEFAULT '501',            -- varsayilan oyun modu (her oturumda override edilebilir)
+      team_mode TEXT DEFAULT 'singles',        -- 'singles' | 'doubles'
+      legs_to_win INTEGER DEFAULT 2,           -- varsayilan
+      sets_to_win INTEGER DEFAULT 1,
+      points_json TEXT,                        -- {"1":10,"2":7,"3":5,"default":1}
+      status TEXT DEFAULT 'draft',             -- draft | running | finished
+      config_json TEXT,                        -- ek opsiyonel ayarlar
+      created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+      FOREIGN KEY(user_id) REFERENCES users(id) ON DELETE CASCADE
+    );
+
+    -- Bu competition'a kayitli oyuncu havuzu. Sezonda dinamik (oturumda eklenir),
+    -- ligde bastan sabit. Birikimli puan & istatistikler burada tutulur.
+    CREATE TABLE IF NOT EXISTS competition_players (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      competition_id INTEGER NOT NULL,
+      player_id INTEGER NOT NULL,
+      joined_session INTEGER DEFAULT 1,        -- ilk katildigi oturum numarasi
+      total_points REAL DEFAULT 0,
+      sessions_played INTEGER DEFAULT 0,
+      matches_won INTEGER DEFAULT 0,
+      matches_lost INTEGER DEFAULT 0,
+      legs_won INTEGER DEFAULT 0,
+      legs_lost INTEGER DEFAULT 0,
+      first_place INTEGER DEFAULT 0,
+      second_place INTEGER DEFAULT 0,
+      third_place INTEGER DEFAULT 0,
+      stats_json TEXT,                         -- atis istatistikleri (3DA, 180, vs)
+      UNIQUE(competition_id, player_id),
+      FOREIGN KEY(competition_id) REFERENCES competitions(id) ON DELETE CASCADE,
+      FOREIGN KEY(player_id) REFERENCES players(id) ON DELETE CASCADE
+    );
+
+    -- Bir oturum: bir competition icindeki tek bir gun/hafta.
+    -- NOT: Tablo adi 'competition_sessions' (kasitli) - express-session'in
+    --      kendi 'sessions' tablosu ile cakismamasi icin.
+    -- Bracket mevcut tournaments tablosunda yasar; biz sadece referans tutariz.
+    CREATE TABLE IF NOT EXISTS competition_sessions (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      competition_id INTEGER NOT NULL,
+      user_id INTEGER,
+      session_number INTEGER NOT NULL,
+      tournament_id INTEGER,                   -- bu oturumun bracket'inin oldugu turnuva
+      name TEXT,                               -- "1. Oturum", "Hafta 2", vs
+      session_date TEXT,                       -- planlanan tarih (TEXT YYYY-MM-DD)
+      status TEXT DEFAULT 'pending',           -- pending | running | finished
+      created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+      finished_at TEXT,
+      FOREIGN KEY(competition_id) REFERENCES competitions(id) ON DELETE CASCADE,
+      FOREIGN KEY(tournament_id) REFERENCES tournaments(id) ON DELETE SET NULL
+    );
+
+    -- Oturum bitince her oyuncunun aldigi pozisyon ve puan.
+    CREATE TABLE IF NOT EXISTS session_results (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      session_id INTEGER NOT NULL,             -- competition_sessions.id
+      competition_id INTEGER NOT NULL,
+      player_id INTEGER NOT NULL,
+      position INTEGER,                        -- 1, 2, 3, ...
+      points REAL DEFAULT 0,
+      UNIQUE(session_id, player_id),
+      FOREIGN KEY(session_id) REFERENCES competition_sessions(id) ON DELETE CASCADE,
+      FOREIGN KEY(competition_id) REFERENCES competitions(id) ON DELETE CASCADE,
+      FOREIGN KEY(player_id) REFERENCES players(id) ON DELETE CASCADE
+    );
+
+    -- Sadece lig formatinda: kimin kiminle kac kez oynadigi (planlama icin).
+    CREATE TABLE IF NOT EXISTS league_matchups (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      competition_id INTEGER NOT NULL,
+      player1_id INTEGER NOT NULL,
+      player2_id INTEGER NOT NULL,
+      meetings_played INTEGER DEFAULT 0,
+      meetings_planned INTEGER DEFAULT 0,
+      UNIQUE(competition_id, player1_id, player2_id),
+      FOREIGN KEY(competition_id) REFERENCES competitions(id) ON DELETE CASCADE
+    );
+
+    -- Sezon/lig sonu playoff veya Ustalar etkinligi.
+    CREATE TABLE IF NOT EXISTS playoffs (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      user_id INTEGER,
+      name TEXT NOT NULL,
+      playoff_type TEXT DEFAULT 'standard',    -- 'standard' | 'masters'
+      source_competition_id INTEGER,           -- standart playoff: kaynak sezon/lig
+      source_competitions_json TEXT,           -- masters: birden fazla competition birlesimi
+      participants_json TEXT,                  -- manuel secilen oyuncu ID'leri
+      points_json TEXT,                        -- bu playoff'a ozel puan tablosu
+      tournament_id INTEGER,                   -- bracket'in oldugu turnuva
+      status TEXT DEFAULT 'draft',
+      created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+      FOREIGN KEY(user_id) REFERENCES users(id) ON DELETE CASCADE,
+      FOREIGN KEY(tournament_id) REFERENCES tournaments(id) ON DELETE SET NULL
+    );
   `);
 
   // Mevcut DB'ler için kolon ekle (yeni install'lar CREATE TABLE'dan alır)
@@ -310,6 +418,108 @@ function init() {
   if (!userCols.includes('reset_token_expires')) {
     try { db.exec("ALTER TABLE users ADD COLUMN reset_token_expires INTEGER"); } catch {}
   }
+
+  // --- Lig & Sezon migrasyonlari ---
+  //
+  // ONEMLI HOTFIX (Mayis 2026): 'sessions' tablosu, express-session middleware
+  // tarafindan oturum cookie depolama icin kullanilir. Bu tablonun semasi
+  // BetterSQLiteStore (server.js icinde) tarafindan tanimlanan tam set olmali:
+  //    sid TEXT PRIMARY KEY, sess TEXT NOT NULL, expired_at INTEGER NOT NULL
+  //
+  // Mevcut DB'de eski bir session library'sinden kalma yanlis semayla tablo
+  // olabilir (ornek: 'sid, expired, sess' - connect-sqlite3 stili).
+  // Bu durumda DROP edip yeniden yaratiyoruz.
+  // Yan etki: aktif oturum cookie'leri gecersiz olur, kullanicilar yeniden giris yapar.
+  try {
+    const sessRows = db.prepare("SELECT name FROM sqlite_master WHERE type='table' AND name='sessions'").all();
+    if (sessRows.length > 0) {
+      const sessCols = db.prepare("PRAGMA table_info(sessions)").all().map(c => c.name);
+      const isCorrect = sessCols.includes('sid')
+                     && sessCols.includes('sess')
+                     && sessCols.includes('expired_at');
+      if (!isCorrect) {
+        console.warn(`[db] HOTFIX: "sessions" tablosu yanlis sema (kolonlar: ${sessCols.join(', ')}). DROP + yeniden yarat.`);
+        db.exec('DROP TABLE sessions');
+        db.exec(`CREATE TABLE sessions (
+          sid TEXT PRIMARY KEY,
+          sess TEXT NOT NULL,
+          expired_at INTEGER NOT NULL
+        )`);
+        console.warn('[db] HOTFIX: "sessions" tablosu express-session semasiyla yeniden yaratildi. Eski cookie\'ler gecersiz - tekrar giris yapilmali.');
+      }
+    }
+  } catch (e) {
+    console.error('[db] sessions tablo hotfix hatasi:', e.message);
+  }
+
+  // HOTFIX-2: session_results tablosu, ilk surumde 'sessions(id)' tablosuna
+  // FK ile bagliydi. Sonra 'sessions' tablosu express-session semasiyla yeniden
+  // yaratildi (id kolonu yok, sid var). Bu yuzden session_results'in FK
+  // tanimi gecersiz — express-session INSERT'lerinde "foreign key mismatch"
+  // hatasi atiyor. session_results bos oldugu icin DROP + yeniden yarat.
+  try {
+    const srRows = db.prepare("SELECT name FROM sqlite_master WHERE type='table' AND name='session_results'").all();
+    if (srRows.length > 0) {
+      const sql = db.prepare("SELECT sql FROM sqlite_master WHERE type='table' AND name='session_results'").pluck().get() || '';
+      const referencesOldSessions = /REFERENCES\s+sessions\s*\(/i.test(sql)
+                                  && !/REFERENCES\s+competition_sessions\s*\(/i.test(sql);
+      if (referencesOldSessions) {
+        console.warn('[db] HOTFIX-2: session_results tablosu eski sessions(id) FK ile yaratilmis. Yeniden yaratiliyor.');
+        db.exec('DROP TABLE session_results');
+        db.exec(`
+          CREATE TABLE session_results (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            session_id INTEGER NOT NULL,
+            competition_id INTEGER NOT NULL,
+            player_id INTEGER NOT NULL,
+            position INTEGER,
+            points REAL DEFAULT 0,
+            UNIQUE(session_id, player_id),
+            FOREIGN KEY(session_id) REFERENCES competition_sessions(id) ON DELETE CASCADE,
+            FOREIGN KEY(competition_id) REFERENCES competitions(id) ON DELETE CASCADE,
+            FOREIGN KEY(player_id) REFERENCES players(id) ON DELETE CASCADE
+          )
+        `);
+        console.warn('[db] HOTFIX-2: session_results yeniden yaratildi, FK artik competition_sessions(id) gosteriyor.');
+      }
+    }
+  } catch (e) {
+    console.error('[db] session_results FK hotfix hatasi:', e.message);
+  }
+
+  // HOTFIX-3 (Mayis 2026): Orphan board_id temizligi.
+  // Onceki deleteBoard() sadece boards satirini siliyor, maclarin board_id'sini
+  // temizlemiyordu. Sonuc: silinen board'a atanmis aktif mac, scheduler
+  // tarafindan yeniden atanamaz hale geliyordu (pendingReadyMatches !m.board_id
+  // istiyor). Bu blok, var olmayan board'lara referans veren tum mac satirlarini
+  // NULL'a ceker. deleteBoard() artik bu temizligi inline yapiyor, ama mevcut
+  // DB'lerdeki birikmis orphan'lari kurtarmak icin tek seferlik bu migrasyon.
+  try {
+    const orphanCount = db.prepare(`
+      SELECT COUNT(*) AS c FROM matches
+      WHERE board_id IS NOT NULL
+        AND board_id NOT IN (SELECT id FROM boards)
+    `).get().c;
+    if (orphanCount > 0) {
+      db.prepare(`
+        UPDATE matches SET board_id = NULL
+        WHERE board_id IS NOT NULL
+          AND board_id NOT IN (SELECT id FROM boards)
+      `).run();
+      console.warn(`[db] HOTFIX-3: ${orphanCount} mac silinen board'a referans veriyordu, board_id NULL'a cekildi. Scheduler bir sonraki tick'te yeniden atayacak.`);
+    }
+  } catch (e) {
+    console.error('[db] HOTFIX-3 orphan board_id temizligi hatasi:', e.message);
+  }
+
+  // (Diger lig/sezon tablolari yenidir; CREATE TABLE IF NOT EXISTS bloklari halleder.
+  //  Ileride competitions/competition_sessions/competition_players tablolarina
+  //  kolon eklenecek olursa buraya geriye donuk uyumlu ALTER TABLE'lar eklenmeli.)
+  // Ornek pattern:
+  //   const compCols = db.prepare("PRAGMA table_info(competitions)").all().map(c => c.name);
+  //   if (!compCols.includes('yeni_kolon')) {
+  //     try { db.exec('ALTER TABLE competitions ADD COLUMN yeni_kolon TEXT'); } catch {}
+  //   }
 }
 
 // --- Users ---
@@ -373,6 +583,10 @@ function boardById(id) {
   return db.prepare('SELECT * FROM boards WHERE id = ?').get(id);
 }
 function deleteBoard(id) {
+  // Board silmeden once o board'a atanmis maclarin board_id'sini NULL yap.
+  // Aksi halde silinen board'a "bagli" gorunen mac, scheduler tarafindan
+  // yeniden atanmaz (pendingReadyMatches filtresi !m.board_id istiyor).
+  db.prepare('UPDATE matches SET board_id = NULL WHERE board_id = ?').run(id);
   db.prepare('DELETE FROM boards WHERE id = ?').run(id);
 }
 function setBoardMatch(boardId, matchId) {
@@ -934,6 +1148,213 @@ function clearUserBoards(userId) {
   ).run(userId);
 }
 
+// =========================================================
+//  LIG & SEZON helper fonksiyonlari
+//  Hepsi multi-tenant: user_id ile scope edilir.
+// =========================================================
+
+// --- Competitions ---
+function createCompetition(data) {
+  const info = db.prepare(`
+    INSERT INTO competitions
+      (user_id, name, type, category, planned_sessions, meet_count,
+       game_mode, team_mode, legs_to_win, sets_to_win, points_json, config_json)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+  `).run(
+    data.user_id || null,
+    data.name,
+    data.type || 'season',
+    data.category || null,
+    data.planned_sessions || 1,
+    data.meet_count || 1,
+    data.game_mode || '501',
+    data.team_mode || 'singles',
+    data.legs_to_win || 2,
+    data.sets_to_win || 1,
+    typeof data.points_json === 'string'
+      ? data.points_json
+      : JSON.stringify(data.points_json || { '1': 10, '2': 7, '3': 5, 'default': 1 }),
+    data.config_json || null,
+  );
+  return db.prepare('SELECT * FROM competitions WHERE id = ?').get(info.lastInsertRowid);
+}
+
+function allCompetitions(userId = null) {
+  if (userId == null) {
+    return db.prepare('SELECT * FROM competitions ORDER BY id DESC').all();
+  }
+  return db.prepare(
+    'SELECT * FROM competitions WHERE user_id = ? ORDER BY id DESC'
+  ).all(userId);
+}
+
+function competitionById(id, userId = null) {
+  if (userId == null) {
+    return db.prepare('SELECT * FROM competitions WHERE id = ?').get(id);
+  }
+  return db.prepare(
+    'SELECT * FROM competitions WHERE id = ? AND user_id = ?'
+  ).get(id, userId);
+}
+
+function updateCompetition(id, userId, fields) {
+  const allowed = ['name', 'category', 'planned_sessions', 'meet_count',
+                   'game_mode', 'team_mode', 'legs_to_win', 'sets_to_win',
+                   'points_json', 'status', 'config_json'];
+  const keys = Object.keys(fields).filter(k => allowed.includes(k));
+  if (!keys.length) return null;
+  const vals = keys.map(k => {
+    const v = fields[k];
+    // points_json/config_json: obje gelirse stringle
+    if ((k === 'points_json' || k === 'config_json') && v && typeof v !== 'string') {
+      return JSON.stringify(v);
+    }
+    return v;
+  });
+  const sql = `UPDATE competitions SET ${keys.map(k => `${k} = ?`).join(', ')}
+               WHERE id = ? AND user_id = ?`;
+  db.prepare(sql).run(...vals, id, userId);
+  return competitionById(id, userId);
+}
+
+function deleteCompetition(id, userId) {
+  db.prepare('DELETE FROM competitions WHERE id = ? AND user_id = ?').run(id, userId);
+}
+
+// --- Competition Players ---
+function addCompetitionPlayer(competitionId, playerId, joinedSession = 1) {
+  try {
+    const info = db.prepare(`
+      INSERT INTO competition_players (competition_id, player_id, joined_session)
+      VALUES (?, ?, ?)
+    `).run(competitionId, playerId, joinedSession);
+    return db.prepare('SELECT * FROM competition_players WHERE id = ?').get(info.lastInsertRowid);
+  } catch (e) {
+    // UNIQUE constraint: zaten eklenmis
+    return db.prepare(
+      'SELECT * FROM competition_players WHERE competition_id = ? AND player_id = ?'
+    ).get(competitionId, playerId);
+  }
+}
+
+function competitionPlayers(competitionId) {
+  return db.prepare(`
+    SELECT cp.*, p.name AS player_name, p.nickname AS player_nickname
+    FROM competition_players cp
+    JOIN players p ON p.id = cp.player_id
+    WHERE cp.competition_id = ?
+    ORDER BY cp.total_points DESC, p.name ASC
+  `).all(competitionId);
+}
+
+function removeCompetitionPlayer(competitionId, playerId) {
+  db.prepare(
+    'DELETE FROM competition_players WHERE competition_id = ? AND player_id = ?'
+  ).run(competitionId, playerId);
+}
+
+// --- Competition Sessions (oturumlar) ---
+// NOT: Tablo adi 'competition_sessions' - express-session'in 'sessions'
+//      tablosuyla cakismamasi icin. JS API'leri kisa adda kalir.
+function createSession(data) {
+  const info = db.prepare(`
+    INSERT INTO competition_sessions
+      (competition_id, user_id, session_number, tournament_id, name, session_date, status)
+    VALUES (?, ?, ?, ?, ?, ?, ?)
+  `).run(
+    data.competition_id,
+    data.user_id || null,
+    data.session_number,
+    data.tournament_id || null,
+    data.name || null,
+    data.session_date || null,
+    data.status || 'pending',
+  );
+  return db.prepare('SELECT * FROM competition_sessions WHERE id = ?').get(info.lastInsertRowid);
+}
+
+function sessionsForCompetition(competitionId) {
+  return db.prepare(
+    'SELECT * FROM competition_sessions WHERE competition_id = ? ORDER BY session_number ASC'
+  ).all(competitionId);
+}
+
+function sessionById(id) {
+  return db.prepare('SELECT * FROM competition_sessions WHERE id = ?').get(id);
+}
+
+function updateSession(id, fields) {
+  const allowed = ['session_number', 'tournament_id', 'name', 'session_date',
+                   'status', 'finished_at'];
+  const keys = Object.keys(fields).filter(k => allowed.includes(k));
+  if (!keys.length) return;
+  const sql = `UPDATE competition_sessions SET ${keys.map(k => `${k} = ?`).join(', ')} WHERE id = ?`;
+  db.prepare(sql).run(...keys.map(k => fields[k]), id);
+}
+
+function deleteSession(id) {
+  db.prepare('DELETE FROM competition_sessions WHERE id = ?').run(id);
+}
+
+// --- Session Results ---
+function recordSessionResult(sessionId, competitionId, playerId, position, points) {
+  // INSERT OR REPLACE (UNIQUE on session_id+player_id)
+  db.prepare(`
+    INSERT INTO session_results (session_id, competition_id, player_id, position, points)
+    VALUES (?, ?, ?, ?, ?)
+    ON CONFLICT(session_id, player_id) DO UPDATE SET
+      position = excluded.position,
+      points = excluded.points
+  `).run(sessionId, competitionId, playerId, position, points);
+}
+
+function resultsForSession(sessionId) {
+  return db.prepare(
+    'SELECT * FROM session_results WHERE session_id = ? ORDER BY position ASC'
+  ).all(sessionId);
+}
+
+// Belirli bir oturumun session_results kaydi olup olmadigini hizlica dondurur.
+// finalize endpoint'i + sessions listesi flag'i icin.
+function sessionHasResults(sessionId) {
+  const row = db.prepare(
+    'SELECT 1 AS x FROM session_results WHERE session_id = ? LIMIT 1'
+  ).get(sessionId);
+  return !!row;
+}
+
+// Birikimli competition_players istatistik artirimi.
+// delta: { total_points, sessions_played, matches_won, matches_lost, legs_won, legs_lost,
+//         first_place, second_place, third_place }
+// Eksik anahtarlar 0 sayilir. Tek bir UPDATE'le tum alanlari artirir.
+function addToCompetitionPlayerStats(competitionId, playerId, delta) {
+  const d = delta || {};
+  db.prepare(`
+    UPDATE competition_players SET
+      total_points     = COALESCE(total_points, 0)     + ?,
+      sessions_played  = COALESCE(sessions_played, 0)  + ?,
+      matches_won      = COALESCE(matches_won, 0)      + ?,
+      matches_lost     = COALESCE(matches_lost, 0)     + ?,
+      legs_won         = COALESCE(legs_won, 0)         + ?,
+      legs_lost        = COALESCE(legs_lost, 0)        + ?,
+      first_place      = COALESCE(first_place, 0)      + ?,
+      second_place     = COALESCE(second_place, 0)     + ?,
+      third_place      = COALESCE(third_place, 0)      + ?
+    WHERE competition_id = ? AND player_id = ?
+  `).run(
+    +d.total_points || 0,
+    +d.sessions_played || 0,
+    +d.matches_won || 0,
+    +d.matches_lost || 0,
+    +d.legs_won || 0,
+    +d.legs_lost || 0,
+    +d.first_place || 0,
+    +d.second_place || 0,
+    +d.third_place || 0,
+    competitionId, playerId
+  );
+}
+
 // --- User token fonksiyonları ---
 function setVerifyToken(userId, token) {
   db.prepare('UPDATE users SET verify_token = ? WHERE id = ?').run(token, userId);
@@ -981,4 +1402,10 @@ module.exports = {
   createTeamPhaseMatch, matchesForPhase, teamPhaseMatchById, updateTeamPhaseMatch,
   deleteTeamPhaseMatch, recalcTeamScores,
   getOrCreateTeamPool, getOrCreatePlayerByName, teamPhaseMatchByMatchId,
+  // Lig & Sezon
+  createCompetition, allCompetitions, competitionById, updateCompetition, deleteCompetition,
+  addCompetitionPlayer, competitionPlayers, removeCompetitionPlayer,
+  createSession, sessionsForCompetition, sessionById, updateSession, deleteSession,
+  recordSessionResult, resultsForSession, sessionHasResults,
+  addToCompetitionPlayerStats,
 };
