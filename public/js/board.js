@@ -131,6 +131,9 @@ function renderBoardPicker() {
 }
 
 function renderIdle() {
+  const tour = allTournaments.find(t => t.id === currentBoard.tournament_id);
+  const tourName = tour ? (tour.name.startsWith('__team_pool_') ? 'Takım Maçı' : tour.name) : null;
+
   root.innerHTML = `
     <div class="board-header">
       <div>
@@ -139,10 +142,12 @@ function renderIdle() {
       </div>
       <a href="/board.html" class="btn secondary">Board değiştir</a>
     </div>
-    <div style="flex: 1; display: flex; align-items: center; justify-content: center; flex-direction: column; gap: 1rem;">
-      <div style="font-size: 5rem;">🎯</div>
-      <h2>Maç bekleniyor</h2>
-      <p style="color: var(--text-dim);">Organizatör turnuva başlattığında sıradaki maç otomatik gelecek.</p>
+    <div style="flex: 1; display: flex; align-items: center; justify-content: center; flex-direction: column; gap: clamp(0.75rem, 2vmin, 1.5rem); text-align: center; padding: 1rem;">
+      <div style="font-size: clamp(3rem, 8vmin, 6rem);">🎯</div>
+      ${tourName ? `<div style="font-size: clamp(1.1rem, 3.5vmin, 2rem); color: var(--text-dim); letter-spacing: 0.08em; text-transform: uppercase; font-weight: 600;">${tourName}</div>` : ''}
+      <div style="font-size: clamp(2.5rem, 9vmin, 6rem); font-weight: 900; line-height: 1.1; color: var(--accent);">${currentBoard.name}</div>
+      <div style="font-size: clamp(1.2rem, 4vmin, 2.2rem); font-weight: 700; margin-top: 0.25rem;">Maç bekleniyor</div>
+      <p style="color: var(--text-dim); font-size: clamp(0.85rem, 2.5vmin, 1.1rem); margin-top: 0.25rem;">Organizatör sıradaki maçı atadığında otomatik başlayacak.</p>
     </div>
   `;
 }
