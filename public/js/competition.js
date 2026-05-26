@@ -632,13 +632,19 @@ function renderSessionRow(s) {
   const recorded = !!s.results_recorded;
   const dateStr = s.session_date ? formatDate(s.session_date) : '';
 
+  // Dilim 5c-1: Ustalar (Masters) oturumu rozeti
+  const mastersBadge = s.is_masters
+    ? '<span style="margin-left:0.5rem;font-size:0.7rem;background:linear-gradient(135deg,#facc15,#f59e0b);color:#000;padding:0.1rem 0.55rem;border-radius:10px;font-weight:700">🏆 USTALAR</span>'
+    : '';
+
   return `
-    <div class="player-row" style="align-items:flex-start;flex-direction:column;gap:0.4rem">
+    <div class="player-row" style="align-items:flex-start;flex-direction:column;gap:0.4rem${s.is_masters ? ';border-left:3px solid #f59e0b;padding-left:0.7rem' : ''}">
       <div style="display:flex;justify-content:space-between;align-items:flex-start;width:100%;flex-wrap:wrap;gap:0.4rem">
         <div>
           <div class="pname">
             <span style="color:var(--text-dim);min-width:1.8em;display:inline-block">${s.session_number}.</span>
             ${escapeHtml(s.name || `${s.session_number}. Oturum`)}
+            ${mastersBadge}
             ${recorded ? '<span style="margin-left:0.5rem;font-size:0.7rem;background:#16a34a;color:#fff;padding:0.1rem 0.5rem;border-radius:10px;font-weight:600">KLASMANDA</span>' : ''}
           </div>
           <div class="pmeta">
@@ -725,22 +731,213 @@ function toggleNewSessionForm() {
     const fmtRow = document.getElementById('ns-format-row');
     const fmtSpacer = document.getElementById('ns-format-row-spacer');
     const partSec = document.getElementById('ns-participants-section');
+    const masterSec = document.getElementById('ns-masters-section');
     if (isLeague) {
-      // Lig: sadece ad + tarih, format ve katılımcı gizli
+      // Lig: sadece ad + tarih, format/katılımcı/Ustalar gizli
       if (fmtRow) fmtRow.style.display = 'none';
       if (fmtSpacer) fmtSpacer.style.display = 'none';
       if (partSec) partSec.style.display = 'none';
+      if (masterSec) masterSec.style.display = 'none';
     } else {
-      // Sezon: tam form
+      // Sezon: tam form (Ustalar bölümü dahil)
       if (fmtRow) fmtRow.style.display = '';
       if (fmtSpacer) fmtSpacer.style.display = '';
       if (partSec) partSec.style.display = '';
+      if (masterSec) masterSec.style.display = '';
       document.getElementById('ns-format').value = 'single_elim';
       renderParticipantPicker();
+      // Ustalar bölümünü sıfırla (kapalı başlasın)
+      const cb = document.getElementById('ns-is-masters');
+      if (cb) cb.checked = false;
+      const pts = document.getElementById('ns-masters-points');
+      if (pts) pts.style.display = 'none';
+      const roster = document.getElementById('ns-masters-roster');
+      if (roster) roster.style.display = 'none';
+      STATE.mastersRoster = [];
+      renderMastersGrid();
     }
   }
 }
 window.toggleNewSessionForm = toggleNewSessionForm;
+
+// ── Ustalar (Masters) puan tablosu ────────────────────────────────
+// 1–8. pozisyon için input grid'i render eder. Varsayılan değerler
+// sezon puanının yaklaşık 2 katı (federasyon mantığı: Ustalar = sezonun
+// son oturumu, daha yüksek puan dağıtır).
+function renderMastersGrid() {
+  const grid = document.getElementById('ns-masters-grid');
+  if (!grid) return;
+  const base = (STATE.comp && STATE.comp.points_json) || {};
+  const defaults = { 1: 20, 2: 14, 3: 10, 4: 8, 5: 6, 6: 4, 7: 3, 8: 2 };
+  let html = '';
+  for (let i = 1; i <= 8; i++) {
+    const baseVal = base[String(i)] != null ? +base[String(i)] : null;
+    const sugg = baseVal != null ? Math.max(baseVal * 2, defaults[i]) : defaults[i];
+    html += `
+      <div style="display:flex;align-items:center;gap:0.4rem">
+        <label style="font-size:0.82rem;color:var(--text-dim);min-width:30px">${i}.</label>
+        <input type="number" class="ns-masters-pt" data-pos="${i}" min="0" step="1" value="${sugg}" style="width:65px" />
+      </div>
+    `;
+  }
+  grid.innerHTML = html;
+  const defInput = document.getElementById('ns-masters-default');
+  if (defInput) {
+    const baseDef = base['default'] != null ? +base['default'] : 1;
+    defInput.value = Math.max(baseDef * 2, 2);
+  }
+}
+
+// Ustalar modu açılınca: puan tablosu + roster göster, normal katılımcı listesi gizle.
+// Kapanınca: tersine.
+function toggleMastersMode() {
+  const cb = document.getElementById('ns-is-masters');
+  const ptsBlock = document.getElementById('ns-masters-points');
+  const rosterBlock = document.getElementById('ns-masters-roster');
+  const regularPart = document.getElementById('ns-participants-section');
+  if (!cb) return;
+  if (ptsBlock) ptsBlock.style.display = cb.checked ? 'block' : 'none';
+  if (rosterBlock) rosterBlock.style.display = cb.checked ? 'block' : 'none';
+  if (regularPart) regularPart.style.display = cb.checked ? 'none' : '';
+  if (cb.checked) {
+    renderMastersGrid();
+    initMastersRoster();
+  }
+}
+window.toggleMastersMode = toggleMastersMode;
+
+// Form'dan Ustalar puan tablosunu çıkarır: { "1": 20, "2": 14, ..., "default": 2 }
+function readMastersPoints() {
+  const obj = {};
+  document.querySelectorAll('.ns-masters-pt').forEach(inp => {
+    const pos = inp.dataset.pos;
+    const v = +inp.value;
+    if (Number.isFinite(v) && v >= 0) obj[pos] = v;
+  });
+  const defEl = document.getElementById('ns-masters-default');
+  const defV = defEl ? +defEl.value : NaN;
+  if (Number.isFinite(defV) && defV >= 0) obj['default'] = defV;
+  return obj;
+}
+
+// ── Ustalar katılımcı roster'ı (top-N + manuel swap/remove) ──────
+// STATE.mastersRoster: [player_id, player_id, ...] — gönderilecek katılımcı listesi
+function initMastersRoster() {
+  const pool = (STATE.players || []).slice();
+  if (!pool.length) {
+    STATE.mastersRoster = [];
+    document.getElementById('ns-masters-pool-info').textContent = 'Havuzda oyuncu yok — önce Oyuncular sekmesinden ekle';
+    document.getElementById('ns-masters-roster-list').innerHTML = '';
+    document.getElementById('ns-masters-roster-count').textContent = '';
+    return;
+  }
+  // N varsayılan: 8 ama havuzdan büyükse havuz boyutu
+  const nInput = document.getElementById('ns-masters-n');
+  let n = +nInput.value || 8;
+  if (n > pool.length) n = pool.length;
+  if (n < 2) n = Math.min(2, pool.length);
+  nInput.value = n;
+  nInput.max = pool.length;
+
+  // Klasman sırası (total_points DESC, tiebreaker: matches_won, sessions_played, name)
+  const sorted = pool.slice().sort((a, b) => {
+    const ap = +a.total_points || 0, bp = +b.total_points || 0;
+    if (ap !== bp) return bp - ap;
+    const aw = +a.matches_won || 0, bw = +b.matches_won || 0;
+    if (aw !== bw) return bw - aw;
+    const as = +a.sessions_played || 0, bs = +b.sessions_played || 0;
+    if (as !== bs) return bs - as;
+    return String(a.player_name || '').localeCompare(String(b.player_name || ''), 'tr');
+  });
+  STATE.mastersRoster = sorted.slice(0, n).map(p => p.player_id);
+  renderMastersRoster();
+}
+
+function onMastersNChange() {
+  // N değişince roster top-N'den yeniden hesaplanır (manuel swap'lar sıfırlanır)
+  initMastersRoster();
+}
+window.onMastersNChange = onMastersNChange;
+
+function renderMastersRoster() {
+  const listEl = document.getElementById('ns-masters-roster-list');
+  const countEl = document.getElementById('ns-masters-roster-count');
+  const poolInfo = document.getElementById('ns-masters-pool-info');
+  if (!listEl) return;
+  const pool = STATE.players || [];
+  const byId = new Map(pool.map(p => [p.player_id, p]));
+  // "Manuel" = otomatik top-N'de olmayan oyuncu (swap göstergesi için)
+  const sorted = pool.slice().sort((a, b) => (+b.total_points || 0) - (+a.total_points || 0));
+  const autoTopN = new Set(sorted.slice(0, STATE.mastersRoster.length).map(p => p.player_id));
+
+  if (poolInfo) poolInfo.textContent = `(Havuzda ${pool.length} oyuncu var)`;
+  const rows = STATE.mastersRoster.map((pid, idx) => {
+    const p = byId.get(pid);
+    const name = p ? p.player_name : `(silinmiş #${pid})`;
+    const pts = p ? (+p.total_points || 0) : 0;
+    const isManual = !autoTopN.has(pid);
+    return `
+      <div class="ns-masters-row" data-idx="${idx}" style="display:flex;align-items:center;gap:0.5rem;padding:0.3rem 0.5rem;background:rgba(255,255,255,0.02);border-radius:6px">
+        <span style="min-width:2em;color:var(--text-dim);font-size:0.85rem">${idx + 1}.</span>
+        <span style="flex:1;font-size:0.9rem">${escapeHtml(name)}${p && p.player_nickname ? ` <span style="color:var(--text-dim);font-size:0.8rem">(${escapeHtml(p.player_nickname)})</span>` : ''}</span>
+        <span style="font-size:0.78rem;color:var(--text-dim);min-width:5em;text-align:right">${pts} puan</span>
+        ${isManual ? '<span style="font-size:0.7rem;background:#3b82f6;color:#fff;padding:0.1rem 0.4rem;border-radius:8px">manuel</span>' : ''}
+        <button onclick="swapMastersSlot(${idx})" style="font-size:0.75rem;padding:0.2rem 0.5rem">Değiştir</button>
+        <button class="danger" onclick="removeMastersSlot(${idx})" style="font-size:0.75rem;padding:0.2rem 0.5rem">Çıkar</button>
+      </div>
+    `;
+  });
+  listEl.innerHTML = rows.join('') || '<p style="color:var(--text-dim);font-size:0.85rem;margin:0">Liste boş — sayıyı artır veya oyuncu ekle</p>';
+  if (countEl) countEl.textContent = `Toplam: ${STATE.mastersRoster.length} katılımcı`;
+}
+
+function swapMastersSlot(idx) {
+  // Bu slot'u dropdown'a dönüştür — pool'dan rosterde olmayanları göster
+  const row = document.querySelector(`.ns-masters-row[data-idx="${idx}"]`);
+  if (!row) return;
+  const usedSet = new Set(STATE.mastersRoster);
+  usedSet.delete(STATE.mastersRoster[idx]); // bu slot'un kendisi seçilebilir kalsın
+  const available = (STATE.players || []).filter(p => !usedSet.has(p.player_id));
+  const opts = available.map(p =>
+    `<option value="${p.player_id}" ${p.player_id === STATE.mastersRoster[idx] ? 'selected' : ''}>${escapeHtml(p.player_name)} (${(+p.total_points || 0)} puan)</option>`
+  ).join('');
+  row.innerHTML = `
+    <span style="min-width:2em;color:var(--text-dim);font-size:0.85rem">${idx + 1}.</span>
+    <select class="ns-masters-swap-sel" style="flex:1;font-size:0.88rem">${opts}</select>
+    <button class="primary" onclick="applyMastersSwap(${idx})" style="font-size:0.75rem;padding:0.2rem 0.6rem">Kaydet</button>
+    <button onclick="renderMastersRoster()" style="font-size:0.75rem;padding:0.2rem 0.5rem">Vazgeç</button>
+  `;
+}
+window.swapMastersSlot = swapMastersSlot;
+
+function applyMastersSwap(idx) {
+  const row = document.querySelector(`.ns-masters-row[data-idx="${idx}"]`);
+  if (!row) return;
+  const sel = row.querySelector('.ns-masters-swap-sel');
+  if (!sel) return;
+  const newId = +sel.value;
+  if (!Number.isFinite(newId) || newId <= 0) { toast('Geçersiz oyuncu'); return; }
+  if (STATE.mastersRoster.includes(newId) && STATE.mastersRoster[idx] !== newId) {
+    toast('Bu oyuncu zaten listede');
+    return;
+  }
+  STATE.mastersRoster[idx] = newId;
+  renderMastersRoster();
+}
+window.applyMastersSwap = applyMastersSwap;
+
+function removeMastersSlot(idx) {
+  if (STATE.mastersRoster.length <= 2) {
+    toast('Ustalar için en az 2 oyuncu gerekli');
+    return;
+  }
+  STATE.mastersRoster.splice(idx, 1);
+  // N input'unu da güncelle
+  const nInput = document.getElementById('ns-masters-n');
+  if (nInput) nInput.value = STATE.mastersRoster.length;
+  renderMastersRoster();
+}
+window.removeMastersSlot = removeMastersSlot;
 
 function todayISO() {
   const d = new Date();
@@ -788,15 +985,34 @@ async function submitNewSession() {
     // Lig: sadece ad + tarih — server container session yaratır
     body = { name: name || null, session_date };
   } else {
-    // Sezon: format + katılımcı gerekli
+    // Sezon: format gerekli; katılımcı kaynağı Ustalar mı normal mi'ye göre değişir
     const format = document.getElementById('ns-format').value;
-    const ids = Array.from(document.querySelectorAll('.ns-part-cb:checked'))
-      .map(c => +c.value);
+    const isMastersCb = document.getElementById('ns-is-masters');
+    const isMasters = !!(isMastersCb && isMastersCb.checked);
+
+    let ids;
+    if (isMasters) {
+      // Ustalar: roster'dan al
+      ids = Array.isArray(STATE.mastersRoster) ? STATE.mastersRoster.slice() : [];
+    } else {
+      // Normal: checkbox listesinden al
+      ids = Array.from(document.querySelectorAll('.ns-part-cb:checked')).map(c => +c.value);
+    }
     if (ids.length < 2) {
-      toast('En az 2 katılımcı seçmelisin');
+      toast(isMasters ? 'Ustalar için en az 2 oyuncu gerekli' : 'En az 2 katılımcı seçmelisin');
       return;
     }
     body = { name: name || null, session_date, format, participant_player_ids: ids };
+
+    if (isMasters) {
+      const pts = readMastersPoints();
+      if (Object.keys(pts).length === 0) {
+        toast('Ustalar puan tablosu boş — en az 1. pozisyon puanını gir');
+        return;
+      }
+      body.is_masters = true;
+      body.points_override_json = pts;
+    }
   }
 
   // Submit butonunu devre dışı bırak (çift tıklama + takılma önlemi)
@@ -903,7 +1119,7 @@ async function openFinalizeModal(sid) {
     return;
   }
 
-  const confirmed = await showFinalizeModal(standings);
+  const confirmed = await showFinalizeModal(standings, { isMasters: !!preview.is_masters });
   if (!confirmed) return;
 
   // POST finalize
@@ -949,7 +1165,9 @@ function downloadReport() {
 }
 window.downloadReport = downloadReport;
 
-function showFinalizeModal(standings) {
+function showFinalizeModal(standings, opts) {
+  opts = opts || {};
+  const isMasters = !!opts.isMasters;
   return new Promise((resolve) => {
     const overlay = document.createElement('div');
     overlay.style.cssText = `
@@ -959,11 +1177,13 @@ function showFinalizeModal(standings) {
       padding:1rem;
     `;
     overlay.innerHTML = `
-      <div style="background:var(--bg, #1a1a1a);border:1px solid var(--border, rgba(255,255,255,0.1));border-radius:12px;max-width:520px;width:100%;max-height:85vh;display:flex;flex-direction:column;overflow:hidden">
-        <div style="padding:1rem 1.2rem;border-bottom:1px solid var(--border, rgba(255,255,255,0.08))">
-          <h3 style="margin:0">Sonuçları Klasmana İşle</h3>
+      <div style="background:var(--bg, #1a1a1a);border:1px solid ${isMasters ? '#f59e0b' : 'var(--border, rgba(255,255,255,0.1))'};border-radius:12px;max-width:520px;width:100%;max-height:85vh;display:flex;flex-direction:column;overflow:hidden">
+        <div style="padding:1rem 1.2rem;border-bottom:1px solid var(--border, rgba(255,255,255,0.08))${isMasters ? ';background:linear-gradient(135deg,rgba(250,204,21,0.08),rgba(245,158,11,0.04))' : ''}">
+          <h3 style="margin:0">${isMasters ? '🏆 Ustalar — Sonuçları Klasmana İşle' : 'Sonuçları Klasmana İşle'}</h3>
           <p style="margin:0.3rem 0 0 0;color:var(--text-dim);font-size:0.85rem">
-            Aşağıdaki sıralama otomatik hesaplandı. Onaylarsan klasmana işlenir ve geri alınamaz.
+            ${isMasters
+              ? 'Bu Ustalar oturumu — özel (yüksek) puan tablosu uygulanır. Onaylarsan klasmana işlenir ve geri alınamaz.'
+              : 'Aşağıdaki sıralama otomatik hesaplandı. Onaylarsan klasmana işlenir ve geri alınamaz.'}
           </p>
         </div>
         <div style="padding:0.6rem 1.2rem;overflow-y:auto;flex:1">

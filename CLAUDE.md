@@ -361,10 +361,48 @@ Detay: Kod konvansiyonu #8'e bak.
 - Bug fix: `submitNewSession()` lig için katılımcı koleksiyonunu atlar (form takılıp kalıyordu). Submit butonu istek sırasında devre dışı.
 - Bug fix: `leagueSchedule()` `session_status` döndürmüyordu → done/active sayaçları hep 0'dı. Düzeltildi.
 
-**Bekleyen — Dilim 5a, 5c, 5d:**
+**✅ Dilim 5a — Excel (.xlsx) raporu (Mayıs 2026, tamam):**
+- Backend: `src/competition-report.js` + `GET /api/competitions/:id/report.xlsx` (`server.js:1570`). `xlsx` (SheetJS) paketi (saf JS).
+- 4 sekme: Klasman, oturum sonuçları, maç dökümü, atış istatistikleri.
+- Frontend: `competition.html` üst barda "📊 Excel İndir" butonu (`downloadReport()` → yeni sekmede dosya indirir).
 
-5a. **Excel (.xlsx) raporu** — federasyon için kritik. Klasman + oturum sonuçları + maç dökümü ayrı sekmeler. `exceljs` veya `xlsx` (SheetJS) paketi gerekli, ikisi de saf JS (native değil). Backend: `GET /api/competitions/:id/report.xlsx` → buffer döndür. Frontend: detay sayfası üstüne "📊 Excel İndir" butonu.
-5c. **Playoff & Ustalar (Masters)** — sezon biten kadrodan top-N seçip yeni bracket (yeni tournament + `playoffs` tablosu kaydı). Ustalar: iki competition'ın klasmanlarını birleştirip manuel seçim. Kendi puan tablosu. Sezon end-to-end oynanmadan tam test edilemez.
+**Bekleyen — Dilim 5c, 5d:**
+
+5c. **Ustalar (Masters) + Playoff** — iki ayrı kavram, ayrı uygulama. Tasarım kararları (26 Mayıs 2026, kullanıcıyla netleşti):
+
+  **5c-1: Ustalar (Masters)** — federasyon-kritik, **sıradaki iş bu**.
+  - Konsept: "Sezonun son oturumu, sadece daha yüksek puan veriyor"
+  - Ayrı entity DEĞİL — mevcut `competition_sessions` altyapısının özel bir varyantı
+  - Uygulama: `competition_sessions` tablosuna `points_override_json` (TEXT, nullable) + `is_masters` (INTEGER, DEFAULT 0) kolonları
+  - Frontend: yeni oturum formunda "🏆 Ustalar oturumu" checkbox + checked ise ayrı puan tablosu input
+  - Backend: finalize'da `session.points_override_json` varsa onu kullan, yoksa `competition.points_json`
+  - Puanlar **kalıcı** olarak `competition_players.total_points`'e eklenir (mevcut session finalize akışı)
+  - Klasman/oturum listesinde 🏆 rozet
+  - Dış kategori oyuncu daveti **yok** (şimdilik) — sadece sezonun kendi oyuncu havuzundan katılım. İhtiyaç netleşirse sonra eklenir.
+  - **Katılımcı seçimi:** Klasmandan otomatik top-N + manuel değiştirme/çıkarma.
+    - Organizatör "Ustalar'a kaç oyuncu katılacak?" sayısını girer (varsayılan 8)
+    - Mevcut competition_players klasmanından (total_points DESC) ilk N otomatik seçilir
+    - Her satırda "Değiştir" → o slot için pool'daki kalan oyuncular dropdown'da, biri seçilir (gelmeyen oyuncu yerine başkası gelirse)
+    - Her satırda "Çıkar" → slot listeden silinir (toplam katılımcı azalır)
+    - N input değişince roster top-N'den yeniden hesaplanır (manuel swap'lar sıfırlanır)
+    - Submit: server'a normal `participant_player_ids[]` olarak gönderilir (mevcut endpoint)
+  - Tahmini iş: 1.5-2 saat (tamamen frontend — backend zaten hazır)
+
+  **5c-2: Playoff** — sezon/lig finalinde opsiyonel, federasyonca daha az kullanılır.
+  - Ayrı entity — `playoffs` tablosu kullanılır (Dilim 1'de yaratıldı, kolon ekleme gerekebilir)
+  - Format: tek eleme, çift eleme, RR, RR+tek eleme, RR+çift eleme (5 seçenek)
+  - Entry mode: otomatik top-N veya manuel seçim (oluşturma anında seçtirilir)
+  - Klasman: **ayrı** — sezona karışmaz. `competition_players.total_points` etkilenmez. Playoff'un kendi `standings_json`'u var.
+  - Tek oturum (bir playoff = bir gün = bir turnuva)
+  - Bracket üretimi: mevcut `tournament.createTournament` + `_createMatch` wrapper kullanılır
+  - UI: `competition.html`'e yeni "🏆 Playoff" sekmesi (5.)
+  - Tahmini iş: 4-5 saat
+
+  **Temel ayrım (federasyon mantığı):**
+  - Ustalar puanı sezona EKLENİR (additive) — "Genel klasmana eklediği değer daha fazla, normal bir oturumdan daha fazla puan veriyor"
+  - Playoff puanı sezona EKLENMEZ (separate) — sezon klasmanı dokunulmaz, playoff kendi başına yarış
+  - Federasyon çoğunlukla Sezon + Ustalar kullanır (her etkinlikte); Playoff opsiyonel finalde tercih edilir
+
 5d. **Gelişmiş istatistikler** — şu an `match_stats` per-tournament bazında atılıyor (3DA, 180, 140+, 100+, highest finish). `competition_players.stats_json`'a birikimli aktarım için finalize endpoint'i genişletilmeli + klasmana yeni sütunlar/expandable satır. `tournamentPlayerReport(id)` zaten ihtiyacımız olan veriyi veriyor.
 
 ---
@@ -520,6 +558,7 @@ Görev numaralarıyla birlikte (TaskList sisteminde): #1-#46. Önemli olanlar:
 - Lig/Sezon sistemi Dilim 1-4: DB + CRUD + oyuncu havuzu + oturum yaşam döngüsü + klasman (Mayıs 2026, ayrı bölüme bak)
 - Lig planlama Dilim 5b: Berger/circle-method round-robin planlama, `league_schedule` tablosu, `league_day` oturum tipi, `session.html` round başlatma akışı (Mayıs 2026)
 - Lig akışı tamamlama (Mayıs 2026): otomatik 1. Gün, round-bazlı finalize, scheduler tetikleme noktaları + startup poke, board claim 3 katmanlı kural (aynı lig boşta board paylaşımı serbest), liga.html lig/sezon puan formu ayrımı, tanı scriptleri — ayrı bölüme bak
+- **Production deploy (26 Mayıs 2026)**: Lig & Sezon sistemi (Dilim 1-5b) + board PWA + Excel raporu altyapısı `dartcorepro.com` üzerinde canlıya alındı. Render Starter ($7/ay) + 1GB kalıcı disk (`/data/data.db`) + auto-deploy from `main`. Faz 1 (Render deploy) tamamlandı; sıradaki yol haritası Faz 2 hardening.
 
 ## Takım Maçı — Yarın Yapılacaklar (öncelik sırası)
 
@@ -532,15 +571,17 @@ Görev numaralarıyla birlikte (TaskList sisteminde): #1-#46. Önemli olanlar:
 
 ## Bekleyen yol haritası — production launch
 
-### Faz 1: Render deploy (mevcut adım)
-- `render.yaml`'ı `plan: starter` + `disks:` bloğuna çevir (kalıcı SQLite için)
-- `data.db` yolunu `process.env.DB_PATH` ile parametrize et (Render disk mount path)
-- `SESSION_SECRET` env variable
-- `NODE_ENV=production` + `app.set('trust proxy', 1)` + `cookie.secure: true`
-- HTTP → HTTPS redirect middleware
-- Test: tabletlerden gerçek URL'e bağlan
+### Faz 1: Render deploy ✅ TAMAMLANDI (26 Mayıs 2026)
+- `render.yaml` → `plan: starter` + `disk: sqlite-data` (`/data`, 1GB) ✅
+- `DB_PATH=/data/data.db` env var ✅
+- `SESSION_SECRET` Render tarafından otomatik üretiliyor (`generateValue: true`) ✅
+- `NODE_ENV=production`, `trust proxy`, secure cookie'ler ✅
+- Auto-deploy: `main` branch'e push → Render build başlatır
+- Build komutu: `npm install && npm rebuild better-sqlite3 --build-from-source` (native modül için zorunlu)
+- Canonical host redirect (`a1ab6dc` commit): tüm istekler `dartcorepro.com`'a 301
+- Bilinmesi gereken: HOTFIX-1 (sessions tablosu DROP) ilk deploy'da tetiklendi — eski cookie'ler düştü, yeniden giriş gerekti. Bir daha tetiklenmez.
 
-### Faz 2: Production hardening
+### Faz 2: Production hardening (sıradaki)
 - E-posta onayı (Resend ya da SendGrid; ücretsiz tier yeterli)
 - Şifre sıfırlama akışı (token + e-posta link)
 - Captcha (hCaptcha — Cloudflare Turnstile bedava)
@@ -577,8 +618,7 @@ Görev numaralarıyla birlikte (TaskList sisteminde): #1-#46. Önemli olanlar:
 
 ## Karar verilmiş ama henüz uygulanmamış konular
 
-- SQLite + kalıcı disk ile başla. 50+ eş zamanlı turnuvayı geçince Postgres'e geçiş.
-- Public deploy: **Render Starter ($7/ay)**, ücretsiz tier'ın kalıcı diski yok.
+- SQLite + kalıcı disk ile başla **(uygulandı, canlıda Render Starter + 1GB disk)**. 50+ eş zamanlı turnuvayı geçince Postgres'e geçiş.
 - Gelir: Reklam + opsiyonel premium ikili model. AdSense onayı zor olduğundan premium altyapısını erken hazırla.
 - Tek dilli (Türkçe) başla, gelecekte i18n eklenebilir.
 

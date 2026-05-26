@@ -276,6 +276,8 @@ function init() {
       status TEXT DEFAULT 'pending',           -- pending | running | finished
       created_at TEXT DEFAULT CURRENT_TIMESTAMP,
       finished_at TEXT,
+      points_override_json TEXT,               -- Dilim 5c-1: Ustalar oturumu icin ozel puan tablosu (null ise comp.points_json)
+      is_masters INTEGER DEFAULT 0,            -- 1 ise rozet ve "Ustalar" etiketi gosterilir
       FOREIGN KEY(competition_id) REFERENCES competitions(id) ON DELETE CASCADE,
       FOREIGN KEY(tournament_id) REFERENCES tournaments(id) ON DELETE SET NULL
     );
@@ -513,6 +515,15 @@ function init() {
   }
   if (!compSessCols.includes('session_type')) {
     try { db.exec("ALTER TABLE competition_sessions ADD COLUMN session_type TEXT DEFAULT 'bracket'"); } catch {}
+  }
+  // Dilim 5c-1 — Ustalar (Masters) oturumlari: bu oturuma ozel puan tablosu (override)
+  // + Ustalar isaretleyici flag'i. is_masters=1 ise frontend rozet gosterir, finalize
+  // points_override_json'i kullanir; yoksa competition.points_json'a duser.
+  if (!compSessCols.includes('points_override_json')) {
+    try { db.exec('ALTER TABLE competition_sessions ADD COLUMN points_override_json TEXT'); } catch {}
+  }
+  if (!compSessCols.includes('is_masters')) {
+    try { db.exec('ALTER TABLE competition_sessions ADD COLUMN is_masters INTEGER DEFAULT 0'); } catch {}
   }
   // competitions'a plan_generated kolonu
   const compCols2 = db.prepare("PRAGMA table_info(competitions)").all().map(c => c.name);
@@ -1616,11 +1627,16 @@ function leagueRoundResultsRecorded(competitionId, roundNumber) {
 }
 
 function createSession(data) {
+  // points_override_json: JSON string olarak saklanir. Caller object verirse stringle.
+  let pOver = data.points_override_json;
+  if (pOver != null && typeof pOver !== 'string') {
+    try { pOver = JSON.stringify(pOver); } catch { pOver = null; }
+  }
   const info = db.prepare(`
     INSERT INTO competition_sessions
       (competition_id, user_id, session_number, tournament_id, name, session_date,
-       status, round_number, session_type)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+       status, round_number, session_type, points_override_json, is_masters)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
   `).run(
     data.competition_id,
     data.user_id || null,
@@ -1631,6 +1647,8 @@ function createSession(data) {
     data.status || 'pending',
     data.round_number || null,
     data.session_type || 'bracket',
+    pOver || null,
+    data.is_masters ? 1 : 0,
   );
   return db.prepare('SELECT * FROM competition_sessions WHERE id = ?').get(info.lastInsertRowid);
 }
@@ -1647,11 +1665,21 @@ function sessionById(id) {
 
 function updateSession(id, fields) {
   const allowed = ['session_number', 'tournament_id', 'name', 'session_date',
-                   'status', 'finished_at', 'round_number', 'session_type'];
+                   'status', 'finished_at', 'round_number', 'session_type',
+                   'points_override_json', 'is_masters'];
   const keys = Object.keys(fields).filter(k => allowed.includes(k));
   if (!keys.length) return;
+  // points_override_json object verilirse stringle
+  const values = keys.map(k => {
+    let v = fields[k];
+    if (k === 'points_override_json' && v != null && typeof v !== 'string') {
+      try { v = JSON.stringify(v); } catch { v = null; }
+    }
+    if (k === 'is_masters') v = v ? 1 : 0;
+    return v;
+  });
   const sql = `UPDATE competition_sessions SET ${keys.map(k => `${k} = ?`).join(', ')} WHERE id = ?`;
-  db.prepare(sql).run(...keys.map(k => fields[k]), id);
+  db.prepare(sql).run(...values, id);
 }
 
 function deleteSession(id) {

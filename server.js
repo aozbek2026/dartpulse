@@ -1359,6 +1359,25 @@ app.post('/api/competitions/:id/sessions', auth.requireAuth, (req, res) => {
       : [];
     if (ids.length < 2) return res.status(400).json({ error: 'En az 2 katilimci secilmeli' });
 
+    // Dilim 5c-1: Ustalar (Masters) oturumu mu?
+    // is_masters=true ise points_override_json zorunlu, aksi halde 400.
+    const isMasters = !!req.body.is_masters;
+    let pointsOverride = null;
+    if (isMasters) {
+      const raw = req.body.points_override_json;
+      if (!raw || (typeof raw === 'object' && Object.keys(raw).length === 0)) {
+        return res.status(400).json({ error: 'Ustalar oturumu icin ozel puan tablosu girilmeli' });
+      }
+      try {
+        pointsOverride = (typeof raw === 'string') ? JSON.parse(raw) : raw;
+      } catch (_) {
+        return res.status(400).json({ error: 'Puan tablosu gecersiz JSON' });
+      }
+      // En az bir pozisyon puani veya default olmali
+      const keys = Object.keys(pointsOverride);
+      if (!keys.length) return res.status(400).json({ error: 'Puan tablosu bos' });
+    }
+
     const pool = db.competitionPlayers(compId);
     const poolIds = new Set(pool.map(p => p.player_id));
     const invalid = ids.filter(id => !poolIds.has(id));
@@ -1380,6 +1399,8 @@ app.post('/api/competitions/:id/sessions', auth.requireAuth, (req, res) => {
       competition_id: compId, user_id: userId,
       session_number: sessionNumber, tournament_id: t.id,
       name: tName, session_date: req.body.session_date || null, status: 'pending',
+      is_masters: isMasters,
+      points_override_json: pointsOverride,
     });
 
     if (comp.status === 'draft') db.updateCompetition(compId, userId, { status: 'running' });
@@ -1420,7 +1441,9 @@ app.get('/api/competitions/:id/sessions/:sid/preview', auth.requireAuth, (req, r
     }
 
     const standings = tournament.computeFinalStandings(s.tournament_id);
-    const points = safeParse(comp.points_json) || {};
+    // Dilim 5c-1: Ustalar oturumu ise points_override_json kullan, yoksa comp.points_json
+    const sessionPoints = s.points_override_json ? safeParse(s.points_override_json) : null;
+    const points = (s.is_masters && sessionPoints) ? sessionPoints : (safeParse(comp.points_json) || {});
     const defaultPts = points['default'] != null ? +points['default'] : 0;
 
     // Pozisyon → puan
@@ -1439,6 +1462,7 @@ app.get('/api/competitions/:id/sessions/:sid/preview', auth.requireAuth, (req, r
 
     res.json({
       already_recorded: db.sessionHasResults(sid),
+      is_masters: !!s.is_masters,
       standings: enriched,
     });
   } catch (e) {
@@ -1473,7 +1497,9 @@ app.post('/api/competitions/:id/sessions/:sid/finalize', auth.requireAuth, (req,
     }
 
     const standings = tournament.computeFinalStandings(s.tournament_id);
-    const points = safeParse(comp.points_json) || {};
+    // Dilim 5c-1: Ustalar oturumu ise points_override_json kullan
+    const sessionPoints = s.points_override_json ? safeParse(s.points_override_json) : null;
+    const points = (s.is_masters && sessionPoints) ? sessionPoints : (safeParse(comp.points_json) || {});
     const defaultPts = points['default'] != null ? +points['default'] : 0;
 
     // Atis istatistiklerini tournamentPlayerReport'tan al, player_id -> shotStats

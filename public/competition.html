@@ -284,6 +284,38 @@
           <div id="ns-participant-count" style="font-size:0.78rem;color:var(--text-dim);margin-top:0.3rem;"></div>
         </div>
 
+        <!-- Dilim 5c-1: Ustalar (Masters) oturumu — sezona daha yüksek puan ekler -->
+        <div id="ns-masters-section" style="margin-top:0.9rem;border-top:1px solid var(--border, rgba(255,255,255,0.08));padding-top:0.7rem;">
+          <label style="display:flex;align-items:center;gap:0.5rem;cursor:pointer;font-size:0.92rem">
+            <input type="checkbox" id="ns-is-masters" onchange="toggleMastersMode()" />
+            <span>🏆 <strong>Ustalar oturumu</strong> <span style="color:var(--text-dim);font-size:0.85rem">— normal oturumdan daha yüksek puan dağıtır</span></span>
+          </label>
+          <div id="ns-masters-points" style="display:none;margin-top:0.6rem;padding:0.6rem;background:rgba(255,193,7,0.05);border:1px solid rgba(255,193,7,0.25);border-radius:8px;">
+            <p style="font-size:0.82rem;color:var(--text-dim);margin:0 0 0.5rem 0">Bu oturuma özel puan tablosu (sezonun varsayılan puanları yerine geçer):</p>
+            <div id="ns-masters-grid" style="display:grid;grid-template-columns:repeat(4, 1fr);gap:0.4rem 0.6rem;">
+              <!-- pozisyon input'ları JS ile -->
+            </div>
+            <div style="display:flex;align-items:center;gap:0.5rem;margin-top:0.5rem">
+              <label style="font-size:0.82rem;color:var(--text-dim);min-width:135px">Diğer pozisyonlar:</label>
+              <input id="ns-masters-default" type="number" min="0" step="1" value="2" style="width:80px" />
+            </div>
+          </div>
+
+          <!-- Ustalar katılımcı seçimi: top-N otomatik + manuel değiştir/çıkar -->
+          <div id="ns-masters-roster" style="display:none;margin-top:0.7rem;padding:0.6rem;background:rgba(255,193,7,0.04);border:1px solid rgba(255,193,7,0.2);border-radius:8px;">
+            <div style="display:flex;align-items:center;gap:0.7rem;margin-bottom:0.6rem;flex-wrap:wrap">
+              <label style="font-size:0.85rem;font-weight:600">Ustalar'a kaç oyuncu katılacak?</label>
+              <input id="ns-masters-n" type="number" min="2" step="1" value="8" onchange="onMastersNChange()" style="width:80px" />
+              <span id="ns-masters-pool-info" style="font-size:0.78rem;color:var(--text-dim)"></span>
+            </div>
+            <p style="font-size:0.78rem;color:var(--text-dim);margin:0 0 0.4rem 0">
+              Klasman sıralamasına göre otomatik seçildi. Gelmeyen olursa "Değiştir" ile başka oyuncu, "Çıkar" ile listeden kaldırabilirsin.
+            </p>
+            <div id="ns-masters-roster-list" style="display:flex;flex-direction:column;gap:0.25rem"></div>
+            <div id="ns-masters-roster-count" style="font-size:0.78rem;color:var(--text-dim);margin-top:0.4rem;font-weight:600"></div>
+          </div>
+        </div>
+
         <div style="display:flex;justify-content:flex-end;gap:0.4rem;margin-top:1rem;">
           <button onclick="toggleNewSessionForm()">Vazgeç</button>
           <button class="primary" onclick="submitNewSession()">Oturumu Oluştur</button>
