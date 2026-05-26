@@ -5,6 +5,33 @@ Bu dosya, kod tabanı üzerinde çalışacak ileri sürüm Claude ajanlarının 
 **Domain:** [dartcorepro.com](https://dartcorepro.com)  
 **Kaynak klasör (lokal):** `/Users/ahmetozbek/Desktop/dart core pro`
 
+## ⚠️ KORUMALI MODÜLLER — DEĞİŞTİRMEDEN ÖNCE KULLANICIYA SOR
+
+Aşağıdaki dosyalar canlı turnuvada kullanılıyor ve regresyon affetmiyor. Kullanıcıdan açık onay (**"evet"** cevabı yeterli) almadan **kod değişikliği yapma, refactor önerme, dosya silme/taşıma, şema migrasyonu ekleme**. Sadece okumak serbest. Bug-fix bile olsa önce planı yazılı paylaş, "evet" cevabı gelince başla.
+
+**Skor motoru:**
+- `src/match-engine.js`
+- `public/js/board.js`
+- `public/scorer.html` (cricket / FB Cezalı / Karambol blokları dahil)
+
+**Board / tablet UI:**
+- `public/board.html`
+- `public/manifest-board.json`
+- `public/css/style.css` içindeki `.conn-banner`, `.fs-toggle` ve board-spesifik bloklar
+
+**Turnuva çekirdeği:**
+- `src/tournament.js` (`_createMatch` wrapper, bracket üretimi — single/double elim, RR)
+- `src/scheduler.js` (otomatik board atama)
+- `src/db.js` içindeki `matches`, `tournaments`, `entries`, `stages` tablolarına yönelik **şema değişiklikleri** (yeni tablo eklemek serbest, bu tabloların yapısını değiştirmek değil)
+
+**İstisnalar (sormadan yapılabilir):**
+- Yazım/imla hatası düzeltme
+- Türkçe metin/label rötuşları (anlam değişmediği sürece)
+- Yorum satırı ekleme/güncelleme
+- Console.log temizliği (debug amaçlı eklenmiş geçici log'lar)
+
+**Açık onay sayılır:** Kullanıcı mesajında bu dosyalardan birinin adını/yolunu yazıp "değiştir / düzelt / ekle / refactor et" derse onay alınmış sayılır, ayrıca sormaya gerek yok.
+
 ## Proje özeti
 
 Dart Core Pro, Türkçe bir dart turnuvası yönetim sistemidir. Tek elemeli, çift elemeli ve round-robin formatlarını destekler; tablet üzerinden skor girişi yapılır, TV ekranında bracket gösterilir, organizatör tarayıcıdan kontrol eder.
@@ -42,11 +69,18 @@ dart-core-pro/
 │   ├── index.html         # Landing (organizer dashboard'a yönlendirir)
 │   ├── login.html         # Giriş/kayıt
 │   ├── organizer.html     # Organizatör arayüzü (turnuva oluştur, kura, bracket)
-│   ├── board.html         # Tablet skor giriş arayüzü
+│   ├── board.html         # Tablet skor giriş arayüzü (PWA — manifest-board.json)
 │   ├── viewer.html        # İzleyici (sticky nav, multi-section)
 │   ├── tv.html            # TV/kiosk modu (auto-rotate bracket)
+│   ├── liga.html          # Lig/Sezon listesi (oluştur, sil, detaya git)
+│   ├── competition.html   # Lig/Sezon detay (4 sekme: Özet, Oyuncular, Oturumlar, Klasman)
+│   ├── session.html       # Oturum detay (bracket veya league_day round başlatma)
+│   ├── manifest.json      # Scorer (Hızlı Skor) PWA manifest
+│   ├── manifest-board.json # Board PWA manifest (display: standalone, landscape)
 │   ├── js/
 │   │   ├── organizer.js, board.js, viewer.js, tv.js, login.js
+│   │   ├── liga.js        # Lig/Sezon liste sayfası
+│   │   └── competition.js # Lig/Sezon detay sayfası
 │   └── css/style.css
 ├── scripts/seed-demo.js   # Örnek turnuva üretimi
 ├── render.yaml            # Render deploy konfigürasyonu (şu an free plan; Starter'a yükseltilecek)
@@ -130,6 +164,21 @@ Server `server.js` içinde, client tarafları `board.js`/`viewer.js`/`tv.js`/`or
 ### 7. JSON config saklama
 Şema değişikliği gerektirmeyen ek ayarlar `stages.config_json` (TEXT, JSON parse) içinde. Örnek: `round_overrides`. Yeni opsiyonel ayarları buraya ekle, kolon açma.
 
+### 8. Rezerve edilmiş tablo adları (DOKUNMA)
+Aşağıdaki tablolar üçüncü taraf middleware tarafından yönetilir. Bu isimlerle **yeni kolon ekleme, yeniden yaratma, ALTER TABLE yapma**:
+
+- **`sessions`** — express-session middleware (BetterSQLiteStore, `server.js` içinde) tarafından yönetilir. Şema: `sid TEXT PK, sess TEXT, expired_at INTEGER`. Bu tabloya başka bir amaçla kolon eklersen login kırılır.
+
+`db.js` içinde **iki HOTFIX migrasyonu** var (Mayıs 2026):
+1. **HOTFIX-1 (sessions şeması):** Eğer `sessions` tablosu yanlış şemayla bulunursa (eski connect-sqlite3 stili `expired` kolonu, ya da başka bir varyant), DROP edilip BetterSQLiteStore şemasıyla yeniden yaratılıyor. Yan etki: aktif oturum cookie'leri geçersiz olur.
+2. **HOTFIX-2 (session_results FK):** Lig sisteminin ilk versiyonunda `session_results` tablosu `FOREIGN KEY ... REFERENCES sessions(id)` ile yaratılmıştı. Sonra `sessions` yeniden yaratılınca (id kolonu yok artık) tüm INSERT'ler "foreign key mismatch" hatası attı — login kırıldı. HOTFIX-2 bu tabloyu tespit edip `competition_sessions(id)` FK'siyle yeniden yaratıyor.
+
+**Genel ders:** Yeni tabloda FK kurarken, hedef tablonun adı + kolonu **gerçekten var** mı kontrol et. Şema migrasyonu yaparken FK ile bağlı child tabloları da güncellemen gerekebilir. SQLite FK validation, INSERT/UPDATE sırasında çalışır — INIT sırasında değil — yani CREATE TABLE'da geçen kötü FK sessizce kabul edilir, çakışma sonra patlar.
+
+**Domain tabloları için `<domain>_sessions` adlandırması kullan** (örn. `competition_sessions`). JS helper'larının kısa adı (`createSession`, `sessionsForCompetition`) korunabilir; sadece SQL içindeki tablo adı farklılaşır.
+
+> **Debug not:** `server.js` içindeki `BetterSQLiteStore.set` metoduna teşhis için `console.log('[session.set]', ...)` eklendi. Production'a çıkmadan önce kaldırılabilir; şu an her login'de bir satır log atıyor.
+
 ## Oyun modları
 
 ### Mevcut (uygulanmış)
@@ -211,10 +260,11 @@ competitions (lig/sezon)
 
 - `competitions` — tip (`season`|`league`), kategori, puan sistemi (JSON), oturum sayısı, user_id
 - `competition_players` — oyuncu havuzu; birikimli puan + istatistikler; unique per competition
-- `sessions` — competition_id + tournament_id (mevcut tournaments'a FK) + session_number
-- `session_results` — oturum bitis pozisyonu + puan
+- `competition_sessions` — competition_id + tournament_id (mevcut tournaments'a FK) + session_number + session_type (`'bracket'`|`'league_day'`). **Adı kasten `sessions` değil** — bkz. Kod konvansiyonu #8. `league_day` tipi: turnuvası olmayan gün-konteyner; içinde birden fazla round çalıştırılabilir.
+- `session_results` — oturum bitis pozisyonu + puan (FK: `competition_sessions.id`)
 - `playoffs` — tip (`standard`|`masters`), katılımcılar (manuel seçim), kendi puan sistemi
 - `league_matchups` — (sadece lig) kimin kiminle kaç kez oynadığı
+- `league_schedule` — Berger/circle-method ile üretilmiş tur planı. Kolonlar: `competition_id`, `round_number`, `meeting_number`, `player1_id`, `player2_id` (BYE için NULL), `session_id` (hangi güne atandığı, NULL=henüz atanmamış), `tournament_id` (round başlatılınca yaratılan mini RR turnuvası). `leagueSchedule(compId)` helper'ı tournament durumundan türetilmiş `session_status` (`planned`|`running`|`finished`) döner.
 
 **Kural:** Tüm yeni sorgular `user_id` ile scope edilmeli (mevcut kurala uygun).
 
@@ -253,6 +303,204 @@ H2H (lig): iki oyuncu arası maç G/M + karşılıklı 3DA.
 - Checkout yüzdesi (double deneme sayımı altyapısı gerektirir)
 - Multi-kategori federasyon dashboard'u (Faz 2)
 
+### Mevcut ilerleme — Dilim 1-4 (Mayıs 2026, tamam)
+
+**Dilim 1 — DB + temel CRUD:**
+- DB tabloları: `competitions`, `competition_players`, `competition_sessions`, `session_results`, `league_matchups`, `playoffs` (`src/db.js` CREATE TABLE bloğunda)
+- DB helper'ları (hepsi userId scope'lu): `createCompetition`, `allCompetitions`, `competitionById`, `updateCompetition`, `deleteCompetition`, `addCompetitionPlayer`, `competitionPlayers`, `removeCompetitionPlayer`, `createSession`, `sessionsForCompetition`, `sessionById`, `updateSession`, `deleteSession`, `recordSessionResult`, `resultsForSession`
+- REST API: `GET/POST /api/competitions`, `GET/PUT/DELETE /api/competitions/:id` — `requireAuth` korumalı
+- Frontend: `public/liga.html` + `public/js/liga.js` — sezon/lig oluşturma formu (puan tablosu 1-8. pozisyon + diğerleri için varsayılan), liste görünümü, sil butonu (sadece draft). Organizer sidebar'ında **🏅 Ligler & Sezonlar** linki.
+
+**Dilim 1'de uygulanan iki HOTFIX migrasyonu (önemli — bir daha kurmaya gerek yok):**
+1. Eski DB'deki `sessions` tablosu connect-sqlite3 stili (`sid, expired, sess`) şemayla yaratılmıştı — BetterSQLiteStore `expired_at` istediği için login kırıktı. DROP + doğru semayla yeniden yaratıldı.
+2. Lig sisteminin ilk yaratılış denemesinde `session_results.session_id` FK'si yanlışlıkla `sessions(id)`'ye bağlanmıştı; sonra `sessions` yeniden yaratılınca FK validation tüm INSERT'leri reddetti. HOTFIX-2 `session_results` tablosunu DROP + doğru FK ile (`competition_sessions(id)`) yeniden yarattı.
+
+Detay: Kod konvansiyonu #8'e bak.
+
+**Dilim 2 — Oyuncu havuzu:**
+- Endpoint'ler: `GET/POST /api/competitions/:id/players`, `DELETE /api/competitions/:id/players/:playerId`
+- POST hem `{name, nickname}` hem `{player_id}` kabul eder. Aynı isimde mevcut oyuncu varsa onu yeniden kullanır (cift kayıt önlenir), yoksa `players` tablosuna yeni kayıt yaratır. Status kontrolleri: lig=draft only, sezon=draft+running.
+- Frontend: `public/competition.html` (yeni) + `public/js/competition.js` (yeni). 4 sekme: Özet, Oyuncular, Oturumlar, Klasman. Oyuncular sekmesi: lig için "kapalı kadro" uyarısı + min 2 oyuncu; sezon için "açık katılım" notu. Enter ile hızlı ekleme.
+- `liga.js`'deki "Detay" butonu artık `/competition.html?id=X`'e yönlendirir.
+
+**Dilim 3 — Oturum yaşam döngüsü + sonuçları işleme:**
+
+*3a/3b — Oturum yarat/listele/sil:*
+- Endpoint'ler: `GET/POST /api/competitions/:id/sessions`, `DELETE /api/competitions/:id/sessions/:sid`
+- POST body: `{name?, session_date?, format, participant_player_ids[]}`. Arka planda `tournament.createTournament` çağırır, entries ekler, `competition_sessions`'a bağlar. Competition draft ise otomatik `running`'e geçer.
+- Faz 1 sınırı: `team_mode=doubles` competition'larda oturum yaratma henüz desteklenmiyor (açıklayıcı hata mesajı).
+- Format whitelist: `single_elim | double_elim | round_robin`.
+- Frontend: Oturumlar sekmesinde "+ Yeni Oturum" formu (ad, tarih, format, katılımcı checkbox listesi + "Tümünü seç/Hiçbiri" butonları). Liste satırlarında "▶ Başlat / 🎯 Bracket / 📊 Bracket" linki → `/organizer.html?focus=ID` ile turnuvaya köprü.
+- `organizer.js`'e küçük ek: turnuva kartlarına `id="tournament-X"` eklendi + `maybeFocusTournament()` sayfa yüklenince URL'den `?focus=ID` okuyup ilgili sekmeye geçer (`.tab-link[data-tab=tournaments/past-tournaments].click()`) + smooth scroll + 2 saniyelik altın highlight.
+
+*3c — Sonuçları klasmana işle:*
+- Yeni tournament helper: `tournament.computeFinalStandings(tournamentId)` — bracket-aware final sıralama.
+  - `single_elim`: en yüksek round = final. Round R kaybedenleri `2^(maxRound-R)+1` pozisyonu paylaşır (SF=3 eşit, QF=5 eşit, vb).
+  - `double_elim`: bracket='final' GF → 1/2. bracket='losers' rounds yukarıdan aşağıya 3, 4, 5...
+  - `round_robin`: mevcut `computeRRStandings` (puan + leg-diff sıralı).
+  - Her satır `{position, entry_id, player_id, p2_player_id, wins, losses, legs_won, legs_lost}` döner.
+- Yeni db helper'ları: `sessionHasResults(sid)` (idempotent kontrol), `addToCompetitionPlayerStats(compId, pid, delta)` (tek UPDATE'le total_points, sessions_played, podium sayıları, maç ve leg sayılarını artırır).
+- Endpoint'ler: `GET /api/competitions/:id/sessions/:sid/preview` (yazma yok, önizleme), `POST .../finalize` (idempotent, tek transaction'da session_results + competition_players birikimli stats; çift sayıma kapalı; session status'u finished).
+- Sessions list response'unda `results_recorded` flag'i.
+- Frontend: oturum satırında finished + işlenmemiş ise yeşil "✓ Sonuçları İşle" butonu. Tıklayınca önce GET preview → Promise-based modal'da sıralama (🥇🥈🥉, oyuncu adı, G-M, +X puan) → onay → POST finalize → "KLASMANDA" rozeti gelir.
+
+**Dilim 4 — Klasman ekranı:**
+- Backend değişiklik yok (mevcut `competition_players` verisi yeterli).
+- Frontend: `renderStandings()` + `renderStandingsRow()`. Sütunlar: Sıra, Oyuncu (+lakap), Puan, Oturum, Podyum (🥇🥈🥉 sayıları), Maç G-M, Maç %, Leg G-M, Leg %. Yüzdeler mini progress bar (`.pct-bar`) ile gösteriliyor. 1./2./3. sıralarda renk + emoji vurgusu.
+- Frontend tiebreaker sıralaması: `total_points DESC → matches_won DESC → leg diff DESC → name ASC`.
+- Tüm refresh akışlarına (oyuncu ekle/çıkar, oturum yarat/sil, finalize) `renderStandings()` çağrısı eklendi — sonuç işlenince klasman anında güncellenir.
+
+### Dilim 5 — tamamlanan ve bekleyen
+
+**✅ Dilim 5b — Lig round-robin planlama + oturum akışı (Mayıs 2026, tamam):**
+- DB: `league_schedule` tablosu. Berger/circle-method algoritması `src/tournament.js` içinde `buildLeagueSchedule(playerIds, meetCount)`. Tek sayılı oyuncu → BYE (NULL) eklenir. Toplam tur = (N−1) × meetCount, N=playerIds.length (çift yapıldıktan sonra).
+- DB helper'ları: `saveLeagueSchedule(compId, rounds)`, `leagueSchedule(compId)` (tournament durumundan `session_status` türetilmiş), `linkRoundToSession(compId, roundNumber, sessionId, tournamentId)`.
+- Backend endpoint'ler: `GET /api/competitions/:id/schedule` (plan önizleme), `POST /api/competitions/:id/generate-schedule` (planı üret + kaydet), `POST /api/competitions/:id/sessions/:sid/start-round` body: `{round_number}` — round için mini RR turnuvası yarat, `competition_sessions`'a bağla, `league_schedule`'ı güncelle.
+- `competition.html` Oturumlar sekmesi: ligler için "league_day" konteyner oturum yaratma (format + katılımcı seçimi gizli, sadece ad + tarih). Buton adı "+ Yeni Gün". Satırlarda `renderLeagueDayRow()` → `session.html?id=X` linki.
+- `session.html` league_day modu: "Bu Günde Oynatılan Roundlar" (başlatılmış) + "Oynanabilir Roundlar" (henüz atanmamış). Her round satırında çift listesi. "▶ Bu Günde Başlat" → `startRound(sid, compId, roundNumber)` → API → yeniden render.
+- Bug fix: `submitNewSession()` lig için katılımcı koleksiyonunu atlar (form takılıp kalıyordu). Submit butonu istek sırasında devre dışı.
+- Bug fix: `leagueSchedule()` `session_status` döndürmüyordu → done/active sayaçları hep 0'dı. Düzeltildi.
+
+**Bekleyen — Dilim 5a, 5c, 5d:**
+
+5a. **Excel (.xlsx) raporu** — federasyon için kritik. Klasman + oturum sonuçları + maç dökümü ayrı sekmeler. `exceljs` veya `xlsx` (SheetJS) paketi gerekli, ikisi de saf JS (native değil). Backend: `GET /api/competitions/:id/report.xlsx` → buffer döndür. Frontend: detay sayfası üstüne "📊 Excel İndir" butonu.
+5c. **Playoff & Ustalar (Masters)** — sezon biten kadrodan top-N seçip yeni bracket (yeni tournament + `playoffs` tablosu kaydı). Ustalar: iki competition'ın klasmanlarını birleştirip manuel seçim. Kendi puan tablosu. Sezon end-to-end oynanmadan tam test edilemez.
+5d. **Gelişmiş istatistikler** — şu an `match_stats` per-tournament bazında atılıyor (3DA, 180, 140+, 100+, highest finish). `competition_players.stats_json`'a birikimli aktarım için finalize endpoint'i genişletilmeli + klasmana yeni sütunlar/expandable satır. `tournamentPlayerReport(id)` zaten ihtiyacımız olan veriyi veriyor.
+
+---
+
+## Board güvenilirliği — Android Chrome tab discard (Mayıs 2026)
+
+### Sorun
+Canlı turnuvada Android tabletlerde board ekranı kendiliğinden kayboluyor, yerine Chrome'un arama önerisi geliyor (ör. "board2 arama sonuçlarını görmek için dokunun"). Her turnuvada birkaç kez tekrar ediyordu, skor girişi kesintiye uğruyordu.
+
+### Kök neden
+Android Chrome'un **tab discard** mekanizması: tablet düşük bellek altında veya başka uygulama öne alındığında arka plandaki "normal sekme"yi öldürüyor. Tablete dönüldüğünde URL çubuğu hatırlanıyor ama sayfa gitmiş — bazen Chrome history'den arama önerisi gösteriyor. Sebep server-side **değil** (Render Starter plan, sleep yok); tamamen client tarafında.
+
+### Çözüm (uygulandı)
+Dört katmanlı savunma — her biri ayrı bir hata modunu kapatıyor:
+
+1. **Board kendi PWA'sı oldu** — `public/manifest-board.json` (`display: standalone`, `start_url: /board.html`, `orientation: landscape`). `board.html` <head> içinde `<link rel="manifest" href="/manifest-board.json">` + iOS/Android meta tag'leri. Tabletten "Ana ekrana ekle" yapılınca board kendi uygulama penceresi olarak açılır — Chrome'un tab discard'ına uğramaz, kendi recents kartı olur. (`display: fullscreen` yerine `standalone` — fullscreen Android'de geniş desteklenmiyor.)
+2. **Wake Lock board.html'e eklendi** — `board.html` inline script'inde `navigator.wakeLock.request('screen')`, `visibilitychange` üzerinde yeniden talep. Ekran asla uyumaz → tab arka plana düşmez. **Yalnız HTTPS/localhost'ta çalışır**; LAN HTTP'de pasif (LAN-SETUP.md'deki bilinen kısıt).
+3. **Socket disconnect banner'ı** — `board.js` başında `setupConnBanner()`: `socket.on('disconnect')` ve `socket.io.on('reconnect_attempt'/'error')` üstte büyük kırmızı banner (`.conn-banner`) gösterir, `socket.on('connect')` reconnect sonrası 1.5 sn yeşil "✓ Yeniden bağlandı" gösterip gizler. Skor girenler bağlantı kopunca anında fark eder.
+4. **Board seçildikten sonra otomatik fullscreen** — `renderBoardPicker()` `<a class="card">` linkleri `data-board-id` ile etiketli, click handler:
+   - `e.preventDefault()`
+   - `requestFs()` çağrısı (Fullscreen API, user gesture içinde)
+   - 30 ms sonra `location.href = href` navigate
+   
+   Navigate sırasında fullscreen kaybolursa yeni sayfada sağ üst köşede `#fs-toggle` butonu (⛶ Tam ekran) görünür — tek dokunuş yeterli. PWA standalone modunda CSS ile otomatik gizli (`@media (display-mode: standalone)`).
+
+### Etkilenen dosyalar
+- `public/manifest-board.json` (yeni)
+- `public/board.html` (manifest link + meta + Wake Lock script + `#conn-banner` + `#fs-toggle` elementleri)
+- `public/js/board.js` (`setupConnBanner`, `requestFs/isFs/updateFsToggle`, board picker click handler)
+- `public/css/style.css` (`.conn-banner`, `.fs-toggle` stilleri)
+
+### Tablet kurulum adımları (her tablet için, bir kerelik)
+1. `dartcorepro.com/board.html` aç → giriş yap
+2. Chrome üç nokta → "Ana ekrana ekle" → ismi "Board" bırak
+3. Bundan sonra her seferinde ana ekrandaki Board simgesinden aç
+4. Board seçince otomatik tam ekran; değilse sağ üstte ⛶ butonu
+
+### Bilinmesi gereken
+- Wake Lock LAN HTTP'de çalışmaz (tv.html için zaten dokümante edilmişti). LAN testlerinde tablet ekran-kapanma süresini "Hiçbir Zaman" yapılmalı.
+- `manifest.json` (Hızlı Skor için, `start_url: /scorer.html`) ve `manifest-board.json` (Board için, `start_url: /board.html`) ayrı dosyalar — karıştırma. İkisi de scope `/` olduğu için aynı origin'de yaşıyor ama farklı sayfalar farklı manifest'e işaret ediyor.
+- `scorer.html` (Hızlı Skor) bağımsız çalıştığı için bu değişikliklerden etkilenmedi — kendi `manifest.json`'u var.
+
+---
+
+## Lig akışı — board atama, round finalize, puan sistemi (Mayıs 2026)
+
+Dilim 5b sonrası federasyon-öncesi smoke testlerinde ortaya çıkan birikmiş bug'lar ve eksik tasarım kararları bu bölümde kapatıldı. Lig akışı artık uçtan uca çalışıyor.
+
+### Plan üretimi → otomatik "1. Gün"
+
+`POST /api/competitions/:id/plan` endpoint'i artık üç şey yapıyor:
+1. `db.generateLeaguePlan()` — Berger ile tüm round'ları `league_schedule`'a basar
+2. Eğer competition'da henüz hiç oturum yoksa otomatik bir `league_day` oturumu açar (`name='1. Gün'`, `session_date=bugün`, `status=pending`)
+3. Tüm round'ları (`session_id IS NULL` olanlar) bu güne bağlar
+
+Plan yenilenirken (regenerate) mevcut günler korunur, yeni eklenen round'lar **en eski** güne bağlanır. Kullanıcı sonradan ek günler açabilir ve round'ları taşıyabilir.
+
+Frontend tarafı: `competition.html` → "Oturumlar" sekmesi planı görsel olarak gösterir, "+ Yeni Gün" ile ek gün açılır. `session.html` → tek liste UX (gün başına bağlı round'ları sırayla gösterir; başka günden round çekme butonu mevcut).
+
+### Round başlatma → board claim kuralları
+
+`POST /api/competitions/:id/sessions/:sid/start-round` endpoint'inin board atama davranışı **üç katmanlı**:
+
+1. **Board boşsa** (`tournament_id IS NULL`): doğrudan yeni round'un turnuvasına atanır
+2. **Bağlı turnuva bitmişse** (`status='finished'`): yeni round'a atanır
+3. **Aynı ligin başka round'una bağlı + şu an boşta** (`current_match_id IS NULL` veya `status='idle'`): yeni round'a atanır — *aynı lig içinde* round'lar arası board paylaşımı serbest
+
+Farklı bir lig veya farklı bir turnuvanın board'una **dokunulmaz** (federasyon: 4 paralel kategoriye 4 ayrı board grubu varsa, bir kategorideki round'lar başka kategorinin board'una sıçramaz).
+
+Aynı ligin tournament_id'lerini bulmak için `db.leagueSchedule(compId)` döndürdüğü tüm `tournament_id`'ler bir Set'e konuluyor; yeni başlatılan round'un tid'si de eklenir.
+
+### Scheduler tetikleme noktaları (KRİTİK)
+
+`scheduler.assignPendingMatches(io, userId)` çağrılmazsa `status='ready'` maçlar `board_id=NULL` halde askıda kalır, tabletlere düşmez. Çağrı yerleri:
+
+- `/api/tournaments/:id/start` — turnuva manuel başlatma (sezon)
+- `/api/boards/:id` PATCH — board'un turnuva ataması değiştirildiğinde (**yeni — eskiden yoktu, bug'dı**)
+- `/api/competitions/:id/sessions/:sid/start-round` — lig round başlatma (**yeni — eskiden yoktu, bug'dı**)
+- `match-engine` maç bitirdiğinde, `tournament.onMatchFinished` sonrası (mevcut)
+- **Sunucu startup'ında bir kez** (`scheduler.assignPendingMatches(io, null)`) — restart sonrası askıda kalan state'leri toparlar
+
+Yeni bir endpoint board veya match state'ini değiştiriyorsa scheduler çağrısı eklemeyi unutma. Aksi halde maçlar görünmez şekilde askıda kalır, kullanıcı "tabletlere maç gelmiyor" diye gelir.
+
+### Round-bazlı finalize ve puan formülü
+
+Lig için klasman finalize'ı **round-bazlıdır**, gün-bazlı değil. `POST /api/competitions/:id/rounds/:roundNumber/finalize` (`db.recordLeagueRoundResults`):
+
+- Round'un tournament_id'sine bağlı tüm `finished` maçları okur
+- Her oyuncu için `wins`, `losses`, `legs_won`, `legs_lost` toplar
+- Formül: `pts = wins × points_json.match` (yoksa fallback 3)
+- `addToCompetitionPlayerStats(compId, pid, ...)` ile birikimli yazar
+- `sessions_played = 0` (round = oturum sayılmaz, gün konteyner)
+- `league_schedule.results_recorded = 1` işaretler — idempotent (ikinci çağrı `{already: true}` döner)
+
+`league_schedule.results_recorded` kolonu Mayıs 2026'da migrationla eklendi (eski DB'ler için `ALTER TABLE ADD COLUMN`). Aynı migration bloğunda `session_id`, `tournament_id`, `meeting_number` kolonları da eklenmiş eski DB'leri kurtarmak için.
+
+Frontend tetikleyici: `session.html` round satırında round bitince "✓ Sonuçları İşle" butonu çıkar. Tıklayınca onay → API çağrısı → toast → klasman güncel.
+
+### Lig puan sistemi UI ayrımı
+
+`liga.html` formunda `type` seçimine göre iki ayrı puan bloğu var:
+- **Sezon (`points-season-block`)**: 1.-8. pozisyon × puan grid'i + "Diğer pozisyonlar" → `points_json = {"1": 10, "2": 7, ..., "default": 1}`
+- **Lig (`points-league-block`)**: tek alan "Maç başına puan" → `points_json = {"match": 3}`
+
+`liga.js` → `syncTypeUI()` blokları toggle eder, `readPointsJson()` aktif moda göre doğru şekli üretir. Eski liglerde `points_json.match` yoksa server fallback 3 kullanır (geriye dönük uyumlu).
+
+İleride lig için "Maç başına puan" değiştirme UI'ı ihtiyaç olursa: `competition.html` Özet sekmesine küçük edit alanı, `PUT /api/competitions/:id` ile `points_json` güncellenir.
+
+### Yeni endpoint'ler (özet)
+
+- `POST /api/competitions/:id/plan` — plan üret + otomatik 1. Gün (genişletildi)
+- `POST /api/competitions/:id/rounds/:roundNumber/move` body `{session_id}` — başlatılmamış round'u başka güne taşı
+- `POST /api/competitions/:id/rounds/:roundNumber/finalize` — round sonuçlarını klasmana işle
+- `POST /api/competitions/:id/sessions/:sid/start-round` — round başlat (scheduler çağrısı eklendi, board claim genişletildi)
+- `DELETE /api/competitions/:id/sessions/:sid` — league_day silmeden önce başlatılmış round var mı kontrolü eklendi
+
+### Yeni helper'lar (db.js)
+
+- `recordLeagueRoundResults(compId, roundNumber, userId)` — idempotent finalize
+- `leagueRoundResultsRecorded(compId, roundNumber)` — durum sorgusu
+- `linkRoundToSession()` artık `tournamentId=null` ile sadece session_id güncelleyebilir (taşıma için)
+- `leagueSchedule()` çıktısı `results_recorded` flag'ini de döndürür
+
+### Tanı araçları (scripts/)
+
+- `scripts/lig-debug.js` — Aktif liglerin board/round/maç durumunu listeler. "Tabletlere maç gelmiyor" şüphesinde ilk başvuru. Çıktıdan: hangi board hangi turnuvaya bağlı, kaç ready maç var, kaçı board_id'siz.
+- `scripts/scheduler-poke.js` — Çalışan sunucu varsa scheduler'i bir kez tetikler. Normalde gerekmez (startup poke + endpoint trigger'lar kapsayıcı), ama edge case için sigorta.
+- `scripts/smoke-lig.js` — Uçtan uca lig akışını in-process test eder (lig aç, oyuncu ekle, plan üret, round başlat-bitir-finalize). Demo kullanıcısı gerektirir, kendi temizliğini yapar.
+
+### Bilinmesi gereken edge case'ler
+
+- **Round 1 yarım, Round 2 başlat**: Round 1'in 4 maçından 2'si oynanıyorsa o 2 board kilitli kalır, boşta olan diğer board(lar) Round 2'ye geçer. Round 1 maçı bitince scheduler aynı board'u Round 2'ye atar (aynı lig kuralı). Manuel müdahale gerekmez.
+- **Plan yenileme oyuncu değişikliği sonrası**: `regeneratePlan` `session_id IS NULL` olanları silip yeniden üretir. Başlatılmış round'lar korunur. **Sınırlama**: oynanmış round'larda eski oyuncularla maç var; klasman bütünlüğü için plan yenileme dikkat ister, ideali ligi en başında doğru kurmak.
+- **BYE oyuncusu**: Tek sayılı kadroda her round bir oyuncu boş. `bergerRounds()` BYE'lı pair'leri üretmez, yani `league_schedule.pairs`'da yok. UI: `session.html` round satırında "Boş: X" şeridi gösterilir (`STATE.players` ile pair'lerde olmayan oyuncuyu çıkararak). Klasmana etki yok — sadece round skoru için.
+- **Aynı lig içinde paralel günler**: Teorik olarak mümkün — Gün 1'de Round 1 oynanırken Gün 2'de Round 2 başlatılırsa, aynı oyuncu hem Gün 1'de hem Gün 2'de yer alabilir; scheduler `busy` set'i nedeniyle aynı anda iki yerde olmasını engeller (entry1_id/entry2_id meşgul sayılır). Pratikte aynı oyuncu paralel iki tabletten oynayamaz, scheduler doğal olarak ikinci match'i bekletir.
+
 ---
 
 ## Tamamlanmış major özellikler
@@ -267,6 +515,11 @@ Görev numaralarıyla birlikte (TaskList sisteminde): #1-#46. Önemli olanlar:
 - Checkout dart sayısı (1/2/3) promptu — `darts_thrown` istatistiğini doğru hesaplıyor (#45)
 - Leg-end mini özet modalı — her leg sonunda kazanan + ortalama + 180/140+/100+ pillleri (#46)
 - LAN test hazırlığı — 4 tablet kurulumu (#41), `LAN-SETUP.md`
+- Board güvenilirliği: PWA manifest (`standalone`) + Wake Lock + disconnect banner + otomatik fullscreen (Mayıs 2026) — Android Chrome tab discard sorununu kapatır, ayrı bölüme bak
+- BYE dağılım düzeltmesi: `seedWithByes()` artık `buildSeedOrder()` ile BYE'ları bracket'e eşit dağıtıyor — BYE vs BYE maçı oluşmuyor
+- Lig/Sezon sistemi Dilim 1-4: DB + CRUD + oyuncu havuzu + oturum yaşam döngüsü + klasman (Mayıs 2026, ayrı bölüme bak)
+- Lig planlama Dilim 5b: Berger/circle-method round-robin planlama, `league_schedule` tablosu, `league_day` oturum tipi, `session.html` round başlatma akışı (Mayıs 2026)
+- Lig akışı tamamlama (Mayıs 2026): otomatik 1. Gün, round-bazlı finalize, scheduler tetikleme noktaları + startup poke, board claim 3 katmanlı kural (aynı lig boşta board paylaşımı serbest), liga.html lig/sezon puan formu ayrımı, tanı scriptleri — ayrı bölüme bak
 
 ## Takım Maçı — Yarın Yapılacaklar (öncelik sırası)
 
@@ -308,6 +561,19 @@ Görev numaralarıyla birlikte (TaskList sisteminde): #1-#46. Önemli olanlar:
 - AdSense başvurusu (1000+ ziyaret/ay sonrası)
 - Premium altyapısı: Stripe Checkout, $3-5/yıl, ek özellikler (turnuva arşivi, custom branding, daha fazla oyuncu sınırı)
 - Kullanıcı modelinde `tier: 'free' | 'premium'` kolonu — şimdiden ekleyebiliriz
+
+## Yerel geliştirme notları
+
+- **`resend` paketi opsiyoneldir.** `src/mailer.js` içinde `require('resend')` try/catch ile sarmalanmış — paket yoksa server sessizce email göndermeden kalkıyor. Email göndermek gerekirse: `npm install resend` + `RESEND_API_KEY` env var. Yerel LAN testlerinde gerek yok.
+- **Demo kullanıcı**: Mevcut `data.db`'de tek hesap var: `demo@dart.local`. Şifre kaybolursa yeni şifre belirleme komutu:
+  ```bash
+  node -e "
+    const auth = require('./src/auth'), db = require('./src/db');
+    db.db.prepare('UPDATE users SET password_hash = ? WHERE id = 1').run(auth.hashPassword('YENI_SIFRE'));
+    console.log('OK');
+  "
+  ```
+  Bu komutu çalıştırmadan ÖNCE `npm start`'ı durdur (Ctrl+C), sonra çalıştır, sonra tekrar başlat — aksi halde foreground sunucu öldürür.
 
 ## Karar verilmiş ama henüz uygulanmamış konular
 

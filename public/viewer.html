@@ -94,6 +94,13 @@
 <div class="viewer">
   <div class="top-bar">
     <h2>🎯 Canlı Turnuva</h2>
+    <div class="tour-picker" style="display:flex;align-items:center;gap:0.4rem">
+      <label for="tour-select" style="color:var(--text-dim);font-size:0.85rem">Turnuva:</label>
+      <select id="tour-select" onchange="onTourChange(this.value)"
+              style="padding:0.4rem 0.7rem;border-radius:6px;background:var(--surface);border:1px solid var(--border);color:var(--text);font-size:0.9rem;min-width:180px">
+        <option value="">— Yükleniyor —</option>
+      </select>
+    </div>
     <nav class="nav-pills" id="nav">
       <a href="#sec-live">🔴 Canlı</a>
       <a href="#sec-standings">📊 Klasman</a>

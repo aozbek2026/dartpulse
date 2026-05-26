@@ -2,12 +2,30 @@
 <html lang="tr">
 <head>
 <meta charset="UTF-8" />
-<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, viewport-fit=cover" />
 <title>Board · Dart Core Pro</title>
 <link rel="stylesheet" href="/css/style.css" />
+<!-- PWA: tablet "Ana ekrana ekle" yapınca board kendi tam-ekran uygulaması gibi açılsın
+     (Chrome'un tab discard mekanizmasının dışında kalır). -->
+<link rel="manifest" href="/manifest-board.json" />
+<meta name="theme-color" content="#0b0d14" />
+<meta name="mobile-web-app-capable" content="yes" />
+<meta name="apple-mobile-web-app-capable" content="yes" />
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+<meta name="apple-mobile-web-app-title" content="Board" />
+<link rel="apple-touch-icon" href="/icons/icon-192.png" />
 </head>
 <body class="board-page">
 <div id="root" class="board-screen"></div>
+
+<!-- Bağlantı kopunca büyük kırmızı banner (board.js doldurur/gizler) -->
+<div id="conn-banner" class="conn-banner" hidden>
+  <span class="conn-banner__dot"></span>
+  <span class="conn-banner__text">Bağlantı kesildi — yeniden bağlanılıyor…</span>
+</div>
+
+<!-- Henüz tam ekran değilse köşede göster (board seçiliyse). board.js yönetir. -->
+<button id="fs-toggle" class="fs-toggle" hidden title="Tam ekran">⛶ Tam ekran</button>
 
 <script>
   // readonly modda (izleyici) login gerekmez
@@ -25,6 +43,23 @@
         window.location.href = '/login.html?next=' + encodeURIComponent(location.pathname + location.search);
       });
   }
+
+  // ---- Wake Lock: ekran asla uyumasın ----
+  // Yalnız HTTPS veya localhost'ta çalışır (LAN HTTP üzerinde değil).
+  // Sekme arka plana düşerse otomatik kaybolur; geri gelince yeniden talep edilir.
+  let __wakeLock = null;
+  async function __requestWakeLock() {
+    try {
+      if ('wakeLock' in navigator) {
+        __wakeLock = await navigator.wakeLock.request('screen');
+        __wakeLock.addEventListener('release', () => { __wakeLock = null; });
+      }
+    } catch (_) { /* sessizce yut */ }
+  }
+  document.addEventListener('visibilitychange', () => {
+    if (document.visibilityState === 'visible' && !__wakeLock) __requestWakeLock();
+  });
+  __requestWakeLock();
 </script>
 <script src="/socket.io/socket.io.js"></script>
 <script src="/js/common.js"></script>

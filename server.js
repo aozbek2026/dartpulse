@@ -216,6 +216,7 @@ app.patch('/api/boards/:id', auth.requireAuth, (req, res) => {
   if (b.user_id && b.user_id !== req.user.id) {
     return res.status(403).json({ error: 'Yetkiniz yok' });
   }
+  let changedTournament = false;
   if ('tournament_id' in (req.body || {})) {
     let tid = null;
     if (req.body.tournament_id != null && req.body.tournament_id !== '') {
@@ -226,6 +227,12 @@ app.patch('/api/boards/:id', auth.requireAuth, (req, res) => {
       tid = +req.body.tournament_id;
     }
     db.setBoardTournament(b.id, tid);
+    changedTournament = true;
+  }
+  // Board yeni bir turnuvaya baglandiysa scheduler'i tetikle — aksi halde
+  // 'ready' bekleyen maçlar tablete düşmez (eski bug).
+  if (changedTournament) {
+    try { scheduler.assignPendingMatches(io, req.user.id); } catch (e) { console.warn('[patch board] scheduler:', e.message); }
   }
   broadcastState();
   res.json({ ok: true });
@@ -1171,7 +1178,10 @@ app.get('/api/competitions/:id/players', auth.requireAuth, (req, res) => {
     const compId = +req.params.id;
     const comp = db.competitionById(compId, userId);
     if (!comp) return res.status(404).json({ error: 'Bulunamadi' });
-    const players = db.competitionPlayers(compId);
+    const players = db.competitionPlayers(compId).map(p => ({
+      ...p,
+      stats_json: p.stats_json ? safeParse(p.stats_json) : null,
+    }));
     res.json(players);
   } catch (e) {
     console.error('GET /api/competitions/:id/players:', e);
@@ -1316,52 +1326,48 @@ app.post('/api/competitions/:id/sessions', auth.requireAuth, (req, res) => {
     const compId = +req.params.id;
     const comp = db.competitionById(compId, userId);
     if (!comp) return res.status(404).json({ error: 'Bulunamadi' });
+    if (comp.status === 'finished') return res.status(400).json({ error: 'Bitmis competition\'a yeni oturum eklenemez.' });
+    if (comp.team_mode === 'doubles') return res.status(400).json({ error: 'Esli (doubles) format icin oturum olusturma henuz desteklenmiyor.' });
 
-    if (comp.status === 'finished') {
-      return res.status(400).json({ error: 'Bitmis competition\'a yeni oturum eklenemez.' });
-    }
+    const existing = db.sessionsForCompetition(compId);
+    const sessionNumber = existing.length + 1;
+    const sessionName = (req.body.name && req.body.name.trim()) || `${sessionNumber}. Oturum`;
 
-    // Faz 1: doubles competition'larda oturum olusturma henuz desteklenmiyor
-    if (comp.team_mode === 'doubles') {
-      return res.status(400).json({
-        error: 'Esli (doubles) format icin oturum olusturma sonraki dilimde gelecek. Bu sezon/lig bireysel olmali.'
+    // LİG: sadece container oturum yarat (katılımcı/format yok — roundlar ayrıca başlatılır)
+    if (comp.type === 'league') {
+      if (!comp.plan_generated) return res.status(400).json({ error: 'Once lig planini olustur (Oyuncular sekmesi).' });
+      const sessionRow = db.createSession({
+        competition_id: compId,
+        user_id: userId,
+        session_number: sessionNumber,
+        name: sessionName,
+        session_date: req.body.session_date || null,
+        session_type: 'league_day',
+        status: 'pending',
       });
+      broadcastState();
+      return res.json({ ...sessionRow, tournament_status: null, entries_count: 0 });
     }
 
+    // SEZON: eski akış (format + katılımcı seçimi)
     const format = req.body.format || 'single_elim';
     if (!['single_elim', 'double_elim', 'round_robin'].includes(format)) {
       return res.status(400).json({ error: 'Gecersiz bracket formati' });
     }
-
     const ids = Array.isArray(req.body.participant_player_ids)
       ? req.body.participant_player_ids.map(Number).filter(n => Number.isInteger(n) && n > 0)
       : [];
-    if (ids.length < 2) {
-      return res.status(400).json({ error: 'En az 2 katilimci secilmeli' });
-    }
+    if (ids.length < 2) return res.status(400).json({ error: 'En az 2 katilimci secilmeli' });
 
-    // Katilimcilarin hepsi competition havuzunda mi kontrol et
     const pool = db.competitionPlayers(compId);
     const poolIds = new Set(pool.map(p => p.player_id));
     const invalid = ids.filter(id => !poolIds.has(id));
-    if (invalid.length) {
-      return res.status(400).json({
-        error: `Bazi katilimcilar havuzda degil: ${invalid.join(', ')}. Once Oyuncular sekmesinden ekle.`
-      });
-    }
+    if (invalid.length) return res.status(400).json({ error: `Bazi katilimcilar havuzda degil: ${invalid.join(', ')}` });
 
-    // Oturum numarasi
-    const existing = db.sessionsForCompetition(compId);
-    const sessionNumber = existing.length + 1;
-
-    // Turnuva olustur (mevcut altyapi)
-    const tName = (req.body.name && req.body.name.trim())
-      || `${comp.name} — ${sessionNumber}. Oturum`;
+    const tName = sessionName;
     const entries = ids.map(pid => ({ player1_id: pid, player2_id: null, seed: null }));
-
     const t = tournament.createTournament({
-      user_id: userId,
-      name: tName,
+      user_id: userId, name: tName,
       game_mode: comp.game_mode || '501',
       team_mode: comp.team_mode || 'singles',
       legs_to_win: comp.legs_to_win || 2,
@@ -1370,24 +1376,24 @@ app.post('/api/competitions/:id/sessions', auth.requireAuth, (req, res) => {
       stages: [{ format, qualifier_count: null, config: {} }],
     });
 
-    // competition_sessions kaydi
     const sessionRow = db.createSession({
-      competition_id: compId,
-      user_id: userId,
-      session_number: sessionNumber,
-      tournament_id: t.id,
-      name: tName,
-      session_date: req.body.session_date || null,
-      status: 'pending',
+      competition_id: compId, user_id: userId,
+      session_number: sessionNumber, tournament_id: t.id,
+      name: tName, session_date: req.body.session_date || null, status: 'pending',
     });
 
-    // Competition'i 'running' yap (ilk oturumda)
-    if (comp.status === 'draft') {
-      db.updateCompetition(compId, userId, { status: 'running' });
-    }
+    if (comp.status === 'draft') db.updateCompetition(compId, userId, { status: 'running' });
+
+    let claimedBoards = 0;
+    try {
+      for (const b of db.allBoards(userId)) {
+        if (!b.tournament_id) { db.setBoardTournament(b.id, t.id); claimedBoards++; }
+        else { const bt = db.tournamentById(b.tournament_id); if (!bt || bt.status === 'finished') { db.setBoardTournament(b.id, t.id); claimedBoards++; } }
+      }
+    } catch (_) {}
 
     broadcastState();
-    res.json({ ...sessionRow, tournament_status: t.status, entries_count: entries.length });
+    res.json({ ...sessionRow, tournament_status: t.status, entries_count: entries.length, claimed_boards: claimedBoards });
   } catch (e) {
     console.error('POST /api/competitions/:id/sessions:', e);
     res.status(400).json({ error: e.message });
@@ -1470,6 +1476,34 @@ app.post('/api/competitions/:id/sessions/:sid/finalize', auth.requireAuth, (req,
     const points = safeParse(comp.points_json) || {};
     const defaultPts = points['default'] != null ? +points['default'] : 0;
 
+    // Atis istatistiklerini tournamentPlayerReport'tan al, player_id -> shotStats
+    // Doubles entry'lerinde ayni rapor satiri iki oyuncuya da yazilir.
+    const shotByPlayer = {};
+    try {
+      const report = db.tournamentPlayerReport(s.tournament_id);
+      for (const r of report) {
+        const m3da = (r.darts_thrown > 0)
+          ? (r.total_score / r.darts_thrown) * 3
+          : 0;
+        const sStats = {
+          total_score:   r.total_score   || 0,
+          darts_thrown:  r.darts_thrown  || 0,
+          tons:          r.tons          || 0,
+          ton_plus:      r.ton_plus      || 0,
+          one_eighty:    r.one_eighty    || 0,
+          high_outs:     r.high_outs     || 0,
+          best_checkout: r.best_checkout || 0,
+          match_3da:     m3da,
+        };
+        const p1id = r.entry?.player1?.id;
+        const p2id = r.entry?.player2?.id;
+        if (p1id) shotByPlayer[p1id] = sStats;
+        if (p2id) shotByPlayer[p2id] = sStats;
+      }
+    } catch (err) {
+      console.warn('[finalize] shot stats warning:', err.message);
+    }
+
     // Tek transaction icinde yaz (cift sayim/yarim yazim risksiz)
     const tx = db.db.transaction(() => {
       for (const row of standings) {
@@ -1496,6 +1530,9 @@ app.post('/api/competitions/:id/sessions/:sid/finalize', auth.requireAuth, (req,
           legs_lost:    row.legs_lost || 0,
           ...isPodium,
         });
+        if (shotByPlayer[pid]) {
+          db.addShotStatsToCompetitionPlayer(compId, pid, shotByPlayer[pid]);
+        }
 
         // Doubles: ikinci oyuncuya da ayni katki (eger varsa)
         if (row.p2_player_id) {
@@ -1509,6 +1546,9 @@ app.post('/api/competitions/:id/sessions/:sid/finalize', auth.requireAuth, (req,
             legs_lost:    row.legs_lost || 0,
             ...isPodium,
           });
+          if (shotByPlayer[row.p2_player_id]) {
+            db.addShotStatsToCompetitionPlayer(compId, row.p2_player_id, shotByPlayer[row.p2_player_id]);
+          }
         }
       }
       // Session'i finished isaretle
@@ -1566,22 +1606,347 @@ app.delete('/api/competitions/:id/sessions/:sid', auth.requireAuth, (req, res) =
     if (!s || s.competition_id !== compId) return res.status(404).json({ error: 'Oturum bulunamadi' });
 
     // Turnuva durumu kontrol et
+    // Kural: finished turnuva silinemez (klasmana islenmis veri kaybolmasin).
+    // draft + running silinebilir — running maclar varsa onlar da temizlenir.
     if (s.tournament_id) {
       const t = db.tournamentById(s.tournament_id);
-      if (t && t.status !== 'draft') {
-        return res.status(400).json({
-          error: 'Bu oturumun bracketi baslamis. Once turnuvayi sil ya da bitir.'
-        });
+      if (t && t.status === 'finished') {
+        if (db.sessionHasResults(sid)) {
+          return res.status(400).json({
+            error: 'Bu oturumun sonuclari klasmana islenmis. Once klasmandan geri al.'
+          });
+        }
+        // Finished ama henuz finalize edilmemis — silmeye izin ver
       }
       // Turnuva varsa onu da temizle
       db.deleteTournament(s.tournament_id);
     }
+
+    // league_day: bağlı round başlatılmışsa silme — kullanıcı yanlışlıkla veri kaybetmesin.
+    // Henüz başlatılmamış round'lar otomatik "free" olur (FK ON DELETE SET NULL).
+    if (s.session_type === 'league_day') {
+      const schedule = db.leagueSchedule(compId);
+      const startedHere = schedule.filter(r => r.session_id === sid && r.tournament_id);
+      if (startedHere.length > 0) {
+        return res.status(400).json({
+          error: `Bu güne baglı ${startedHere.length} round zaten baslatılmis. Önce round'ları başka güne taşı veya bitir.`
+        });
+      }
+    }
+
     db.deleteSession(sid);
     broadcastState();
     res.json({ ok: true });
   } catch (e) {
     console.error('DELETE /api/competitions/:id/sessions/:sid:', e);
     res.status(500).json({ error: e.message });
+  }
+});
+
+// Oturum detay (session.html için)
+app.get('/api/competitions/:compId/sessions/:sid/detail', auth.requireAuth, (req, res) => {
+  try {
+    const userId = req.session.userId;
+    const compId = +req.params.compId;
+    const sid = +req.params.sid;
+    // compId = 0 ise session_id ile comp bul
+    const s = db.sessionById(sid);
+    if (!s) return res.status(404).json({ error: 'Oturum bulunamadı' });
+    const comp = db.competitionById(s.competition_id, userId);
+    if (!comp) return res.status(403).json({ error: 'Erişim yok' });
+    let tournament_status = null;
+    if (s.tournament_id) {
+      const t = db.tournamentById(s.tournament_id);
+      if (t) tournament_status = t.status;
+    }
+    const results_recorded = db.sessionHasResults(sid);
+    res.json({ ...s, tournament_status, results_recorded });
+  } catch (e) {
+    console.error('GET /api/competitions/:compId/sessions/:sid/detail:', e);
+    res.status(500).json({ error: e.message });
+  }
+});
+
+// Turnuva maçları (oyuncu isimleriyle) — session.html için
+app.get('/api/matches/for-tournament/:tid', auth.requireAuth, (req, res) => {
+  try {
+    const tid = +req.params.tid;
+    const t = db.tournamentById(tid);
+    if (!t || t.user_id !== req.session.userId) return res.status(403).json({ error: 'Erişim yok' });
+    const matches = db.matchesForTournament(tid);
+    const entries = db.entriesForTournament(tid);
+    const entryMap = {};
+    for (const e of entries) {
+      const p1 = e.player1_id ? db.playerById(e.player1_id) : null;
+      entryMap[e.id] = { player_id: e.player1_id, name: p1 ? p1.name : `#${e.player1_id}` };
+    }
+    const enriched = matches.map(m => ({
+      ...m,
+      p1_name: m.entry1_id ? (entryMap[m.entry1_id]?.name || '?') : null,
+      p2_name: m.entry2_id ? (entryMap[m.entry2_id]?.name || '?') : null,
+    }));
+    res.json(enriched);
+  } catch (e) {
+    console.error('GET /api/matches/for-tournament:', e);
+    res.status(500).json({ error: e.message });
+  }
+});
+
+// ---- Lig Planı Endpoint'leri ----
+
+// Lig planını getir (round + eşleşmeler + session durumları)
+app.get('/api/competitions/:id/schedule', auth.requireAuth, (req, res) => {
+  try {
+    const userId = req.session.userId;
+    const compId = +req.params.id;
+    const comp = db.competitionById(compId, userId);
+    if (!comp) return res.status(404).json({ error: 'Bulunamadi' });
+    const schedule = db.leagueSchedule(compId);
+    res.json({ plan_generated: !!comp.plan_generated, schedule });
+  } catch (e) {
+    console.error('GET /api/competitions/:id/schedule:', e);
+    res.status(500).json({ error: e.message });
+  }
+});
+
+// Lig planını oluştur (Berger). Henüz oturum yoksa otomatik "1. Gün" açar
+// ve tüm round'ları o güne bağlar — organizatör roundları o gün altında istediği
+// sırada başlatabilsin diye.
+app.post('/api/competitions/:id/plan', auth.requireAuth, (req, res) => {
+  try {
+    const userId = req.session.userId;
+    const compId = +req.params.id;
+    const comp = db.competitionById(compId, userId);
+    if (!comp) return res.status(404).json({ error: 'Bulunamadi' });
+    if (comp.type !== 'league') return res.status(400).json({ error: 'Sadece lig formatinda plan uretilir' });
+    if (comp.status === 'finished') return res.status(400).json({ error: 'Bitmis lig planlanamaz' });
+
+    const result = db.generateLeaguePlan(compId, userId);
+
+    // Plan ürettikten sonra: hiç oturum yoksa otomatik bir "1. Gün" yarat.
+    // Plan yenilenirken zaten oturum varsa, mevcut yapıyı koru — sadece
+    // henüz hiçbir güne bağlanmamış yeni round'ları en eski (ilk) güne bağla.
+    let autoCreatedSession = null;
+    const existingSessions = db.sessionsForCompetition(compId);
+    let targetSessionId = null;
+
+    if (existingSessions.length === 0) {
+      autoCreatedSession = db.createSession({
+        competition_id: compId,
+        user_id: userId,
+        session_number: 1,
+        name: '1. Gün',
+        session_date: new Date().toISOString().slice(0, 10),
+        session_type: 'league_day',
+        status: 'pending',
+      });
+      targetSessionId = autoCreatedSession.id;
+    } else {
+      // İlk gün (en küçük session_number) — yeni başlatılmamış round'ları oraya bağlayalım
+      const firstSession = existingSessions[0];
+      if (firstSession && firstSession.session_type === 'league_day') {
+        targetSessionId = firstSession.id;
+      }
+    }
+
+    if (targetSessionId) {
+      const schedule = db.leagueSchedule(compId);
+      for (const r of schedule) {
+        if (!r.session_id) {
+          db.linkRoundToSession(compId, r.round_number, targetSessionId, null);
+        }
+      }
+    }
+
+    broadcastState();
+    res.json({ ok: true, ...result, auto_session: autoCreatedSession, target_session_id: targetSessionId });
+  } catch (e) {
+    console.error('POST /api/competitions/:id/plan:', e);
+    res.status(400).json({ error: e.message });
+  }
+});
+
+// Lig round'unu oturum içinde başlat
+// body: { round_number, game_mode?, legs_to_win?, sets_to_win? }
+app.post('/api/competitions/:id/sessions/:sid/start-round', auth.requireAuth, (req, res) => {
+  try {
+    const userId = req.session.userId;
+    const compId = +req.params.id;
+    const sid = +req.params.sid;
+    const roundNumber = +req.body.round_number;
+    if (!roundNumber) return res.status(400).json({ error: 'round_number gerekli' });
+
+    const comp = db.competitionById(compId, userId);
+    if (!comp) return res.status(404).json({ error: 'Bulunamadi' });
+    const s = db.sessionById(sid);
+    if (!s || s.competition_id !== compId) return res.status(404).json({ error: 'Oturum bulunamadi' });
+
+    // Round zaten başlatılmış mı?
+    const schedule = db.leagueSchedule(compId);
+    const roundData = schedule.find(r => r.round_number === roundNumber);
+    if (!roundData) return res.status(404).json({ error: `Round ${roundNumber} plan'da bulunamadi` });
+    if (roundData.tournament_id) return res.status(400).json({ error: `Round ${roundNumber} zaten baslatildi` });
+    if (!roundData.pairs || roundData.pairs.length === 0) {
+      return res.status(400).json({ error: 'Bu round icin eslesmeler bulunamadi' });
+    }
+
+    const gameMode = req.body.game_mode || comp.game_mode || '501';
+    const legsToWin = req.body.legs_to_win || comp.legs_to_win || 2;
+    const setsToWin = req.body.sets_to_win || comp.sets_to_win || 1;
+    const tName = `${comp.name} — ${roundNumber}. Round`;
+
+    const t = tournament.createLeagueRoundTournament({
+      user_id: userId,
+      name: tName,
+      game_mode: gameMode,
+      team_mode: comp.team_mode || 'singles',
+      legs_to_win: legsToWin,
+      sets_to_win: setsToWin,
+      pairs: roundData.pairs,
+    });
+
+    // Round'u bu oturuma ve turnuvaya bağla
+    db.linkRoundToSession(compId, roundNumber, sid, t.id);
+
+    // Oturumu running yap
+    if (s.status === 'pending' || s.status === 'planned') {
+      db.updateSession(sid, { status: 'running' });
+    }
+    if (comp.status === 'draft') {
+      db.updateCompetition(compId, userId, { status: 'running' });
+    }
+
+    // Board atama kuralları:
+    //   1) Atanmamış board → bu round'a al
+    //   2) Bağlı turnuva finished → bu round'a al
+    //   3) Aynı ligin BAŞKA round'una bağlı + şu an boşta (current_match_id yok) → bu round'a al
+    //      Federasyon: farklı bir lig/turnuvanın board'una dokunma.
+    let claimedBoards = 0;
+    const claimLog = [];
+    try {
+      // Bu lige ait tüm tournament_id'leri çıkar (mevcut + bu yeni)
+      const myLeagueTids = new Set(
+        (db.leagueSchedule(compId) || [])
+          .map(r => r.tournament_id)
+          .filter(Boolean)
+      );
+      myLeagueTids.add(t.id);
+
+      const myBoards = db.allBoards(userId);
+      console.log(`[start-round] comp=${compId} round=${roundNumber} new_tid=${t.id} my_boards=${myBoards.length} league_tids=[${[...myLeagueTids].join(',')}]`);
+      for (const b of myBoards) {
+        const before = b.tournament_id;
+        const cur = b.current_match_id;
+        if (!b.tournament_id) {
+          db.setBoardTournament(b.id, t.id); claimedBoards++;
+          claimLog.push(`B${b.id}(${b.name}): tid=NULL → ${t.id} ✓`);
+          continue;
+        }
+        const bt = db.tournamentById(b.tournament_id);
+        if (!bt || bt.status === 'finished') {
+          db.setBoardTournament(b.id, t.id); claimedBoards++;
+          claimLog.push(`B${b.id}(${b.name}): tid=${before} (bitmiş) → ${t.id} ✓`);
+          continue;
+        }
+        // Aynı ligin başka round'una bağlı + boşta?
+        const sameLeague = myLeagueTids.has(b.tournament_id);
+        const idle = !b.current_match_id || b.status === 'idle';
+        if (sameLeague && idle) {
+          db.setBoardTournament(b.id, t.id); claimedBoards++;
+          claimLog.push(`B${b.id}(${b.name}): tid=${before} (aynı lig, boş) → ${t.id} ✓`);
+        } else {
+          claimLog.push(`B${b.id}(${b.name}): tid=${before} cur_match=${cur} status=${b.status} sameLeague=${sameLeague} idle=${idle} → atlanıyor`);
+        }
+      }
+      for (const line of claimLog) console.log('  ' + line);
+    } catch (e) { console.warn('[start-round] board claim:', e.message); }
+
+    // Maçları board'lara dağıt (eksikti — turnuva oluştu ama scheduler tetiklenmemişti)
+    try {
+      const readyBefore = db.pendingReadyMatches(userId).filter(m => m.tournament_id === t.id);
+      console.log(`[start-round] scheduler öncesi: round_t=${t.id} ready_matches=${readyBefore.length} (board_id'leri: ${readyBefore.map(m => m.board_id).join(',')})`);
+      scheduler.assignPendingMatches(io, userId);
+      const readyAfter = db.pendingReadyMatches(userId).filter(m => m.tournament_id === t.id);
+      const assigned = readyAfter.filter(m => m.board_id != null).length;
+      const stillReady = readyAfter.filter(m => !m.board_id).length;
+      console.log(`[start-round] scheduler sonrası: atandı=${assigned}, hâlâ_bekleyen=${stillReady}`);
+    } catch (e) { console.warn('[start-round] scheduler:', e.message); }
+
+    broadcastState();
+    res.json({ ok: true, tournament_id: t.id, round_number: roundNumber, claimed_boards: claimedBoards });
+  } catch (e) {
+    console.error('POST /api/competitions/:id/sessions/:sid/start-round:', e);
+    res.status(400).json({ error: e.message });
+  }
+});
+
+// Lig round'unu başka bir güne taşı (henüz başlatılmamış olmalı).
+// body: { session_id }
+app.post('/api/competitions/:id/rounds/:roundNumber/move', auth.requireAuth, (req, res) => {
+  try {
+    const userId = req.session.userId;
+    const compId = +req.params.id;
+    const roundNumber = +req.params.roundNumber;
+    const targetSid = +req.body.session_id;
+    if (!targetSid) return res.status(400).json({ error: 'session_id gerekli' });
+
+    const comp = db.competitionById(compId, userId);
+    if (!comp) return res.status(404).json({ error: 'Bulunamadi' });
+    if (comp.type !== 'league') return res.status(400).json({ error: 'Sadece lig roundu tasinabilir' });
+
+    const target = db.sessionById(targetSid);
+    if (!target || target.competition_id !== compId) return res.status(404).json({ error: 'Hedef oturum bulunamadi' });
+    if (target.session_type !== 'league_day') return res.status(400).json({ error: 'Hedef bir lig gunu olmali' });
+
+    const schedule = db.leagueSchedule(compId);
+    const round = schedule.find(r => r.round_number === roundNumber);
+    if (!round) return res.status(404).json({ error: `Round ${roundNumber} planda yok` });
+    if (round.tournament_id) return res.status(400).json({ error: `Round ${roundNumber} zaten baslatildi, tasinamaz` });
+
+    db.linkRoundToSession(compId, roundNumber, targetSid, null);
+    broadcastState();
+    res.json({ ok: true, round_number: roundNumber, session_id: targetSid });
+  } catch (e) {
+    console.error('POST /api/competitions/:id/rounds/:roundNumber/move:', e);
+    res.status(400).json({ error: e.message });
+  }
+});
+
+// Atış istatistiklerini geriye dönük yaz (eski finalize edilmiş round'lar için).
+// Bug fix sonrası mevcut data için tek seferlik bir kurtarma.
+app.post('/api/competitions/:id/backfill-shot-stats', auth.requireAuth, (req, res) => {
+  try {
+    const userId = req.session.userId;
+    const compId = +req.params.id;
+    const result = db.backfillShotStatsForCompetition(compId, userId);
+    broadcastState();
+    res.json({ ok: true, ...result });
+  } catch (e) {
+    console.error('POST /api/competitions/:id/backfill-shot-stats:', e);
+    res.status(400).json({ error: e.message });
+  }
+});
+
+// Lig round'unu finalize et — round'un mini turnuvası bittiyse oyuncu istatistiklerini
+// klasmana yansıtır. Idempotent.
+app.post('/api/competitions/:id/rounds/:roundNumber/finalize', auth.requireAuth, (req, res) => {
+  try {
+    const userId = req.session.userId;
+    const compId = +req.params.id;
+    const roundNumber = +req.params.roundNumber;
+    const comp = db.competitionById(compId, userId);
+    if (!comp) return res.status(404).json({ error: 'Bulunamadi' });
+    if (comp.type !== 'league') return res.status(400).json({ error: 'Sadece lig formatinda round finalize edilebilir' });
+
+    const result = db.recordLeagueRoundResults(compId, roundNumber, userId);
+    if (result && result.already) {
+      return res.status(400).json({ error: 'Bu round zaten klasmana islendi (cift sayim yapilmaz).' });
+    }
+    broadcastState();
+    res.json({ ok: true, ...result });
+  } catch (e) {
+    console.error('POST /api/competitions/:id/rounds/:roundNumber/finalize:', e);
+    res.status(400).json({ error: e.message });
   }
 });
 
@@ -1609,6 +1974,17 @@ try {
 }
 
 scheduler.init(io);
+
+// Startup'ta scheduler'i bir kez çalıştır: önceki çalışmada askıda kalan
+// (board'a atanmamış ready maç + boş board) durumları toparlasın.
+// Aksi halde restart sonrası kullanıcı bir tetikleyici (board patch, round bitti vs.)
+// olana kadar maçlar gelmez.
+try {
+  scheduler.assignPendingMatches(io, null);
+  console.log('[startup] scheduler bir kez çalıştırıldı.');
+} catch (e) {
+  console.warn('[startup] scheduler hatası:', e.message);
+}
 
 function getLanAddresses() {
   const os = require('os');

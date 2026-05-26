@@ -2,9 +2,16 @@
 // FROM: noreply@dartcorepro.com (domain doğrulandıktan sonra)
 // Şimdilik: onboarding@resend.dev (test)
 
-const { Resend } = require('resend');
+// 'resend' paketi opsiyonel: yerel geliştirmede yüklü olmayabilir.
+// Paket yoksa veya API key yoksa sendMail no-op olur, server kalkar.
+let Resend = null;
+try {
+  ({ Resend } = require('resend'));
+} catch (e) {
+  console.warn('[Mailer] "resend" paketi yüklü değil — e-posta göndermek için: npm install resend');
+}
 
-const resend = process.env.RESEND_API_KEY
+const resend = (Resend && process.env.RESEND_API_KEY)
   ? new Resend(process.env.RESEND_API_KEY)
   : null;
 

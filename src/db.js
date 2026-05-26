@@ -294,7 +294,7 @@ function init() {
       FOREIGN KEY(player_id) REFERENCES players(id) ON DELETE CASCADE
     );
 
-    -- Sadece lig formatinda: kimin kiminle kac kez oynadigi (planlama icin).
+    -- Sadece lig formatinda ozet: kimin kiminle kac kez oynadi (istatistik).
     CREATE TABLE IF NOT EXISTS league_matchups (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       competition_id INTEGER NOT NULL,
@@ -304,6 +304,25 @@ function init() {
       meetings_planned INTEGER DEFAULT 0,
       UNIQUE(competition_id, player1_id, player2_id),
       FOREIGN KEY(competition_id) REFERENCES competitions(id) ON DELETE CASCADE
+    );
+
+    -- Lig planinin detayi: Berger ile uretilen her eslesme.
+    -- session_id: round hangi competition_session'da oynatildi (baslayinca dolar).
+    -- tournament_id: round'un matchlerinin oldugu turnuva (baslayinca dolar).
+    CREATE TABLE IF NOT EXISTS league_schedule (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      competition_id INTEGER NOT NULL,
+      round_number INTEGER NOT NULL,
+      meeting_number INTEGER DEFAULT 1,
+      player1_id INTEGER NOT NULL,
+      player2_id INTEGER NOT NULL,
+      session_id INTEGER,
+      tournament_id INTEGER,
+      results_recorded INTEGER DEFAULT 0,
+      shot_stats_recorded INTEGER DEFAULT 0,
+      FOREIGN KEY(competition_id) REFERENCES competitions(id) ON DELETE CASCADE,
+      FOREIGN KEY(session_id) REFERENCES competition_sessions(id) ON DELETE SET NULL,
+      FOREIGN KEY(tournament_id) REFERENCES tournaments(id) ON DELETE SET NULL
     );
 
     -- Sezon/lig sonu playoff veya Ustalar etkinligi.
@@ -485,6 +504,38 @@ function init() {
     }
   } catch (e) {
     console.error('[db] session_results FK hotfix hatasi:', e.message);
+  }
+
+  // Lig & Sezon: competition_sessions'a yeni kolonlar (round_number, session_type)
+  const compSessCols = db.prepare("PRAGMA table_info(competition_sessions)").all().map(c => c.name);
+  if (!compSessCols.includes('round_number')) {
+    try { db.exec('ALTER TABLE competition_sessions ADD COLUMN round_number INTEGER'); } catch {}
+  }
+  if (!compSessCols.includes('session_type')) {
+    try { db.exec("ALTER TABLE competition_sessions ADD COLUMN session_type TEXT DEFAULT 'bracket'"); } catch {}
+  }
+  // competitions'a plan_generated kolonu
+  const compCols2 = db.prepare("PRAGMA table_info(competitions)").all().map(c => c.name);
+  if (!compCols2.includes('plan_generated')) {
+    try { db.exec('ALTER TABLE competitions ADD COLUMN plan_generated INTEGER DEFAULT 0'); } catch {}
+  }
+  // league_schedule kolonlari: eski DB'lerde session_id/tournament_id/meeting_number
+  // hic eklenmemis olabilir. Her birini eksikse ekle (geriye donuk uyumlu).
+  const lsCols = db.prepare("PRAGMA table_info(league_schedule)").all().map(c => c.name);
+  if (!lsCols.includes('meeting_number')) {
+    try { db.exec('ALTER TABLE league_schedule ADD COLUMN meeting_number INTEGER DEFAULT 1'); } catch {}
+  }
+  if (!lsCols.includes('session_id')) {
+    try { db.exec('ALTER TABLE league_schedule ADD COLUMN session_id INTEGER'); } catch {}
+  }
+  if (!lsCols.includes('tournament_id')) {
+    try { db.exec('ALTER TABLE league_schedule ADD COLUMN tournament_id INTEGER'); } catch {}
+  }
+  if (!lsCols.includes('results_recorded')) {
+    try { db.exec('ALTER TABLE league_schedule ADD COLUMN results_recorded INTEGER DEFAULT 0'); } catch {}
+  }
+  if (!lsCols.includes('shot_stats_recorded')) {
+    try { db.exec('ALTER TABLE league_schedule ADD COLUMN shot_stats_recorded INTEGER DEFAULT 0'); } catch {}
   }
 
   // HOTFIX-3 (Mayis 2026): Orphan board_id temizligi.
@@ -1256,11 +1307,320 @@ function removeCompetitionPlayer(competitionId, playerId) {
 // --- Competition Sessions (oturumlar) ---
 // NOT: Tablo adi 'competition_sessions' - express-session'in 'sessions'
 //      tablosuyla cakismamasi icin. JS API'leri kisa adda kalir.
+// ---- Lig Planı (Berger / circle method) ----
+
+// Circle yöntemiyle tüm round'ları üretir.
+// playerIds: oyuncu ID dizisi (en az 2)
+// meetCount: herkes birbirleriyle kaç kez oynasın
+// Dönüş: [ { roundNumber, meeting, pairs: [{p1,p2}] }, ... ]
+function bergerRounds(playerIds, meetCount) {
+  const mc = meetCount || 1;
+  const base = [...playerIds];
+  if (base.length % 2 === 1) base.push(null); // BYE
+  const n = base.length;
+  const roundsPerMeeting = n - 1;
+  const allRounds = [];
+
+  for (let m = 0; m < mc; m++) {
+    const players = [...base];
+    // 2. karşılaşmada ev/deplasman ters
+    const swap = m % 2 === 1;
+    const fixed = players[0];
+    const rotating = players.slice(1);
+    for (let r = 0; r < roundsPerMeeting; r++) {
+      const circle = [fixed, ...rotating];
+      const pairs = [];
+      for (let i = 0; i < n / 2; i++) {
+        const a = circle[i];
+        const b = circle[n - 1 - i];
+        if (a !== null && b !== null) {
+          pairs.push(swap ? { p1: b, p2: a } : { p1: a, p2: b });
+        }
+      }
+      allRounds.push({
+        roundNumber: m * roundsPerMeeting + r + 1,
+        meeting: m + 1,
+        pairs,
+      });
+      // Döndür: son eleman ikinci sıraya girer
+      rotating.unshift(rotating.pop());
+    }
+  }
+  return allRounds;
+}
+
+// Lig planını üretir: sadece league_schedule doldurur (competition_sessions yaratmaz).
+// Varsa eski planı temizler (sadece henüz başlatılmamış — session_id NULL — satırlar silinir).
+function generateLeaguePlan(competitionId, userId) {
+  const comp = db.prepare('SELECT * FROM competitions WHERE id = ? AND user_id = ?').get(competitionId, userId);
+  if (!comp) throw new Error('Competition bulunamadı');
+  if (comp.type !== 'league') throw new Error('Sadece lig formatında plan üretilebilir');
+
+  const players = db.prepare(
+    'SELECT player_id FROM competition_players WHERE competition_id = ? ORDER BY id ASC'
+  ).all(competitionId).map(r => r.player_id);
+  if (players.length < 2) throw new Error('Lig planı için en az 2 oyuncu gerekli');
+
+  const meetCount = comp.meet_count || 1;
+  const rounds = bergerRounds(players, meetCount);
+
+  // Henüz başlatılmamış (session_id NULL) eski plan satırlarını sil
+  db.prepare('DELETE FROM league_schedule WHERE competition_id = ? AND session_id IS NULL').run(competitionId);
+
+  const insertSchedule = db.prepare(
+    'INSERT INTO league_schedule (competition_id, round_number, meeting_number, player1_id, player2_id) VALUES (?,?,?,?,?)'
+  );
+  db.transaction(() => {
+    for (const round of rounds) {
+      for (const pair of round.pairs) {
+        insertSchedule.run(competitionId, round.roundNumber, round.meeting, pair.p1, pair.p2);
+      }
+    }
+  })();
+
+  db.prepare('UPDATE competitions SET plan_generated = 1 WHERE id = ?').run(competitionId);
+  return { rounds: rounds.length, matchups: rounds.reduce((s, r) => s + r.pairs.length, 0) };
+}
+
+// Lig planını döndürür: her round + eşleşmeleri + session/tournament bilgisi
+function leagueSchedule(competitionId) {
+  const rows = db.prepare(`
+    SELECT ls.*, p1.name AS p1_name, p2.name AS p2_name,
+           t.status AS tournament_status
+    FROM league_schedule ls
+    LEFT JOIN players p1 ON p1.id = ls.player1_id
+    LEFT JOIN players p2 ON p2.id = ls.player2_id
+    LEFT JOIN tournaments t ON t.id = ls.tournament_id
+    WHERE ls.competition_id = ?
+    ORDER BY ls.round_number ASC, ls.id ASC
+  `).all(competitionId);
+
+  // Round'lara grupla (aynı round_number'daki tüm eşleşmeler bir arada)
+  const roundMap = new Map();
+  for (const row of rows) {
+    if (!roundMap.has(row.round_number)) {
+      // session_status: tournament_status'tan türet
+      let session_status = 'planned';
+      if (row.tournament_status === 'finished') session_status = 'finished';
+      else if (row.tournament_status === 'running') session_status = 'running';
+      else if (row.session_id) session_status = 'planned'; // oturuma bağlı ama henüz başlamadı
+
+      roundMap.set(row.round_number, {
+        round_number: row.round_number,
+        meeting_number: row.meeting_number,
+        session_id: row.session_id,
+        tournament_id: row.tournament_id,
+        tournament_status: row.tournament_status,
+        session_status,
+        results_recorded: !!row.results_recorded,
+        pairs: [],
+      });
+    }
+    roundMap.get(row.round_number).pairs.push({
+      player1_id: row.player1_id,
+      player2_id: row.player2_id,
+      p1_name: row.p1_name,
+      p2_name: row.p2_name,
+    });
+  }
+  return [...roundMap.values()];
+}
+
+// Bir round'u oturuma ve turnuvaya bağlar.
+// tournamentId NULL ise sadece session_id güncellenir (henüz başlatılmamış round'u güne taşımak için).
+function linkRoundToSession(competitionId, roundNumber, sessionId, tournamentId) {
+  if (tournamentId == null) {
+    db.prepare(
+      'UPDATE league_schedule SET session_id = ? WHERE competition_id = ? AND round_number = ?'
+    ).run(sessionId, competitionId, roundNumber);
+  } else {
+    db.prepare(
+      'UPDATE league_schedule SET session_id = ?, tournament_id = ? WHERE competition_id = ? AND round_number = ?'
+    ).run(sessionId, tournamentId, competitionId, roundNumber);
+  }
+}
+
+// Round-bazlı finalize destek: lig için bir round'un mini turnuvasından
+// her oyuncunun (wins, losses, legs_won, legs_lost) çıkarıp klasmana yansıtır.
+// Idempotent: results_recorded=1 ise hiçbir şey yapmaz, false döner.
+// Dönüş: { ok, recorded, perPlayer: [{player_id, wins, losses, legs_won, legs_lost, points}] }
+function recordLeagueRoundResults(competitionId, roundNumber, userId, opts = {}) {
+  const comp = db.prepare('SELECT * FROM competitions WHERE id = ? AND user_id = ?').get(competitionId, userId);
+  if (!comp) throw new Error('Competition bulunamadı');
+  if (comp.type !== 'league') throw new Error('Sadece lig formatında round finalize edilebilir');
+
+  const row = db.prepare(
+    'SELECT * FROM league_schedule WHERE competition_id = ? AND round_number = ? LIMIT 1'
+  ).get(competitionId, roundNumber);
+  if (!row) throw new Error(`Round ${roundNumber} planda yok`);
+  if (!row.tournament_id) throw new Error(`Round ${roundNumber} henüz başlatılmadı`);
+  if (row.results_recorded) {
+    return { ok: false, already: true };
+  }
+
+  const t = db.prepare('SELECT * FROM tournaments WHERE id = ?').get(row.tournament_id);
+  if (!t) throw new Error('Round turnuvası bulunamadı');
+  if (t.status !== 'finished') throw new Error('Round henüz bitmedi — önce tüm maçları tamamla');
+
+  // Maçlar + entry → player haritası
+  const matches = db.prepare(
+    'SELECT * FROM matches WHERE tournament_id = ? AND status = ?'
+  ).all(row.tournament_id, 'finished');
+  const entries = db.prepare(
+    'SELECT * FROM entries WHERE tournament_id = ?'
+  ).all(row.tournament_id);
+  const entryToPlayer = new Map();
+  for (const e of entries) entryToPlayer.set(e.id, e.player1_id);
+
+  // Per-player toplama
+  const perPlayer = new Map(); // player_id → { wins, losses, legs_won, legs_lost }
+  function ensure(pid) {
+    if (!perPlayer.has(pid)) perPlayer.set(pid, { wins: 0, losses: 0, legs_won: 0, legs_lost: 0 });
+    return perPlayer.get(pid);
+  }
+  for (const m of matches) {
+    const p1 = entryToPlayer.get(m.entry1_id);
+    const p2 = entryToPlayer.get(m.entry2_id);
+    if (!p1 || !p2) continue;
+    const a = ensure(p1);
+    const b = ensure(p2);
+    a.legs_won  += m.p1_legs || 0;
+    a.legs_lost += m.p2_legs || 0;
+    b.legs_won  += m.p2_legs || 0;
+    b.legs_lost += m.p1_legs || 0;
+    if (m.winner_entry_id === m.entry1_id) { a.wins++; b.losses++; }
+    else if (m.winner_entry_id === m.entry2_id) { b.wins++; a.losses++; }
+  }
+
+  // Maç başına puan: points_json['match'] varsa onu kullan, yoksa 3 (default)
+  let matchPoints = 3;
+  try {
+    const pj = comp.points_json ? JSON.parse(comp.points_json) : {};
+    if (pj && pj.match != null && !isNaN(+pj.match)) matchPoints = +pj.match;
+  } catch (_) {}
+
+  // Atış istatistiklerini topla (tournamentPlayerReport entry-bazlı agreggate döner)
+  // ve player_id -> shotStats haritası kur.
+  const shotByPlayer = {};
+  try {
+    const report = tournamentPlayerReport(row.tournament_id);
+    for (const r of report) {
+      const m3da = (r.darts_thrown > 0) ? (r.total_score / r.darts_thrown) * 3 : 0;
+      const sStats = {
+        total_score:   r.total_score   || 0,
+        darts_thrown:  r.darts_thrown  || 0,
+        tons:          r.tons          || 0,
+        ton_plus:      r.ton_plus      || 0,
+        one_eighty:    r.one_eighty    || 0,
+        high_outs:     r.high_outs     || 0,
+        best_checkout: r.best_checkout || 0,
+        match_3da:     m3da,
+      };
+      const p1id = r.entry?.player1?.id;
+      const p2id = r.entry?.player2?.id;
+      if (p1id) shotByPlayer[p1id] = sStats;
+      if (p2id) shotByPlayer[p2id] = sStats;
+    }
+  } catch (err) {
+    console.warn('[recordLeagueRoundResults] shot stats warning:', err.message);
+  }
+
+  const result = [];
+  const tx = db.transaction(() => {
+    for (const [pid, st] of perPlayer.entries()) {
+      const pts = (st.wins || 0) * matchPoints;
+      addToCompetitionPlayerStats(competitionId, pid, {
+        total_points: pts,
+        // Bir round = bir "oturum katılımı" sayılmaz; gün/oturum konteyner.
+        // Klasmandaki "Oturum" sutununu sezon ile tutarli tutmak icin 0.
+        sessions_played: 0,
+        matches_won:  st.wins,
+        matches_lost: st.losses,
+        legs_won:     st.legs_won,
+        legs_lost:    st.legs_lost,
+      });
+      // Atış istatistikleri (sezonda olduğu gibi birikimli)
+      if (shotByPlayer[pid]) {
+        addShotStatsToCompetitionPlayer(competitionId, pid, shotByPlayer[pid]);
+      }
+      result.push({ player_id: pid, ...st, points: pts });
+    }
+    db.prepare(
+      'UPDATE league_schedule SET results_recorded = 1, shot_stats_recorded = 1 WHERE competition_id = ? AND round_number = ?'
+    ).run(competitionId, roundNumber);
+  });
+  tx();
+
+  return { ok: true, recorded: result.length, perPlayer: result, match_points: matchPoints };
+}
+
+// Eski finalize edilmiş round'ların atış istatistiklerini geriye dönük yazar.
+// results_recorded=1 + shot_stats_recorded=0 satırları işler. Idempotent.
+// Maç G/M ve leg G/M YAZILMAZ (zaten yazıldı, double sayım olmaz).
+function backfillShotStatsForCompetition(competitionId, userId) {
+  const comp = db.prepare('SELECT * FROM competitions WHERE id = ? AND user_id = ?').get(competitionId, userId);
+  if (!comp) throw new Error('Competition bulunamadı');
+  if (comp.type !== 'league') throw new Error('Sadece lig için backfill');
+
+  const rows = db.prepare(
+    'SELECT * FROM league_schedule WHERE competition_id = ? AND results_recorded = 1 AND shot_stats_recorded = 0 AND tournament_id IS NOT NULL'
+  ).all(competitionId);
+
+  let totalRoundsBackfilled = 0;
+  let totalPlayersTouched = 0;
+
+  for (const row of rows) {
+    let report;
+    try {
+      report = tournamentPlayerReport(row.tournament_id);
+    } catch (err) {
+      console.warn(`[backfill] R${row.round_number} report hatası:`, err.message);
+      continue;
+    }
+
+    const tx = db.transaction(() => {
+      for (const r of report) {
+        const m3da = (r.darts_thrown > 0) ? (r.total_score / r.darts_thrown) * 3 : 0;
+        const sStats = {
+          total_score:   r.total_score   || 0,
+          darts_thrown:  r.darts_thrown  || 0,
+          tons:          r.tons          || 0,
+          ton_plus:      r.ton_plus      || 0,
+          one_eighty:    r.one_eighty    || 0,
+          high_outs:     r.high_outs     || 0,
+          best_checkout: r.best_checkout || 0,
+          match_3da:     m3da,
+        };
+        const p1id = r.entry?.player1?.id;
+        const p2id = r.entry?.player2?.id;
+        if (p1id) { addShotStatsToCompetitionPlayer(competitionId, p1id, sStats); totalPlayersTouched++; }
+        if (p2id) { addShotStatsToCompetitionPlayer(competitionId, p2id, sStats); totalPlayersTouched++; }
+      }
+      db.prepare(
+        'UPDATE league_schedule SET shot_stats_recorded = 1 WHERE id = ?'
+      ).run(row.id);
+    });
+    tx();
+    totalRoundsBackfilled++;
+  }
+
+  return { rounds: totalRoundsBackfilled, players_touched: totalPlayersTouched };
+}
+
+// Bir round'un finalize edilip edilmediğini hızlıca döner
+function leagueRoundResultsRecorded(competitionId, roundNumber) {
+  const r = db.prepare(
+    'SELECT results_recorded FROM league_schedule WHERE competition_id = ? AND round_number = ? LIMIT 1'
+  ).get(competitionId, roundNumber);
+  return !!(r && r.results_recorded);
+}
+
 function createSession(data) {
   const info = db.prepare(`
     INSERT INTO competition_sessions
-      (competition_id, user_id, session_number, tournament_id, name, session_date, status)
-    VALUES (?, ?, ?, ?, ?, ?, ?)
+      (competition_id, user_id, session_number, tournament_id, name, session_date,
+       status, round_number, session_type)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
   `).run(
     data.competition_id,
     data.user_id || null,
@@ -1269,6 +1629,8 @@ function createSession(data) {
     data.name || null,
     data.session_date || null,
     data.status || 'pending',
+    data.round_number || null,
+    data.session_type || 'bracket',
   );
   return db.prepare('SELECT * FROM competition_sessions WHERE id = ?').get(info.lastInsertRowid);
 }
@@ -1285,7 +1647,7 @@ function sessionById(id) {
 
 function updateSession(id, fields) {
   const allowed = ['session_number', 'tournament_id', 'name', 'session_date',
-                   'status', 'finished_at'];
+                   'status', 'finished_at', 'round_number', 'session_type'];
   const keys = Object.keys(fields).filter(k => allowed.includes(k));
   if (!keys.length) return;
   const sql = `UPDATE competition_sessions SET ${keys.map(k => `${k} = ?`).join(', ')} WHERE id = ?`;
@@ -1355,6 +1717,36 @@ function addToCompetitionPlayerStats(competitionId, playerId, delta) {
   );
 }
 
+// Atis istatistiklerini stats_json icine birikimli yaz.
+// shotStats: { total_score, darts_thrown, tons (100+), ton_plus (140+),
+//              one_eighty (180), high_outs (yuksek finish sayisi),
+//              best_checkout (max), matches_in_avg (avg agirligi icin) }
+// stats_json yapisi: {
+//   total_score, darts_thrown,                  // 3DA hesabi icin birikimli
+//   tons, ton_plus, one_eighty, high_outs,      // sayilar
+//   best_checkout, highest_match_3da,           // maks degerler
+// }
+function addShotStatsToCompetitionPlayer(competitionId, playerId, shotStats) {
+  const s = shotStats || {};
+  const row = db.prepare(
+    'SELECT stats_json FROM competition_players WHERE competition_id = ? AND player_id = ?'
+  ).get(competitionId, playerId);
+  if (!row) return;
+  let cur = {};
+  try { cur = row.stats_json ? JSON.parse(row.stats_json) : {}; } catch { cur = {}; }
+  cur.total_score   = (+cur.total_score || 0)   + (+s.total_score || 0);
+  cur.darts_thrown  = (+cur.darts_thrown || 0)  + (+s.darts_thrown || 0);
+  cur.tons          = (+cur.tons || 0)          + (+s.tons || 0);
+  cur.ton_plus      = (+cur.ton_plus || 0)      + (+s.ton_plus || 0);
+  cur.one_eighty    = (+cur.one_eighty || 0)    + (+s.one_eighty || 0);
+  cur.high_outs     = (+cur.high_outs || 0)     + (+s.high_outs || 0);
+  cur.best_checkout = Math.max(+cur.best_checkout || 0, +s.best_checkout || 0);
+  cur.highest_match_3da = Math.max(+cur.highest_match_3da || 0, +s.match_3da || 0);
+  db.prepare(
+    'UPDATE competition_players SET stats_json = ? WHERE competition_id = ? AND player_id = ?'
+  ).run(JSON.stringify(cur), competitionId, playerId);
+}
+
 // --- User token fonksiyonları ---
 function setVerifyToken(userId, token) {
   db.prepare('UPDATE users SET verify_token = ? WHERE id = ?').run(token, userId);
@@ -1407,5 +1799,7 @@ module.exports = {
   addCompetitionPlayer, competitionPlayers, removeCompetitionPlayer,
   createSession, sessionsForCompetition, sessionById, updateSession, deleteSession,
   recordSessionResult, resultsForSession, sessionHasResults,
-  addToCompetitionPlayerStats,
+  addToCompetitionPlayerStats, addShotStatsToCompetitionPlayer,
+  generateLeaguePlan, leagueSchedule, linkRoundToSession,
+  recordLeagueRoundResults, leagueRoundResultsRecorded, backfillShotStatsForCompetition,
 };

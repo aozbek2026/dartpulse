@@ -7,6 +7,108 @@ let watchFlashKeys = new Set(); // Flash animasyonu için kalan skor key'leri
 let watchPrevScores = {}; // Önceki kalan skorlar (flash tetiklemek için)
 let watchLastThrows = {}; // Son atılan skor { fk: score }
 
+// ── Turnuva seçim filtresi ───────────────────────────────────────
+// null  → tüm turnuvalar görünür (varsayılan)
+// <id>  → sadece o turnuva görünür
+let selectedTourId = readInitialTourSelection();
+
+function readInitialTourSelection() {
+  // 1) URL ?t=ID önceliklidir (paylaşılabilir link)
+  try {
+    const sp = new URLSearchParams(window.location.search);
+    const v = sp.get('t');
+    if (v != null && v !== '') {
+      const n = +v;
+      if (!isNaN(n)) return n;
+    }
+  } catch {}
+  // 2) Sonra localStorage
+  try {
+    const v = localStorage.getItem('viewer.selectedTourId');
+    if (v != null && v !== '' && v !== 'null') {
+      const n = +v;
+      if (!isNaN(n)) return n;
+    }
+  } catch {}
+  return null;
+}
+
+function persistTourSelection() {
+  // URL ve localStorage'ı senkron tut
+  try {
+    const url = new URL(window.location.href);
+    if (selectedTourId == null) url.searchParams.delete('t');
+    else url.searchParams.set('t', String(selectedTourId));
+    window.history.replaceState({}, '', url.toString());
+  } catch {}
+  try {
+    if (selectedTourId == null) localStorage.removeItem('viewer.selectedTourId');
+    else localStorage.setItem('viewer.selectedTourId', String(selectedTourId));
+  } catch {}
+}
+
+// Dropdown change handler (HTML'den çağrılıyor)
+function onTourChange(val) {
+  selectedTourId = (val === '' || val == null) ? null : +val;
+  persistTourSelection();
+  render();
+}
+window.onTourChange = onTourChange;
+
+// Görünür turnuvaları döndüren ortak helper.
+// base verilmezse state.tournaments kullanılır.
+function getVisibleTournaments(base) {
+  const list = base || state.tournaments || [];
+  if (selectedTourId == null) return list;
+  return list.filter(t => t.id === selectedTourId);
+}
+
+// Maçları seçili turnuvaya göre filtrele.
+// match.tournament_id mevcutsa onu, yoksa state.tournaments arasından
+// matches içinde olan ilk turnuvayı kullanır (fallback).
+function filterMatchesByTour(matches) {
+  if (selectedTourId == null) return matches || [];
+  return (matches || []).filter(m => {
+    if (m.tournament_id != null) return m.tournament_id === selectedTourId;
+    // tournament_id alanı yoksa — hangi turnuvaya ait olduğunu state üzerinden bul
+    for (const t of state.tournaments || []) {
+      if ((t.matches || []).some(tm => tm.id === m.id)) {
+        return t.id === selectedTourId;
+      }
+    }
+    return false;
+  });
+}
+
+// Dropdown'u doldur. Her render'da çağrılır — opsiyonların güncel kalması için.
+function renderTourSelector() {
+  const sel = document.getElementById('tour-select');
+  if (!sel) return;
+  // Draft (taslak) turnuvaları seçeneklerden hariç tut
+  const tourns = (state.tournaments || []).filter(t => t.status !== 'draft');
+  const order = (s) => ({ live: 0, running: 0, ready: 1, finished: 2 }[s] ?? 3);
+  tourns.sort((a, b) => order(a.status) - order(b.status) || (b.id - a.id));
+  const opts = [`<option value="">Hepsi (${tourns.length})</option>`]
+    .concat(tourns.map(t => {
+      const dot = t.status === 'finished' ? '✅' : '🔴';
+      return `<option value="${t.id}"${selectedTourId === t.id ? ' selected' : ''}>${dot} ${escapeHtml(t.name)}</option>`;
+    }));
+  sel.innerHTML = opts.join('');
+  // Seçili turnuva artık mevcut değilse (silinmiş) Hepsi'ye düş
+  if (selectedTourId != null && !tourns.some(t => t.id === selectedTourId)) {
+    selectedTourId = null;
+    persistTourSelection();
+  }
+}
+
+// HTML escape — selector için
+function escapeHtml(s) {
+  if (s == null) return '';
+  return String(s)
+    .replace(/&/g, '&amp;').replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+}
+
 function parseCfg(json) {
   try { return json ? JSON.parse(json) : {}; } catch { return {}; }
 }
@@ -24,6 +126,7 @@ socket.on('match:update', (data) => {
 });
 
 function render() {
+  renderTourSelector();
   renderLive();
   renderStandings();
   renderBracket();
@@ -131,9 +234,12 @@ function buildGroupStandings(t, stageMatches) {
 // ========== Render: Canlı ==========
 function renderLive() {
   const host = document.getElementById('live-host');
-  const active = state.activeMatches || [];
+  const active = filterMatchesByTour(state.activeMatches || []);
   if (!active.length) {
-    host.innerHTML = `<div class="card empty">Şu an canlı maç yok</div>`;
+    const msg = selectedTourId != null
+      ? 'Bu turnuvada şu an canlı maç yok'
+      : 'Şu an canlı maç yok';
+    host.innerHTML = `<div class="card empty">${msg}</div>`;
     return;
   }
   host.innerHTML = `
@@ -180,9 +286,12 @@ function renderLive() {
 // ========== Render: Klasman ==========
 function renderStandings() {
   const host = document.getElementById('standings-host');
-  const tourns = state.tournaments.filter(t => t.status !== 'draft');
+  const tourns = getVisibleTournaments(state.tournaments.filter(t => t.status !== 'draft'));
   if (!tourns.length) {
-    host.innerHTML = `<div class="card empty">Henüz başlamış turnuva yok</div>`;
+    const msg = selectedTourId != null
+      ? 'Seçili turnuva henüz başlamadı'
+      : 'Henüz başlamış turnuva yok';
+    host.innerHTML = `<div class="card empty">${msg}</div>`;
     return;
   }
   host.innerHTML = tourns.map(t => {
@@ -293,7 +402,7 @@ function renderStandings() {
 // ========== Render: Bracket ==========
 function renderBracket() {
   const host = document.getElementById('bracket-host');
-  const tourns = state.tournaments.filter(t => t.status !== 'draft');
+  const tourns = getVisibleTournaments(state.tournaments.filter(t => t.status !== 'draft'));
   if (!tourns.length) { host.innerHTML = ''; return; }
   host.innerHTML = tourns.map(t => `
     <div class="card">
@@ -466,7 +575,7 @@ function renderRR(stage, matches) {
 function renderMatches() {
   const host = document.getElementById('matches-host');
   const all = [];
-  for (const t of state.tournaments) {
+  for (const t of getVisibleTournaments()) {
     for (const m of t.matches) {
       all.push({ ...m, _tournament: t.name });
     }
@@ -566,7 +675,7 @@ function renderMatches() {
 function renderRecent() {
   const host = document.getElementById('recent-host');
   const finished = [];
-  for (const t of state.tournaments) {
+  for (const t of getVisibleTournaments()) {
     for (const m of t.matches) {
       if (m.status === 'finished') finished.push({ ...m, _tournament: t.name });
     }
@@ -615,9 +724,12 @@ function renderRecent() {
 function renderPast() {
   const host = document.getElementById('past-host');
   if (!host) return;
-  const finished = state.tournaments.filter(t => t.status === 'finished');
+  const finished = getVisibleTournaments(state.tournaments.filter(t => t.status === 'finished'));
   if (!finished.length) {
-    host.innerHTML = `<div class="card empty">Henüz tamamlanmış turnuva yok</div>`;
+    const msg = selectedTourId != null
+      ? 'Seçili turnuva henüz tamamlanmadı'
+      : 'Henüz tamamlanmış turnuva yok';
+    host.innerHTML = `<div class="card empty">${msg}</div>`;
     return;
   }
   host.innerHTML = finished.map(t => {

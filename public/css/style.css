@@ -194,6 +194,9 @@ body.board-page {
   overscroll-behavior: none;
   touch-action: pan-x;  /* yatay kaydırma izinli, dikey yok */
   margin: 0;
+  /* Android Chrome alt banner (bağlamsal arama) altını kapatmasın.
+     PWA/fullscreen modunda bu padding sıfıra düşer (safe-area 0 döner). */
+  padding-bottom: env(safe-area-inset-bottom, 0px);
 }
 body.board-page #root.board-screen {
   height: 100dvh;
@@ -1774,4 +1777,59 @@ body.board-page #root.board-screen {
   justify-content: flex-end;
   gap: 0.6rem;
   margin-top: 1.2rem;
+}
+
+/* ===== Board: bağlantı durum banner'ı ===== */
+.conn-banner {
+  position: fixed;
+  top: 0; left: 0; right: 0;
+  background: #b91c1c; /* kırmızı */
+  color: #fff;
+  font-weight: 800;
+  font-size: clamp(0.95rem, 2.6vmin, 1.35rem);
+  text-align: center;
+  padding: clamp(0.5rem, 1.6vmin, 0.85rem) 1rem;
+  z-index: 99999;
+  letter-spacing: 0.02em;
+  box-shadow: 0 4px 14px rgba(0,0,0,0.35);
+  display: flex; align-items: center; justify-content: center;
+  gap: 0.65rem;
+  animation: conn-banner-slide 0.18s ease-out;
+}
+.conn-banner.is-ok { background: #15803d; }
+.conn-banner__dot {
+  width: 0.7rem; height: 0.7rem; border-radius: 50%;
+  background: #fff;
+  animation: conn-banner-pulse 1s ease-in-out infinite;
+}
+.conn-banner.is-ok .conn-banner__dot { animation: none; }
+@keyframes conn-banner-pulse {
+  0%, 100% { opacity: 1; transform: scale(1); }
+  50%      { opacity: 0.4; transform: scale(0.7); }
+}
+@keyframes conn-banner-slide {
+  from { transform: translateY(-100%); }
+  to   { transform: translateY(0); }
+}
+
+/* ===== Board: tam ekran butonu (board seçili & henüz fullscreen değilse) ===== */
+.fs-toggle {
+  position: fixed;
+  top: 0.6rem; right: 0.6rem;
+  z-index: 9999;
+  background: rgba(11, 13, 20, 0.85);
+  color: #fff;
+  border: 1px solid rgba(255,255,255,0.18);
+  border-radius: 8px;
+  padding: 0.45rem 0.7rem;
+  font-size: clamp(0.8rem, 2vmin, 0.95rem);
+  font-weight: 700;
+  cursor: pointer;
+  backdrop-filter: blur(6px);
+  box-shadow: 0 2px 10px rgba(0,0,0,0.4);
+}
+.fs-toggle:hover, .fs-toggle:active { background: rgba(11, 13, 20, 0.95); }
+/* PWA standalone modda gizle — zaten tam ekran */
+@media (display-mode: standalone), (display-mode: fullscreen) {
+  .fs-toggle { display: none !important; }
 }

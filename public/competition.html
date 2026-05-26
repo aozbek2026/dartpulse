@@ -1,0 +1,311 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Lig / Sezon Detay · Dart Core Pro</title>
+<link rel="stylesheet" href="/css/style.css" />
+<style>
+  /* ── Competition detay stilleri ── */
+  .comp-header {
+    background: var(--bg-2, rgba(255,255,255,0.04));
+    border: 1px solid var(--border, rgba(255,255,255,0.08));
+    border-radius: 10px;
+    padding: 1rem 1.2rem;
+    margin-bottom: 1rem;
+  }
+  .comp-header-row {
+    display: flex; align-items: center; justify-content: space-between;
+    flex-wrap: wrap; gap: 0.5rem;
+  }
+  .comp-header h2 { margin: 0 0 0.35rem 0; }
+  .comp-type-pill {
+    display: inline-block;
+    font-size: 0.7rem;
+    padding: 0.15rem 0.6rem;
+    border-radius: 20px;
+    font-weight: 700;
+    margin-right: 0.5rem;
+    vertical-align: middle;
+  }
+  .comp-type-pill.season { background: #2563eb; color: #fff; }
+  .comp-type-pill.league { background: #9333ea; color: #fff; }
+  .comp-status-pill {
+    font-size: 0.72rem; padding: 0.2rem 0.6rem; border-radius: 20px; font-weight: 600;
+    border: 1px solid currentColor;
+  }
+  .comp-status-pill.draft    { color: var(--text-dim); }
+  .comp-status-pill.running  { color: #4ade80; }
+  .comp-status-pill.finished { color: var(--accent); }
+  .comp-meta-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));
+    gap: 0.5rem 1rem;
+    margin-top: 0.6rem;
+    font-size: 0.86rem;
+    color: var(--text-dim);
+  }
+  .comp-meta-grid .label { font-size: 0.72rem; text-transform: uppercase; opacity: 0.6; }
+  .comp-meta-grid .val { color: var(--text); font-size: 0.95rem; }
+
+  /* Sekme alanı */
+  .ctab-bar {
+    display: flex; flex-wrap: wrap; gap: 0.3rem;
+    border-bottom: 1px solid var(--border, rgba(255,255,255,0.08));
+    margin-bottom: 1rem;
+  }
+  .ctab-bar button {
+    background: transparent;
+    border: none;
+    color: var(--text-dim);
+    padding: 0.55rem 0.9rem;
+    cursor: pointer;
+    font-size: 0.9rem;
+    border-bottom: 2px solid transparent;
+    border-radius: 0;
+  }
+  .ctab-bar button.active {
+    color: var(--text);
+    border-bottom-color: var(--accent, #f59e0b);
+  }
+
+  /* Oyuncular */
+  .player-row {
+    display: flex; align-items: center; justify-content: space-between;
+    padding: 0.55rem 0.75rem;
+    background: rgba(255,255,255,0.025);
+    border: 1px solid rgba(255,255,255,0.05);
+    border-radius: 8px;
+    margin-bottom: 0.4rem;
+  }
+  .player-row .pname { font-weight: 500; }
+  .player-row .pmeta { font-size: 0.78rem; color: var(--text-dim); }
+  .player-row .pactions { display: flex; gap: 0.3rem; }
+
+  .add-player-form {
+    display: flex; gap: 0.4rem; flex-wrap: wrap;
+    margin-bottom: 0.8rem;
+  }
+  .add-player-form input { flex: 1 1 200px; }
+  .add-player-form input[type="text"][name="nickname"] { flex: 0 0 140px; }
+
+  .info-banner {
+    background: rgba(37, 99, 235, 0.08);
+    border: 1px solid rgba(37, 99, 235, 0.25);
+    border-radius: 8px;
+    padding: 0.6rem 0.8rem;
+    margin-bottom: 0.9rem;
+    font-size: 0.86rem;
+    color: var(--text-dim);
+  }
+  .info-banner.warn {
+    background: rgba(245, 158, 11, 0.06);
+    border-color: rgba(245, 158, 11, 0.25);
+  }
+  .info-banner.danger {
+    background: rgba(239, 68, 68, 0.06);
+    border-color: rgba(239, 68, 68, 0.25);
+  }
+
+  .placeholder-block {
+    text-align: center;
+    padding: 2rem 1rem;
+    color: var(--text-dim);
+    background: rgba(255,255,255,0.02);
+    border: 1px dashed rgba(255,255,255,0.1);
+    border-radius: 10px;
+  }
+
+  /* Klasman tablosu */
+  .standings-table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 0.9rem;
+  }
+  .standings-table th {
+    text-align: left;
+    padding: 0.55rem 0.5rem;
+    border-bottom: 1px solid var(--border, rgba(255,255,255,0.08));
+    color: var(--text-dim);
+    font-weight: 500;
+    font-size: 0.78rem;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+  }
+  .standings-table td {
+    padding: 0.6rem 0.5rem;
+    border-bottom: 1px solid rgba(255,255,255,0.04);
+    vertical-align: middle;
+  }
+  .standings-table tr:hover td { background: rgba(255,255,255,0.025); }
+  .standings-table td.num,
+  .standings-table th.num    { text-align: center; font-variant-numeric: tabular-nums; }
+  .standings-table td.center,
+  .standings-table th.center { text-align: center; }
+  .standings-table th, .standings-table td { white-space: nowrap; }
+  .rank-cell {
+    font-weight: 700;
+    width: 50px;
+  }
+  .rank-1 { color: #fbbf24; }
+  .rank-2 { color: #cbd5e1; }
+  .rank-3 { color: #d97706; }
+  .points-cell {
+    font-weight: 700;
+    font-size: 1rem;
+    color: var(--accent, #f59e0b);
+  }
+  .podium-cells span {
+    display: inline-block;
+    min-width: 1.5em;
+    text-align: center;
+    margin: 0 0.05rem;
+  }
+  .pct-bar {
+    display: inline-block;
+    width: 40px;
+    height: 5px;
+    background: rgba(255,255,255,0.08);
+    border-radius: 3px;
+    position: relative;
+    vertical-align: middle;
+    margin-right: 0.4rem;
+  }
+  .pct-bar > span {
+    display: block;
+    height: 100%;
+    background: #4ade80;
+    border-radius: 3px;
+  }
+</style>
+</head>
+<body>
+<div class="app">
+  <aside class="sidebar">
+    <h1><span class="dot"></span> Dart Core Pro</h1>
+    <div id="user-bar" style="margin-bottom:1rem;font-size:0.85rem;color:var(--text-dim);display:none;">
+      <div id="user-name" style="margin-bottom:0.4rem;"></div>
+      <button id="logout-btn" style="background:transparent;border:1px solid var(--border);color:var(--text-dim);padding:0.35rem 0.7rem;border-radius:6px;cursor:pointer;font-size:0.82rem;">Çıkış Yap</button>
+    </div>
+    <nav>
+      <a href="/organizer.html">← Turnuvalar</a>
+      <a href="/liga.html">← Tüm Ligler & Sezonlar</a>
+    </nav>
+  </aside>
+
+  <script>
+    fetch('/auth/me',{credentials:'same-origin'}).then(r=>r.json()).then(d=>{
+      if(!d.user){window.location.href='/login.html';return;}
+      const bar=document.getElementById('user-bar');
+      const nm=document.getElementById('user-name');
+      if(bar)bar.style.display='block';
+      if(nm)nm.textContent=d.user.name||d.user.email;
+    }).catch(()=>window.location.href='/login.html');
+    document.addEventListener('click',e=>{
+      if(e.target&&e.target.id==='logout-btn'){
+        fetch('/auth/logout',{method:'POST',credentials:'same-origin'}).finally(()=>window.location.href='/login.html');
+      }
+    });
+  </script>
+
+  <main class="main">
+    <div id="comp-header" class="comp-header">
+      <p style="color:var(--text-dim);margin:0">Yükleniyor…</p>
+    </div>
+
+    <div class="ctab-bar" id="ctab-bar">
+      <button class="active" data-ctab="overview">Özet</button>
+      <button data-ctab="players">Oyuncular</button>
+      <button data-ctab="sessions">Oturumlar</button>
+      <button data-ctab="standings">Klasman</button>
+    </div>
+
+    <!-- ÖZET -->
+    <section class="ctab" data-ctab="overview">
+      <div id="overview-content">
+        <p style="color:var(--text-dim)">Yükleniyor…</p>
+      </div>
+    </section>
+
+    <!-- OYUNCULAR -->
+    <section class="ctab" data-ctab="players" hidden>
+      <div id="players-banner"></div>
+      <div id="add-player-area" class="add-player-form" style="display:none">
+        <input id="np-name" type="text" placeholder="Oyuncu adı" />
+        <input id="np-nickname" type="text" name="nickname" placeholder="Lakap (opsiyonel)" />
+        <button class="primary" onclick="submitNewPlayer()">+ Ekle</button>
+      </div>
+      <div id="players-list">
+        <p style="color:var(--text-dim)">Yükleniyor…</p>
+      </div>
+    </section>
+
+    <!-- OTURUMLAR -->
+    <section class="ctab" data-ctab="sessions" hidden>
+      <div id="sessions-banner"></div>
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:0.6rem;">
+        <h3 style="margin:0">Oturumlar</h3>
+        <button id="new-session-btn" class="primary" onclick="toggleNewSessionForm()">+ Yeni Oturum</button>
+      </div>
+
+      <div id="new-session-form" class="card" style="display:none;margin-bottom:0.8rem;">
+        <div id="ns-round-info" style="font-size:0.82rem;color:var(--text-dim);margin-bottom:0.5rem;font-style:italic"></div>
+        <div class="grid" style="display:grid;grid-template-columns:1fr 1fr;gap:0.6rem 1rem;">
+          <div>
+            <label style="display:block;font-size:0.82rem;color:var(--text-dim);margin-bottom:0.25rem">Oturum adı <span style="opacity:0.6">(opsiyonel)</span></label>
+            <input id="ns-name" type="text" placeholder="örn. Hafta 1, 1. Oturum" style="width:100%" />
+          </div>
+          <div>
+            <label style="display:block;font-size:0.82rem;color:var(--text-dim);margin-bottom:0.25rem">Tarih <span style="opacity:0.6">(opsiyonel)</span></label>
+            <input id="ns-date" type="date" style="width:100%" />
+          </div>
+          <div id="ns-format-row">
+            <label style="display:block;font-size:0.82rem;color:var(--text-dim);margin-bottom:0.25rem">Bracket formatı</label>
+            <select id="ns-format" style="width:100%">
+              <option value="single_elim">Tek eleme</option>
+              <option value="double_elim">Çift eleme</option>
+              <option value="round_robin">Round-robin (herkes herkesle)</option>
+            </select>
+          </div>
+          <div id="ns-format-row-spacer"></div>
+        </div>
+
+        <div id="ns-participants-section" style="margin-top:0.8rem;">
+          <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:0.4rem">
+            <label style="font-size:0.82rem;color:var(--text-dim);margin:0">Katılımcılar</label>
+            <div style="display:flex;gap:0.5rem">
+              <button type="button" onclick="toggleAllParticipants(true)" style="font-size:0.75rem;padding:0.25rem 0.5rem">Tümünü seç</button>
+              <button type="button" onclick="toggleAllParticipants(false)" style="font-size:0.75rem;padding:0.25rem 0.5rem">Hiçbiri</button>
+            </div>
+          </div>
+          <div id="ns-participants" style="max-height:240px;overflow-y:auto;border:1px solid var(--border, rgba(255,255,255,0.08));border-radius:8px;padding:0.5rem;">
+            <p style="color:var(--text-dim);font-size:0.85rem;margin:0">Yükleniyor…</p>
+          </div>
+          <div id="ns-participant-count" style="font-size:0.78rem;color:var(--text-dim);margin-top:0.3rem;"></div>
+        </div>
+
+        <div style="display:flex;justify-content:flex-end;gap:0.4rem;margin-top:1rem;">
+          <button onclick="toggleNewSessionForm()">Vazgeç</button>
+          <button class="primary" onclick="submitNewSession()">Oturumu Oluştur</button>
+        </div>
+      </div>
+
+      <div id="sessions-list">
+        <p style="color:var(--text-dim)">Yükleniyor…</p>
+      </div>
+    </section>
+
+    <!-- KLASMAN -->
+    <section class="ctab" data-ctab="standings" hidden>
+      <div id="standings-banner"></div>
+      <div id="standings-content">
+        <p style="color:var(--text-dim)">Yükleniyor…</p>
+      </div>
+    </section>
+  </main>
+</div>
+
+<script src="/js/common.js"></script>
+<script src="/js/competition.js"></script>
+</body>
+</html>

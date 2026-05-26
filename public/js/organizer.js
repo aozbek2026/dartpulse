@@ -951,6 +951,35 @@ function render() {
   renderRoundOverridesPanel();
   renderTournaments();
   renderPastTournaments();
+  maybeFocusTournament();
+}
+
+// Lig/sezon detay sayfasindan gelinince ?focus=ID parametresi varsa
+// once dogru sekmeye gec, sonra o turnuvaya scroll + kisaca highlight.
+// Sadece bir kez calistirilir.
+let _focusDone = false;
+function maybeFocusTournament() {
+  if (_focusDone) return;
+  const u = new URL(window.location.href);
+  const fid = parseInt(u.searchParams.get('focus'), 10);
+  if (!fid) { _focusDone = true; return; }
+  const el = document.getElementById('tournament-' + fid);
+  if (!el) return; // state henuz yuklenmediyse bir sonraki render'da dene
+  _focusDone = true;
+
+  // Hangi sekmedeyiz? (aktif vs gecmis) → ona gore tab-link click et
+  const inPast = !!el.closest('#past-tournament-list');
+  const targetTab = inPast ? 'past-tournaments' : 'tournaments';
+  const tabLink = document.querySelector(`.tab-link[data-tab="${targetTab}"]`);
+  if (tabLink) tabLink.click();
+
+  // Tab gecisi gizli flag'i kaldirinca, scroll target'i artik gorunur olur
+  setTimeout(() => {
+    el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    el.style.transition = 'box-shadow 0.4s';
+    el.style.boxShadow = '0 0 0 3px var(--accent, #f59e0b)';
+    setTimeout(() => { el.style.boxShadow = ''; }, 2000);
+  }, 120);
 }
 
 // Base legs/sets değiştiğinde override paneli yenilensin (placeholder güncellemesi için)
@@ -1016,25 +1045,38 @@ function renderBoards() {
 
   const activeTours = state.tournaments.filter(t => t.status !== 'finished');
   const tourOptions = (selectedId) =>
-    `<option value=""${selectedId == null ? ' selected' : ''}>— Genel —</option>` +
+    `<option value=""${selectedId == null ? ' selected' : ''}>— Atanmamış (maç almaz) —</option>` +
     activeTours.map(t => `<option value="${t.id}"${selectedId === t.id ? ' selected' : ''}>${t.name}</option>`).join('');
 
   host.innerHTML = orderedKeys.map(k => {
     const groupBoards = groups.get(k);
-    const groupName = (k === 'general') ? '🔓 Genel (her turnuva)' : (tourMap.get(k)?.name || `Turnuva #${k}`);
+    const isUnassigned = (k === 'general');
+    const groupName = isUnassigned
+      ? '⚠️ Atanmamış (maç almaz)'
+      : (tourMap.get(k)?.name || `Turnuva #${k}`);
+    const groupBg = isUnassigned
+      ? 'background: rgba(245, 158, 11, 0.12); border: 1px solid rgba(245, 158, 11, 0.35);'
+      : 'background: var(--surface-2);';
+    const groupNote = isUnassigned
+      ? `<div style="font-size: 0.78rem; color: var(--text-dim); margin-top: 0.2rem; font-weight: 400;">
+           Bu boardlar hiçbir turnuvaya atanmadığı için maç almaz. Aşağıdan bir turnuva seçin.
+         </div>`
+      : '';
     const cards = groupBoards.map(b => `
-      <div class="card" style="margin: 0;">
+      <div class="card" style="margin: 0;${isUnassigned ? ' border-color: rgba(245, 158, 11, 0.4);' : ''}">
         <div class="row between">
           <h3 style="margin: 0;">${b.name}</h3>
-          <span class="chip ${b.status === 'busy' ? 'live' : 'success'}">${b.status === 'busy' ? 'MEŞGUL' : 'BOŞ'}</span>
+          <span class="chip ${b.status === 'busy' ? 'live' : (isUnassigned ? '' : 'success')}" ${isUnassigned ? 'style="background: rgba(245, 158, 11, 0.2); color: #f59e0b;"' : ''}>
+            ${b.status === 'busy' ? 'MEŞGUL' : (isUnassigned ? 'PASİF' : 'BOŞ')}
+          </span>
         </div>
         <div style="margin-top: 0.75rem; color: var(--text-dim); font-size: 0.88rem;">
           ${b.currentMatch
             ? `Aktif: ${entryLabel(b.currentMatch.entry1)} vs ${entryLabel(b.currentMatch.entry2)}`
-            : 'Boşta bekliyor'}
+            : (isUnassigned ? 'Atanmamış — maç almaz' : 'Boşta bekliyor')}
         </div>
         <div class="row" style="margin-top: 0.75rem; gap: 0.5rem; flex-wrap: wrap;">
-          <select onchange="changeBoardTournament(${b.id}, this.value)" style="flex: 1; min-width: 140px; padding: 0.45rem; font-size: 0.82rem;">
+          <select onchange="changeBoardTournament(${b.id}, this.value)" style="flex: 1; min-width: 140px; padding: 0.45rem; font-size: 0.82rem;${isUnassigned ? ' border-color: #f59e0b;' : ''}">
             ${tourOptions(b.tournament_id)}
           </select>
           <a class="btn secondary" href="/board.html?id=${b.id}" target="_blank" style="font-size: 0.85rem;">Tablet ↗</a>
@@ -1044,7 +1086,10 @@ function renderBoards() {
     `).join('');
     return `
       <div style="margin-bottom: 1.25rem;">
-        <h4 style="margin: 0 0 0.6rem 0; padding: 0.4rem 0.75rem; background: var(--surface-2); border-radius: 6px; font-size: 0.95rem;">${groupName} <span style="color: var(--text-dim); font-weight: 400; font-size: 0.85rem;">(${groupBoards.length})</span></h4>
+        <h4 style="margin: 0 0 0.6rem 0; padding: 0.4rem 0.75rem; ${groupBg} border-radius: 6px; font-size: 0.95rem;">
+          ${groupName} <span style="color: var(--text-dim); font-weight: 400; font-size: 0.85rem;">(${groupBoards.length})</span>
+          ${groupNote}
+        </h4>
         <div class="grid cols-3">${cards}</div>
       </div>`;
   }).join('');
@@ -1077,7 +1122,7 @@ function renderTournament(t) {
     '<span class="chip warn">TASLAK</span>';
 
   return `
-    <div class="card">
+    <div class="card" id="tournament-${t.id}">
       <div class="row between">
         <div>
           <h3 style="margin-bottom: 0.3rem;">${t.name} ${statusChip}</h3>

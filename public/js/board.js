@@ -6,6 +6,70 @@ const isReadonly = params.get('readonly') === '1' && !!readonlyMatchId;
 const root = document.getElementById('root');
 const socket = io();
 
+// ---- Bağlantı durum banner'ı (board.html'deki #conn-banner) ----
+// Socket koparsa skor giren kişi anında fark etsin diye büyük kırmızı bant.
+(function setupConnBanner() {
+  const banner = document.getElementById('conn-banner');
+  if (!banner) return;
+  let hideTimer = null;
+  function show(text) {
+    const t = banner.querySelector('.conn-banner__text');
+    if (t && text) t.textContent = text;
+    banner.hidden = false;
+    banner.classList.add('is-visible');
+  }
+  function hide() { banner.classList.remove('is-visible'); banner.classList.remove('is-ok'); banner.style.display = 'none'; banner.hidden = true; }
+  function showBanner() { banner.style.display = ''; banner.hidden = false; banner.classList.add('is-visible'); }
+  socket.on('disconnect', (reason) => {
+    clearTimeout(hideTimer);
+    banner.classList.remove('is-ok');
+    show(reason === 'io server disconnect'
+      ? 'Sunucu bağlantıyı kapattı — yeniden bağlanılıyor…'
+      : 'Bağlantı kesildi — yeniden bağlanılıyor…');
+    showBanner();
+  });
+  socket.io.on('reconnect_attempt', () => { clearTimeout(hideTimer); banner.classList.remove('is-ok'); show('Bağlantı kesildi — yeniden bağlanılıyor…'); showBanner(); });
+  socket.io.on('error', () => { clearTimeout(hideTimer); banner.classList.remove('is-ok'); show('Bağlantı sorunlu — yeniden bağlanılıyor…'); showBanner(); });
+  socket.on('connect', () => {
+    clearTimeout(hideTimer);
+    const t = banner.querySelector('.conn-banner__text');
+    if (t) t.textContent = '✓ Yeniden bağlandı';
+    banner.classList.remove('is-error');
+    banner.classList.add('is-ok');
+    showBanner();
+    hideTimer = setTimeout(() => hide(), 1500);
+  });
+})();
+
+// ---- Tam ekran yardımcıları (board seçildikten sonra) ----
+async function requestFs(el) {
+  try {
+    el = el || document.documentElement;
+    if (el.requestFullscreen) await el.requestFullscreen({ navigationUI: 'hide' }).catch(() => {});
+    else if (el.webkitRequestFullscreen) el.webkitRequestFullscreen();
+  } catch (_) { /* sessiz */ }
+}
+function isFs() {
+  return !!(document.fullscreenElement || document.webkitFullscreenElement)
+    || (window.matchMedia && window.matchMedia('(display-mode: fullscreen)').matches)
+    || (window.matchMedia && window.matchMedia('(display-mode: standalone)').matches);
+}
+function updateFsToggle() {
+  const btn = document.getElementById('fs-toggle');
+  if (!btn) return;
+  // Board seçili değilse veya zaten tam ekransa → gizle.
+  if (!boardId || isFs()) { btn.hidden = true; return; }
+  btn.hidden = false;
+}
+document.addEventListener('fullscreenchange', updateFsToggle);
+document.addEventListener('webkitfullscreenchange', updateFsToggle);
+window.addEventListener('load', updateFsToggle);
+(function bindFsToggle() {
+  const btn = document.getElementById('fs-toggle');
+  if (!btn) return;
+  btn.addEventListener('click', async () => { await requestFs(); updateFsToggle(); });
+})();
+
 let currentMatch = null;
 let currentBoard = null;
 let currentInput = '';
@@ -107,7 +171,7 @@ function renderBoardPicker() {
   const groupHtml = orderedKeys.map(k => {
     const gName = (k === 'general') ? '🔓 Genel' : (tourMap.get(k)?.name || `Turnuva #${k}`);
     const cards = groups.get(k).map(b => `
-      <a class="card" href="/board.html?id=${b.id}" style="text-decoration: none; color: inherit;">
+      <a class="card board-pick" href="/board.html?id=${b.id}" data-board-id="${b.id}" style="text-decoration: none; color: inherit;">
         <h3>${b.name}</h3>
         <div style="color: var(--text-dim); margin-top: 0.5rem;">
           ${b.status === 'busy' ? '⚡ Meşgul' : '💤 Boşta'}
@@ -125,9 +189,27 @@ function renderBoardPicker() {
   root.innerHTML = `
     <div style="max-width: 720px; margin: 3rem auto; padding: 0 1rem;">
       <h2 style="text-align: center; margin-bottom: 1.5rem;">Bu tablet hangi board için?</h2>
+      <p style="text-align: center; color: var(--text-dim); margin: -0.5rem 0 1.25rem; font-size: 0.9rem;">
+        Seçtiğin board tam ekran modunda açılacak.
+      </p>
       ${groupHtml}
     </div>
   `;
+
+  // Board seçimi: user gesture içinde önce tam ekrana geç, sonra navigate et.
+  // (Browser fullscreen API'si yalnız bir kullanıcı dokunuşu içinde çağrılabiliyor.)
+  root.querySelectorAll('a.board-pick').forEach(card => {
+    card.addEventListener('click', async (e) => {
+      e.preventDefault();
+      const href = card.getAttribute('href');
+      // Tam ekrana geçişi ARKA PLANDA başlat, navigate'i bekletme.
+      // Bazı tarayıcılarda navigate sırasında fullscreen kaybolur — o zaman
+      // yeni sayfada ⛶ butonu görünür ve tek dokunuşla geri alınır.
+      try { requestFs(); } catch (_) {}
+      // Kısa bir mikro-gecikme, fullscreen request'i async settle etsin
+      setTimeout(() => { location.href = href; }, 30);
+    });
+  });
 }
 
 function renderIdle() {

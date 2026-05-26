@@ -566,9 +566,14 @@ function orderEntriesBySeed(entries) {
 // Bye'lar en sona eklenir (son slot'lar null).
 // Not: seri başı dağılımı isteniyorsa "Eşleşmeleri Düzenle" → "Seri Başı" butonu kullanılır.
 function seedWithByes(entryIds, bracketSize) {
+  // buildSeedOrder ile BYE'ları bracket'a eşit dağıt.
+  // Örn. 5 kişi, bracket 8: [p1,BYE, p5,p4, p3,BYE, BYE,p2]
+  // → maçlar: p1vsBYE, p5vsp4, p3vsBYE, BYEvsp2 — BYE vs BYE asla olmaz.
   const result = new Array(bracketSize).fill(null);
-  for (let i = 0; i < entryIds.length; i++) {
-    result[i] = entryIds[i];
+  const seedOrder = buildSeedOrder(bracketSize); // 1-tabanlı seed numaraları
+  for (let slot = 0; slot < bracketSize; slot++) {
+    const idx = seedOrder[slot] - 1; // 0-tabanlı index
+    result[slot] = idx < entryIds.length ? entryIds[idx] : null;
   }
   return result;
 }
@@ -721,14 +726,268 @@ function createResetFinal(gfMatchId, legsToWin) {
   return resetMatch;
 }
 
+// ============================================================================
+// Final Standings — bir bitmis turnuvada her oyuncunun nihai pozisyonunu hesapla
+// Dilim 3c (Lig/Sezon sistemi) icin: oturum sonuclarini klasmana isleyebilmek
+// icin pozisyon listesine ihtiyacimiz var.
+//
+// Dondurur: [{ position, player_id, entry_id, p2_player_id? (doubles), wins, losses, legs_won, legs_lost }]
+// Esit pozisyonlar (orn. iki SF kaybedeni hep 3'tur) ayni position sayisini alir.
+// ============================================================================
+function computeFinalStandings(tournamentId) {
+  const t = db.tournamentById(tournamentId);
+  if (!t) throw new Error('Turnuva bulunamadi');
+  if (t.status !== 'finished') throw new Error('Turnuva henuz bitmedi');
+
+  const stages = db.stagesForTournament(tournamentId);
+  const entries = db.entriesForTournament(tournamentId);
+  const allMatches = db.db.prepare(
+    'SELECT * FROM matches WHERE tournament_id = ? ORDER BY round ASC, match_index ASC'
+  ).all(tournamentId);
+  const format = stages[stages.length - 1]?.format || 'single_elim';
+
+  // entry_id → { player_id, p2_player_id }
+  const entryInfo = {};
+  for (const e of entries) {
+    entryInfo[e.id] = {
+      player_id: e.player1_id,
+      p2_player_id: e.player2_id || null,
+    };
+  }
+
+  // Entry bazli maç G/M ve leg G/M (istatistik için)
+  const entryStats = {};
+  for (const e of entries) {
+    entryStats[e.id] = { wins: 0, losses: 0, legs_won: 0, legs_lost: 0 };
+  }
+  for (const m of allMatches) {
+    if (m.status !== 'finished') continue;
+    if (m.entry1_id && entryStats[m.entry1_id]) {
+      entryStats[m.entry1_id].legs_won += (m.p1_legs || 0);
+      entryStats[m.entry1_id].legs_lost += (m.p2_legs || 0);
+    }
+    if (m.entry2_id && entryStats[m.entry2_id]) {
+      entryStats[m.entry2_id].legs_won += (m.p2_legs || 0);
+      entryStats[m.entry2_id].legs_lost += (m.p1_legs || 0);
+    }
+    if (m.winner_entry_id && entryStats[m.winner_entry_id]) {
+      entryStats[m.winner_entry_id].wins++;
+    }
+    const loserId = m.entry1_id === m.winner_entry_id ? m.entry2_id : m.entry1_id;
+    if (loserId && entryStats[loserId]) entryStats[loserId].losses++;
+  }
+
+  // Sonuç toplama yardımcısı
+  const decorate = (entryId, position) => {
+    const inf = entryInfo[entryId] || {};
+    const st = entryStats[entryId] || { wins: 0, losses: 0, legs_won: 0, legs_lost: 0 };
+    return {
+      position,
+      entry_id: entryId,
+      player_id: inf.player_id,
+      p2_player_id: inf.p2_player_id,
+      wins: st.wins, losses: st.losses,
+      legs_won: st.legs_won, legs_lost: st.legs_lost,
+    };
+  };
+
+  // ── LİG ROUND (doğrudan maçlar, bracket yok) ───────────────────
+  if (format === 'league_round') {
+    // Galibiyet sayısına göre sırala; eşitlikte leg farkı
+    const sorted = entries
+      .map(e => ({ e, st: entryStats[e.id] || { wins:0, losses:0, legs_won:0, legs_lost:0 } }))
+      .sort((a, b) =>
+        b.st.wins - a.st.wins ||
+        (b.st.legs_won - b.st.legs_lost) - (a.st.legs_won - a.st.legs_lost)
+      );
+    return sorted.map((s, i) => decorate(s.e.id, i + 1));
+  }
+
+  // ── ROUND ROBIN ────────────────────────────────────────────────
+  if (format === 'round_robin') {
+    const rrMatches = allMatches.filter(m => m.bracket === 'rr' || m.bracket === 'group');
+    const standings = computeRRStandings(rrMatches);
+    return standings.map((s, i) => decorate(s.entryId, i + 1));
+  }
+
+  // ── SINGLE ELIM ────────────────────────────────────────────────
+  if (format === 'single_elim') {
+    const seMatches = allMatches.filter(m => m.bracket === 'winners' || m.bracket === 'final' || m.bracket == null);
+    if (!seMatches.length) return entries.map((e, i) => decorate(e.id, i + 1));
+    const maxRound = Math.max(...seMatches.map(m => m.round || 1));
+
+    // Final match: en yuksek round'daki (genelde tek maç)
+    const finalRoundMatches = seMatches.filter(m => (m.round || 1) === maxRound);
+    const finalMatch = finalRoundMatches[0];
+
+    const positions = {}; // entry_id → position (lower = better)
+    const placed = new Set();
+
+    if (finalMatch && finalMatch.winner_entry_id) {
+      const winner = finalMatch.winner_entry_id;
+      const loser = finalMatch.entry1_id === winner ? finalMatch.entry2_id : finalMatch.entry1_id;
+      if (winner) { positions[winner] = 1; placed.add(winner); }
+      if (loser)  { positions[loser]  = 2; placed.add(loser); }
+    }
+
+    // Onceki round'lar: round R'da elenenler ayni pozisyonu paylasir.
+    // Pozisyon formulu: 2^(maxRound - R) + 1
+    //   maxRound-1 (SF) → 2^1 + 1 = 3 (eşit)
+    //   maxRound-2 (QF) → 2^2 + 1 = 5 (eşit)
+    for (let r = maxRound - 1; r >= 1; r--) {
+      const tiePos = Math.pow(2, maxRound - r) + 1;
+      const roundLosers = [];
+      for (const m of seMatches.filter(mm => (mm.round || 1) === r)) {
+        if (m.status !== 'finished' || !m.winner_entry_id) continue;
+        const loser = m.entry1_id === m.winner_entry_id ? m.entry2_id : m.entry1_id;
+        if (loser && !placed.has(loser)) {
+          roundLosers.push(loser);
+        }
+      }
+      for (const eid of roundLosers) {
+        positions[eid] = tiePos;
+        placed.add(eid);
+      }
+    }
+
+    // Hic oynamayanlar (BYE alıp elenmemiş) — entries.length'le doldur
+    for (const e of entries) {
+      if (!placed.has(e.id)) {
+        positions[e.id] = entries.length;
+      }
+    }
+
+    return Object.entries(positions)
+      .sort((a, b) => a[1] - b[1])
+      .map(([eid, pos]) => decorate(+eid, pos));
+  }
+
+  // ── DOUBLE ELIM ────────────────────────────────────────────────
+  if (format === 'double_elim') {
+    const positions = {};
+    const placed = new Set();
+
+    // Grand final (bracket='final'), reset varsa en yuksek round
+    const gfMatches = allMatches
+      .filter(m => m.bracket === 'final')
+      .sort((a, b) => (b.round || 0) - (a.round || 0));
+    if (gfMatches.length && gfMatches[0].winner_entry_id) {
+      const gf = gfMatches[0];
+      const w = gf.winner_entry_id;
+      const l = gf.entry1_id === w ? gf.entry2_id : gf.entry1_id;
+      if (w) { positions[w] = 1; placed.add(w); }
+      if (l) { positions[l] = 2; placed.add(l); }
+    }
+
+    // LB round-by-round, yukseksen alta dogru: LB en yuksek round = 3, sonraki = 4, ...
+    // (Cogu bracket'te LB final loser = 3, LB semi loser = 4 eşit cift varsa 4-5)
+    const lbMatches = allMatches.filter(m => m.bracket === 'losers');
+    const lbRoundsDesc = [...new Set(lbMatches.map(m => m.round || 0))].sort((a, b) => b - a);
+    let nextPos = 3;
+    for (const r of lbRoundsDesc) {
+      const roundLosers = [];
+      for (const m of lbMatches.filter(mm => (mm.round || 0) === r)) {
+        if (m.status !== 'finished' || !m.winner_entry_id) continue;
+        const loser = m.entry1_id === m.winner_entry_id ? m.entry2_id : m.entry1_id;
+        if (loser && !placed.has(loser)) roundLosers.push(loser);
+      }
+      for (const eid of roundLosers) {
+        positions[eid] = nextPos;
+        placed.add(eid);
+      }
+      nextPos += Math.max(roundLosers.length, 1);
+    }
+
+    // WB'den dusup LB'ye girmemis ya da hic oynamamis olanlar
+    for (const e of entries) {
+      if (!placed.has(e.id)) positions[e.id] = entries.length;
+    }
+
+    return Object.entries(positions)
+      .sort((a, b) => a[1] - b[1])
+      .map(([eid, pos]) => decorate(+eid, pos));
+  }
+
+  // Bilinmeyen format — varsayilan: kazanim sayisina gore sirala
+  const fallback = entries.map(e => ({
+    entry_id: e.id,
+    wins: entryStats[e.id]?.wins || 0,
+  })).sort((a, b) => b.wins - a.wins);
+  return fallback.map((s, i) => decorate(s.entry_id, i + 1));
+}
+
+// Lig round'u için doğrudan maç oluşturur (bracket yok, tüm maçlar ready).
+// data: { user_id, name, game_mode, team_mode, legs_to_win, sets_to_win,
+//         pairs: [{player1_id, player2_id}] }
+function createLeagueRoundTournament(data) {
+  const { name, game_mode, team_mode, legs_to_win, sets_to_win, pairs, user_id } = data;
+  if (!name || !game_mode) throw new Error('İsim ve oyun modu gerekli');
+  if (!pairs || pairs.length === 0) throw new Error('En az bir eşleşme gerekli');
+
+  // Turnuva + stage oluştur
+  const t = db.createTournament({
+    user_id: user_id || null,
+    name,
+    game_mode,
+    team_mode: team_mode || 'singles',
+    legs_to_win: legs_to_win || 2,
+    sets_to_win: sets_to_win || 1,
+  });
+
+  const stage = db.createStage(t.id, 0, 'league_round', null, JSON.stringify({}));
+  const start_score = START_SCORES[game_mode] ?? null;
+
+  // Her oyuncu için entry yarat, player_id → entry_id haritası
+  const playerToEntry = new Map();
+  let slotIdx = 1;
+  const allPlayerIds = [...new Set(pairs.flatMap(p => [p.player1_id, p.player2_id]))];
+  for (const pid of allPlayerIds) {
+    const eInfo = db.addEntry(t.id, slotIdx++, pid, null, null);
+    playerToEntry.set(pid, eInfo.lastInsertRowid || eInfo.id);
+  }
+  // addEntry SQLite lastInsertRowid'yi farklı döndürebilir; entriesForTournament ile düzelt
+  const entries = db.entriesForTournament(t.id);
+  const pidToEntry = new Map();
+  for (const e of entries) {
+    pidToEntry.set(e.player1_id, e.id);
+  }
+
+  // Maçları doğrudan oluştur
+  for (let i = 0; i < pairs.length; i++) {
+    const { player1_id, player2_id } = pairs[i];
+    const e1 = pidToEntry.get(player1_id);
+    const e2 = pidToEntry.get(player2_id);
+    if (!e1 || !e2) continue;
+    db.createMatch({
+      tournament_id: t.id,
+      stage_id: stage.id,
+      bracket: 'league',
+      round: 1,
+      match_index: i,
+      entry1_id: e1,
+      entry2_id: e2,
+      status: 'ready',
+      start_score,
+      legs_to_win: legs_to_win || null,
+      sets_to_win: sets_to_win || null,
+    });
+  }
+
+  db.updateStageStatus(stage.id, 'running');
+  db.updateTournamentStatus(t.id, 'running');
+  return t;
+}
+
 module.exports = {
   createTournament,
   startTournament,
   onMatchFinished,
   createResetFinal,
   computeRRStandings,
+  computeFinalStandings,
   orderEntriesBySeed,
   roundLabel,
   computeBracketSize,
   pickScorerEntry,
+  createLeagueRoundTournament,
 };

@@ -1,0 +1,216 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Ligler & Sezonlar · Dart Core Pro</title>
+<link rel="stylesheet" href="/css/style.css" />
+<style>
+  /* ── Lig & Sezon özel stilleri ── */
+  .comp-card {
+    background: var(--bg-2, rgba(255,255,255,0.04));
+    border: 1px solid var(--border, rgba(255,255,255,0.08));
+    border-radius: 10px;
+    padding: 0.85rem 1rem;
+    margin-bottom: 0.75rem;
+  }
+  .comp-card-header {
+    display: flex; align-items: center; justify-content: space-between;
+    flex-wrap: wrap; gap: 0.5rem;
+    margin-bottom: 0.5rem;
+  }
+  .comp-card-title { font-size: 1.05rem; font-weight: 600; }
+  .comp-type-pill {
+    display: inline-block;
+    font-size: 0.7rem;
+    padding: 0.15rem 0.6rem;
+    border-radius: 20px;
+    font-weight: 700;
+    margin-right: 0.4rem;
+  }
+  .comp-type-pill.season { background: #2563eb; color: #fff; }
+  .comp-type-pill.league { background: #9333ea; color: #fff; }
+  .comp-status-pill {
+    font-size: 0.72rem; padding: 0.15rem 0.55rem; border-radius: 20px; font-weight: 600;
+    border: 1px solid currentColor;
+  }
+  .comp-status-pill.draft    { color: var(--text-dim); }
+  .comp-status-pill.running  { color: #4ade80; }
+  .comp-status-pill.finished { color: var(--accent); }
+
+  .comp-meta {
+    display: flex; flex-wrap: wrap; gap: 0.75rem;
+    font-size: 0.85rem; color: var(--text-dim);
+  }
+  .comp-meta .chip {
+    background: rgba(255,255,255,0.04);
+    padding: 0.2rem 0.55rem;
+    border-radius: 6px;
+  }
+  .comp-actions { display: flex; gap: 0.4rem; flex-wrap: wrap; margin-top: 0.6rem; }
+
+  #new-comp-form .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 0.75rem 1rem; }
+  @media (max-width: 600px) { #new-comp-form .grid { grid-template-columns: 1fr; } }
+  #new-comp-form label { display: block; font-size: 0.82rem; color: var(--text-dim); margin-bottom: 0.25rem; }
+  #new-comp-form input, #new-comp-form select, #new-comp-form textarea { width: 100%; }
+  .form-hint { font-size: 0.78rem; color: var(--text-dim); margin-top: 0.2rem; }
+
+  .points-grid {
+    display: grid; grid-template-columns: repeat(auto-fill, minmax(90px, 1fr));
+    gap: 0.4rem;
+  }
+  .points-grid .pt-cell { display: flex; align-items: center; gap: 0.3rem; }
+  .points-grid .pt-cell label { margin: 0; font-size: 0.75rem; min-width: 28px; }
+  .points-grid .pt-cell input { width: 100%; padding: 0.25rem 0.4rem; font-size: 0.85rem; }
+</style>
+</head>
+<body>
+<div class="app">
+  <aside class="sidebar">
+    <h1><span class="dot"></span> Dart Core Pro</h1>
+    <div id="user-bar" style="margin-bottom:1rem;font-size:0.85rem;color:var(--text-dim);display:none;">
+      <div id="user-name" style="margin-bottom:0.4rem;"></div>
+      <button id="logout-btn" style="background:transparent;border:1px solid var(--border);color:var(--text-dim);padding:0.35rem 0.7rem;border-radius:6px;cursor:pointer;font-size:0.82rem;">Çıkış Yap</button>
+    </div>
+    <nav>
+      <a href="/organizer.html">← Turnuvalar</a>
+      <a href="#list" class="tab-link active" data-tab="list">Ligler & Sezonlar</a>
+      <a href="#new" class="tab-link" data-tab="new">Yeni Oluştur</a>
+    </nav>
+  </aside>
+
+  <script>
+    fetch('/auth/me',{credentials:'same-origin'}).then(r=>r.json()).then(d=>{
+      if(!d.user){window.location.href='/login.html';return;}
+      const bar=document.getElementById('user-bar');
+      const nm=document.getElementById('user-name');
+      if(bar)bar.style.display='block';
+      if(nm)nm.textContent=d.user.name||d.user.email;
+    }).catch(()=>window.location.href='/login.html');
+    document.addEventListener('click',e=>{
+      if(e.target&&e.target.id==='logout-btn'){
+        fetch('/auth/logout',{method:'POST',credentials:'same-origin'}).finally(()=>window.location.href='/login.html');
+      }
+    });
+  </script>
+
+  <main class="main">
+    <!-- LİSTE -->
+    <section class="tab" id="tab-list">
+      <h2>Ligler & Sezonlar</h2>
+      <p class="subtitle">Sezon ya da lig formatındaki çok oturumlu yarışmalar. Her oturum mevcut turnuva altyapısı ile kurulur, sonuçlar otomatik klasmana işlenir.</p>
+      <div id="comps-list">
+        <p style="color:var(--text-dim)">Yükleniyor…</p>
+      </div>
+    </section>
+
+    <!-- YENİ -->
+    <section class="tab" id="tab-new" hidden>
+      <h2>Yeni Lig / Sezon</h2>
+      <p class="subtitle">
+        <strong>Sezon</strong>: her oturumda farklı oyuncular katılabilir (açık katılım).
+        <strong>Lig</strong>: baştan sabit kadro, herkes birbiriyle planlanan sayıda karşılaşır.
+      </p>
+      <div class="card" id="new-comp-form">
+        <div class="grid">
+          <div>
+            <label>Ad</label>
+            <input id="nc-name" placeholder="Erkekler 2026 Sezonu" />
+          </div>
+          <div>
+            <label>Format</label>
+            <select id="nc-type">
+              <option value="season">Sezon (açık katılım)</option>
+              <option value="league">Lig (kapalı kadro)</option>
+            </select>
+          </div>
+
+          <div>
+            <label>Kategori <span style="opacity:0.6">(opsiyonel)</span></label>
+            <input id="nc-category" placeholder="örn. Erkekler, Veteran, Yıldızlar…" />
+            <div class="form-hint">Federasyon kullanımı için. Boş bırakılabilir.</div>
+          </div>
+          <div>
+            <label>Oturum sayısı</label>
+            <input id="nc-sessions" type="number" min="1" value="6" />
+            <div class="form-hint">Sezon boyunca planlanan toplam oturum (gün/hafta).</div>
+          </div>
+
+          <div id="nc-meet-wrap" style="display:none">
+            <label>Herkes birbiriyle kaç kez? <span style="opacity:0.6">(lig)</span></label>
+            <input id="nc-meet" type="number" min="1" value="1" />
+            <div class="form-hint">Round-robin tekrar sayısı (sadece lig).</div>
+          </div>
+          <div></div>
+
+          <div>
+            <label>Varsayılan oyun modu</label>
+            <select id="nc-game-mode">
+              <option value="501">501</option>
+              <option value="701">701</option>
+              <option value="1001">1001</option>
+              <option value="cricket">Cricket</option>
+            </select>
+            <div class="form-hint">Her oturumda override edilebilir.</div>
+          </div>
+          <div>
+            <label>Takım modu</label>
+            <select id="nc-team-mode">
+              <option value="singles">Bireysel</option>
+              <option value="doubles">Eşli (çiftler)</option>
+            </select>
+          </div>
+
+          <div>
+            <label>Leg sayısı (kazanmak için)</label>
+            <input id="nc-legs" type="number" min="1" value="2" />
+            <div class="form-hint">Best of (2×N−1). 2 → bo3.</div>
+          </div>
+          <div>
+            <label>Set sayısı (kazanmak için)</label>
+            <input id="nc-sets" type="number" min="1" value="1" />
+            <div class="form-hint">1 → sadece leg modu.</div>
+          </div>
+        </div>
+
+        <h3 style="margin-top:1.5rem;margin-bottom:0.4rem;font-size:0.95rem;">Puan Sistemi</h3>
+
+        <!-- SEZON: pozisyon-bazlı puan tablosu -->
+        <div id="points-season-block">
+          <p class="subtitle" style="margin-bottom:0.6rem">Her oturum bitince oyuncuların aldığı pozisyona göre verilecek puanlar.</p>
+          <div class="points-grid" id="points-grid">
+            <!-- JS dolduracak -->
+          </div>
+          <div style="margin-top:0.4rem;display:flex;gap:0.4rem;align-items:center">
+            <label style="margin:0;font-size:0.82rem">Diğer pozisyonlar:</label>
+            <input id="nc-default-points" type="number" min="0" step="0.5" value="1" style="max-width:80px;" />
+            <span class="form-hint" style="margin:0">puan</span>
+          </div>
+        </div>
+
+        <!-- LİG: tek "Maç başına puan" alanı -->
+        <div id="points-league-block" style="display:none">
+          <p class="subtitle" style="margin-bottom:0.6rem">
+            Her maçın galibine eklenen puan. Kazanılan/kaybedilen leg'ler istatistik olarak ayrıca tutulur.
+          </p>
+          <div style="display:flex;gap:0.5rem;align-items:center">
+            <label style="margin:0;font-size:0.9rem">Maç başına puan:</label>
+            <input id="nc-match-points" type="number" min="0" step="0.5" value="3" style="max-width:100px;" />
+          </div>
+          <div class="form-hint" style="margin-top:0.4rem">
+            Sade galibiyet sistemi: kazanan +N, kaybeden 0. Klasmanda eşitlikte leg-farkına bakılır.
+          </div>
+        </div>
+
+        <div class="row end" style="margin-top:1.25rem;">
+          <button class="primary" onclick="submitNewComp()">Oluştur</button>
+        </div>
+      </div>
+    </section>
+  </main>
+</div>
+
+<script src="/js/common.js"></script>
+<script src="/js/liga.js"></script>
+</body>
+</html>

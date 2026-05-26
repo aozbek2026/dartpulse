@@ -1,0 +1,629 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Oturum Detay · Dart Core Pro</title>
+<link rel="stylesheet" href="/css/style.css" />
+<style>
+  body { padding: 0; }
+  .top-bar {
+    position: sticky; top: 0; z-index: 50;
+    background: var(--bg);
+    border-bottom: 1px solid var(--border);
+    padding: 0.85rem 1.5rem;
+    display: flex; align-items: center; gap: 1rem; flex-wrap: wrap;
+  }
+  .top-bar h2 { margin: 0; font-size: 1.1rem; flex: 1; }
+  .top-bar a { color: var(--text-dim); text-decoration: none; font-size: 0.85rem; }
+  .top-bar a:hover { color: var(--text); }
+  .session-body { max-width: 1100px; margin: 0 auto; padding: 1.5rem 1.2rem 3rem; }
+
+  /* ── Schedule grid (lig rounds) ───────── */
+  .schedule-grid {
+    display: flex; flex-wrap: wrap; gap: 0.5rem; margin-bottom: 0.6rem;
+  }
+  .sched-pill {
+    padding: 0.3rem 0.7rem; border-radius: 999px; font-size: 0.82rem; font-weight: 600;
+    background: rgba(255,255,255,0.06); color: var(--text-dim);
+    border: 1px solid rgba(255,255,255,0.08); cursor: default;
+  }
+  .sched-pill.current { background: rgba(99,102,241,0.25); color: #a5b4fc; border-color: rgba(99,102,241,0.4); }
+  .sched-pill.done    { background: rgba(245,158,11,0.15); color: var(--accent, #f59e0b); border-color: rgba(245,158,11,0.3); }
+  .sched-pill.active  { background: rgba(74,222,128,0.15); color: #4ade80; border-color: rgba(74,222,128,0.3); }
+
+  /* ── Bracket container ────────────────── */
+  #bracket-wrap { overflow-x: auto; margin-bottom: 1.5rem; }
+
+  /* ── Match list ───────────────────────── */
+  .match-card {
+    background: var(--surface); border: 1px solid var(--border);
+    border-radius: 10px; padding: 0.9rem 1rem; display: flex;
+    align-items: center; justify-content: space-between; gap: 0.8rem;
+    flex-wrap: wrap;
+  }
+  .match-card + .match-card { margin-top: 0.5rem; }
+  .match-players { display: flex; align-items: center; gap: 0.5rem; flex: 1; min-width: 0; }
+  .match-player { font-weight: 600; font-size: 0.95rem; }
+  .match-player.winner { color: #4ade80; }
+  .match-vs { color: var(--text-dim); font-size: 0.82rem; flex-shrink: 0; }
+  .match-score { font-size: 1.1rem; font-weight: 800; font-variant-numeric: tabular-nums;
+                 color: var(--accent, #f59e0b); }
+  .match-meta { font-size: 0.78rem; color: var(--text-dim); }
+  .match-status-pill {
+    font-size: 0.72rem; font-weight: 700; padding: 0.1rem 0.45rem; border-radius: 999px;
+    text-transform: uppercase; letter-spacing: 0.03em;
+  }
+  .match-status-pill.ready    { background: rgba(99,102,241,0.2); color: #a5b4fc; }
+  .match-status-pill.live     { background: rgba(74,222,128,0.2); color: #4ade80; }
+  .match-status-pill.finished { background: rgba(245,158,11,0.15); color: var(--accent, #f59e0b); }
+  .match-status-pill.pending  { background: rgba(255,255,255,0.05); color: var(--text-dim); }
+
+  /* ── Section titles ───────────────────── */
+  .section-title {
+    font-size: 0.78rem; font-weight: 700; text-transform: uppercase;
+    letter-spacing: 0.06em; color: var(--text-dim); margin: 1.2rem 0 0.6rem;
+  }
+
+  /* ── Pairs view for league rounds ─────── */
+  .pairs-grid {
+    display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+    gap: 0.6rem; margin-bottom: 1.2rem;
+  }
+  .pair-card {
+    background: var(--surface); border: 1px solid var(--border); border-radius: 8px;
+    padding: 0.7rem 0.9rem; display: flex; align-items: center; justify-content: space-between;
+  }
+  .pair-card .pname { font-weight: 600; font-size: 0.9rem; }
+  .pair-card .pvs { color: var(--text-dim); font-size: 0.82rem; margin: 0 0.5rem; }
+</style>
+</head>
+<body>
+<div class="top-bar">
+  <div>
+    <a id="back-link" href="#">← Lig/Sezon</a>
+  </div>
+  <h2 id="session-title">Oturum Detay</h2>
+  <div id="session-status-pill" class="match-status-pill" style="font-size:0.8rem"></div>
+  <button id="finalize-btn" class="primary" style="display:none;padding:0.35rem 0.8rem;font-size:0.85rem;background:#16a34a">
+    ✓ Sonuçları İşle
+  </button>
+  <a id="organizer-link" href="#" style="display:none;padding:0.35rem 0.8rem;font-size:0.85rem;background:rgba(255,255,255,0.08);border-radius:6px;color:var(--text);text-decoration:none">
+    🏆 Organizatör
+  </a>
+</div>
+
+<div class="session-body">
+  <div id="page-content">
+    <p style="color:var(--text-dim)">Yükleniyor…</p>
+  </div>
+</div>
+
+<script src="/socket.io/socket.io.js"></script>
+<script>
+const socket = io();
+socket.on('state:update', () => loadAndRender());
+
+// ── Yardımcılar ──────────────────────────────────────────────────
+function esc(s) {
+  if (!s) return '';
+  return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+}
+function api(url) { return fetch(url).then(r => r.json()); }
+function apiPost(url, body) {
+  return fetch(url, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body || {}),
+  }).then(r => r.json());
+}
+function toast(msg) {
+  const el = Object.assign(document.createElement('div'), {
+    textContent: msg,
+    style: 'position:fixed;bottom:1.5rem;left:50%;transform:translateX(-50%);background:var(--surface);border:1px solid var(--border);padding:0.55rem 1.1rem;border-radius:8px;font-size:0.88rem;z-index:9999;pointer-events:none',
+  });
+  document.body.appendChild(el);
+  setTimeout(() => el.remove(), 2800);
+}
+
+// ── State ─────────────────────────────────────────────────────────
+let STATE = {
+  sessionId: null,
+  session: null,
+  comp: null,
+  schedule: [],    // tüm lig roundları
+  players: [],     // lig kadrosu (BYE tespiti için)
+  matches: [],     // bracket session için tek turnuvanın maçları
+  roundMatches: {} // league_day için: { tournament_id: [matches] }
+};
+
+function getSessionId() {
+  const u = new URL(window.location.href);
+  const id = parseInt(u.searchParams.get('id'), 10);
+  return isNaN(id) ? null : id;
+}
+
+async function loadAndRender() {
+  try {
+    const sid = STATE.sessionId;
+    // Oturum
+    const ses = await api(`/api/competitions/0/sessions/${sid}/detail`);
+    if (!ses || ses.error) {
+      document.getElementById('page-content').innerHTML = `<p style="color:#ef4444">Oturum yüklenemedi: ${esc((ses||{}).error)}</p>`;
+      return;
+    }
+    STATE.session = ses;
+
+    // Competition
+    const comp = await api(`/api/competitions/${ses.competition_id}`);
+    STATE.comp = comp;
+
+    // Lig schedule + kadro (sadece lig için)
+    if (comp && comp.type === 'league' && comp.plan_generated) {
+      const [sr, pl] = await Promise.all([
+        api(`/api/competitions/${ses.competition_id}/schedule`),
+        api(`/api/competitions/${ses.competition_id}/players`),
+      ]);
+      STATE.schedule = (sr && sr.schedule) ? sr.schedule : [];
+      STATE.players  = Array.isArray(pl) ? pl : [];
+    } else {
+      STATE.schedule = [];
+      STATE.players  = [];
+    }
+
+    // Maçları yükle
+    if (ses.session_type === 'league_day') {
+      // League_day: bu oturuma bağlı tüm roundların maçlarını ayrı ayrı yükle
+      STATE.roundMatches = {};
+      const myRounds = STATE.schedule.filter(r => r.session_id === sid);
+      await Promise.all(myRounds.map(async round => {
+        if (round.tournament_id) {
+          try {
+            const tm = await api(`/api/matches/for-tournament/${round.tournament_id}`);
+            STATE.roundMatches[round.tournament_id] = Array.isArray(tm) ? tm : [];
+          } catch (_) {
+            STATE.roundMatches[round.tournament_id] = [];
+          }
+        }
+      }));
+      STATE.matches = [];
+    } else if (ses.tournament_id) {
+      // Bracket oturumu: tek turnuva
+      const tm = await api(`/api/matches/for-tournament/${ses.tournament_id}`);
+      STATE.matches = Array.isArray(tm) ? tm : [];
+      STATE.roundMatches = {};
+    } else {
+      STATE.matches = [];
+      STATE.roundMatches = {};
+    }
+
+    render();
+  } catch (e) {
+    console.error(e);
+    document.getElementById('page-content').innerHTML = `<p style="color:#ef4444">Hata: ${esc(e.message)}</p>`;
+  }
+}
+
+function render() {
+  const { session: s, comp, schedule, matches } = STATE;
+  if (!s) return;
+
+  // Başlık + geri link
+  document.getElementById('session-title').textContent = s.name || `${s.session_number}. Oturum`;
+  const backLink = document.getElementById('back-link');
+  backLink.href = `/competition.html?id=${s.competition_id}`;
+  backLink.textContent = `← ${comp ? esc(comp.name) : 'Lig/Sezon'}`;
+
+  // Organize butonu (sadece tek turnuvası olan oturumlar için)
+  const orgLink = document.getElementById('organizer-link');
+  if (s.tournament_id && s.session_type !== 'league_day') {
+    orgLink.style.display = '';
+    orgLink.href = `/organizer.html?focus=${s.tournament_id}`;
+  } else {
+    orgLink.style.display = 'none';
+  }
+
+  // League_day: durum pill ve finalize farklı hesaplanır
+  const statusPill = document.getElementById('session-status-pill');
+  const fb = document.getElementById('finalize-btn');
+
+  if (s.session_type === 'league_day') {
+    // Durum: kaç round bu oturumda, kaçı bitti
+    const myRounds = schedule.filter(r => r.session_id === STATE.sessionId);
+    const activeR = myRounds.filter(r => r.session_status === 'running').length;
+    const doneR   = myRounds.filter(r => r.session_status === 'finished').length;
+    if (activeR > 0) {
+      statusPill.textContent = `▶ ${activeR} Aktif`;
+      statusPill.className = 'match-status-pill live';
+    } else if (doneR > 0 && doneR === myRounds.length && myRounds.length > 0) {
+      statusPill.textContent = `✓ Tamamlandı`;
+      statusPill.className = 'match-status-pill finished';
+    } else {
+      statusPill.textContent = `${myRounds.length} Round`;
+      statusPill.className = 'match-status-pill ready';
+    }
+    // Finalize butonu league_day için gizle (her round ayrı finalize edilir)
+    fb.style.display = 'none';
+
+    renderLeagueDay(s, comp, schedule);
+    return;
+  }
+
+  // ── Bracket oturumu (sezon veya eski lig round) ────────────────
+  const tournStatus = s.tournament_status || (s.tournament_id ? 'draft' : 'planned');
+  const statusLabels = { planned: 'Planlandı', pending: 'Hazır', draft: 'Hazır', running: '▶ Aktif', finished: 'Bitti' };
+  statusPill.textContent = statusLabels[tournStatus] || tournStatus;
+  statusPill.className = `match-status-pill ${tournStatus === 'running' ? 'live' : tournStatus === 'finished' ? 'finished' : 'ready'}`;
+
+  const canFinalize = tournStatus === 'finished' && !s.results_recorded;
+  fb.style.display = canFinalize ? '' : 'none';
+  fb.onclick = () => finalizeSession(s.id, s.competition_id);
+
+  const content = document.getElementById('page-content');
+  let html = '';
+
+  if (s.tournament_id && matches.length > 0) {
+    const sessionType = s.session_type || 'bracket';
+    if (sessionType === 'league_round') {
+      html += `<div class="section-title">Maçlar (${matches.length})</div>`;
+      html += renderMatchList(matches, comp);
+    } else {
+      html += `<div class="section-title">Bracket</div>`;
+      html += `<div id="bracket-wrap">`;
+      html += renderBracketSimple(matches, comp);
+      html += `</div>`;
+      html += `<div class="section-title">Maç Listesi</div>`;
+      html += renderMatchList(matches, comp);
+    }
+  } else if (s.tournament_id) {
+    html += `<p style="color:var(--text-dim);margin-top:1rem">Maç yükleniyor…</p>`;
+  } else {
+    html += `<p style="color:var(--text-dim);margin-top:1rem">Bu oturuma henüz turnuva bağlanmamış.</p>`;
+  }
+
+  content.innerHTML = html;
+}
+
+// ── League_day render ──────────────────────────────────────────────
+// Tek liste: bu oturuma bağlı tüm round'lar (round_number ASC), istenen sırada başlatılabilir.
+// "Diğer günlerden taşı" bölümü: başka güne bağlı ama henüz başlatılmamış round'lar buraya çekilebilir.
+function renderLeagueDay(s, comp, schedule) {
+  const content = document.getElementById('page-content');
+  const sid = STATE.sessionId;
+
+  // Bu oturuma bağlı roundlar — round_number ASC
+  const myRounds = schedule
+    .filter(r => r.session_id === sid)
+    .sort((a, b) => a.round_number - b.round_number);
+
+  // Başka güne bağlı ama HENÜZ başlatılmamış (tournament_id=null) round'lar → taşınabilir
+  const movableRounds = schedule
+    .filter(r => r.session_id && r.session_id !== sid && !r.tournament_id)
+    .sort((a, b) => a.round_number - b.round_number);
+
+  let html = '';
+
+  // Bilgi şeridi
+  const activeR = myRounds.filter(r => r.session_status === 'running').length;
+  const doneR   = myRounds.filter(r => r.session_status === 'finished').length;
+  const recR    = myRounds.filter(r => r.results_recorded).length;
+  html += `<div class="info-banner" style="background:rgba(255,255,255,0.04);border:1px solid var(--border);border-radius:10px;padding:0.7rem 0.95rem;margin-bottom:1rem;font-size:0.88rem">
+    <strong>${myRounds.length}</strong> round bu güne bağlı
+    ${activeR > 0 ? ` · <span style="color:#4ade80">${activeR} aktif</span>` : ''}
+    ${doneR > 0 ? ` · <span style="color:var(--accent,#f59e0b)">${doneR} bitti</span>` : ''}
+    ${recR > 0 ? ` · <span style="color:#16a34a">${recR} klasmanda</span>` : ''}
+    <div style="color:var(--text-dim);font-size:0.82rem;margin-top:0.3rem">
+      Round'ları istediğin sırada başlatabilirsin — başlatınca boş board'lar otomatik atanır.
+    </div>
+  </div>`;
+
+  // Bu oturuma bağlı round'lar
+  if (myRounds.length > 0) {
+    html += `<div class="section-title">Bu Günün Round'ları (${myRounds.length})</div>`;
+    for (const round of myRounds) {
+      html += renderLeagueRoundRow(round, s, comp);
+    }
+  } else {
+    html += `<div style="text-align:center;padding:2rem 1rem;color:var(--text-dim);background:rgba(255,255,255,0.02);border:1px dashed rgba(255,255,255,0.1);border-radius:10px">
+      Bu güne bağlı round yok.
+      ${movableRounds.length > 0 ? '<br/><span style="font-size:0.85rem">Aşağıdan başka günden round taşıyabilirsin.</span>' : ''}
+    </div>`;
+  }
+
+  // Taşınabilir round'lar
+  if (movableRounds.length > 0) {
+    html += `<div class="section-title" style="margin-top:1.6rem">Başka Günden Çek (${movableRounds.length})</div>`;
+    html += `<p style="color:var(--text-dim);font-size:0.82rem;margin-bottom:0.6rem">
+      Aşağıdaki round'lar başka bir güne bağlı ama henüz başlatılmamış. Bu güne taşıyabilirsin.
+    </p>`;
+    for (const round of movableRounds) {
+      html += renderMovableRoundRow(round, s);
+    }
+  }
+
+  // Genel plan takvimi
+  if (schedule.length > 0) {
+    html += `<div class="section-title" style="margin-top:2rem">Genel Lig Planı</div>`;
+    html += `<div class="schedule-grid">`;
+    for (const r of schedule) {
+      const isMine = r.session_id === sid;
+      const isDone = r.session_status === 'finished';
+      const isActive = r.session_status === 'running';
+      let cls = 'sched-pill';
+      if (isMine && isActive) cls += ' active';
+      else if (isMine && isDone) cls += ' done';
+      else if (isMine) cls += ' current';
+      else if (isDone) cls += ' done';
+      else if (isActive) cls += ' active';
+      const title = r.pairs.map(p => `${esc(p.p1_name)} vs ${esc(p.p2_name)}`).join(', ');
+      html += `<span class="${cls}" title="${title}">R${r.round_number}</span>`;
+    }
+    html += `</div>`;
+  }
+
+  content.innerHTML = html;
+}
+
+// Tek satır: durum + eşleşmeler + BYE + uygun butonlar
+function renderLeagueRoundRow(round, session, comp) {
+  const started  = !!round.tournament_id;
+  const finished = round.session_status === 'finished';
+  const running  = round.session_status === 'running';
+  const recorded = !!round.results_recorded;
+
+  const borderC = recorded ? 'rgba(22,163,74,0.45)'
+                : finished ? 'rgba(245,158,11,0.4)'
+                : running  ? '#4ade80'
+                : 'var(--border)';
+  const statusLabel = recorded ? '✓ Klasmanda'
+                    : finished ? '✓ Bitti — Sonuç işle'
+                    : running  ? '▶ Aktif'
+                    : started  ? 'Hazır'
+                    : 'Başlatılmadı';
+  const statusColor = recorded ? '#16a34a'
+                    : finished ? 'var(--accent, #f59e0b)'
+                    : running  ? '#4ade80'
+                    : 'var(--text-dim)';
+
+  // BYE: kadroda olup bu roundun pairs'ında olmayan oyuncu
+  const playingIds = new Set();
+  for (const p of round.pairs) { playingIds.add(p.player1_id); playingIds.add(p.player2_id); }
+  const byes = STATE.players.filter(pl => !playingIds.has(pl.player_id));
+  const byeHtml = byes.length > 0
+    ? `<div style="font-size:0.78rem;color:var(--text-dim);margin-top:0.3rem">Boş: ${byes.map(b => esc(b.player_name)).join(', ')}</div>`
+    : '';
+
+  // Aksiyon butonları
+  let actions = '';
+  if (!started) {
+    actions = `
+      <button class="primary"
+        onclick="startRound(${session.id}, ${session.competition_id}, ${round.round_number})"
+        style="padding:0.4rem 0.9rem;font-size:0.85rem">
+        ▶ Başlat
+      </button>`;
+  } else if (running) {
+    actions = `
+      <a href="/organizer.html?focus=${round.tournament_id}" class="btn"
+        style="text-decoration:none;display:inline-block;padding:0.4rem 0.8rem;font-size:0.85rem;background:rgba(74,222,128,0.15);border:1px solid rgba(74,222,128,0.3);border-radius:6px;color:#4ade80">
+        🎯 Organizatör
+      </a>`;
+  } else if (finished && !recorded) {
+    actions = `
+      <button class="primary"
+        onclick="finalizeRound(${session.competition_id}, ${round.round_number})"
+        style="padding:0.4rem 0.9rem;font-size:0.85rem;background:#16a34a">
+        ✓ Sonuçları İşle
+      </button>
+      <a href="/organizer.html?focus=${round.tournament_id}" class="btn"
+        style="text-decoration:none;display:inline-block;padding:0.4rem 0.7rem;font-size:0.82rem;background:rgba(255,255,255,0.08);border:none;border-radius:6px;color:var(--text)">
+        📊 Detay
+      </a>`;
+  } else {
+    actions = `
+      <a href="/organizer.html?focus=${round.tournament_id}" class="btn"
+        style="text-decoration:none;display:inline-block;padding:0.4rem 0.8rem;font-size:0.82rem;background:rgba(255,255,255,0.08);border-radius:6px;color:var(--text)">
+        📊 Detay
+      </a>`;
+  }
+
+  // İçerik (maç listesi veya eşleşme kartları)
+  let body = '';
+  if (started && STATE.roundMatches[round.tournament_id] && STATE.roundMatches[round.tournament_id].length > 0) {
+    body = renderMatchList(STATE.roundMatches[round.tournament_id], comp);
+  } else {
+    body = `<div class="pairs-grid">`;
+    for (const p of round.pairs) {
+      body += `<div class="pair-card">
+        <span class="pname">${esc(p.p1_name)}</span>
+        <span class="pvs">vs</span>
+        <span class="pname">${esc(p.p2_name)}</span>
+      </div>`;
+    }
+    body += `</div>`;
+  }
+
+  return `
+    <div style="border:1px solid ${borderC};border-radius:10px;padding:0.9rem 1rem;margin-bottom:0.8rem">
+      <div style="display:flex;justify-content:space-between;align-items:flex-start;flex-wrap:wrap;gap:0.5rem;margin-bottom:0.6rem">
+        <div style="flex:1;min-width:0">
+          <strong>Round ${round.round_number}</strong>
+          <span style="margin-left:0.5rem;font-size:0.78rem;color:${statusColor};font-weight:600">${statusLabel}</span>
+          <span style="margin-left:0.5rem;font-size:0.78rem;color:var(--text-dim)">${round.pairs.length} maç</span>
+          ${byeHtml}
+        </div>
+        <div style="display:flex;gap:0.4rem;flex-shrink:0">${actions}</div>
+      </div>
+      ${body}
+    </div>
+  `;
+}
+
+// Başka güne bağlı, henüz başlatılmamış round — bu güne taşıma satırı
+function renderMovableRoundRow(round, session) {
+  const pairsHtml = round.pairs.map(p =>
+    `<span style="color:var(--text-dim);font-size:0.82rem">${esc(p.p1_name)} vs ${esc(p.p2_name)}</span>`
+  ).join(' · ');
+  return `
+    <div style="border:1px dashed rgba(255,255,255,0.12);border-radius:10px;padding:0.7rem 0.9rem;margin-bottom:0.5rem;display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:0.5rem">
+      <div style="flex:1;min-width:0">
+        <strong style="font-size:0.92rem">Round ${round.round_number}</strong>
+        <div style="margin-top:0.2rem">${pairsHtml}</div>
+      </div>
+      <button onclick="moveRoundToThisDay(${session.competition_id}, ${round.round_number}, ${session.id})"
+        style="padding:0.35rem 0.7rem;font-size:0.82rem;background:rgba(99,102,241,0.18);border:1px solid rgba(99,102,241,0.35);color:#a5b4fc;border-radius:6px;cursor:pointer">
+        → Bu Güne Taşı
+      </button>
+    </div>
+  `;
+}
+
+// ── Maç listesi render ─────────────────────────────────────────────
+function renderMatchList(matches, comp) {
+  if (!matches.length) return '<p style="color:var(--text-dim)">Henüz maç yok.</p>';
+  const sorted = [...matches].sort((a, b) => {
+    const order = { live: 0, ready: 1, pending: 2, finished: 3 };
+    return (order[a.status] ?? 4) - (order[b.status] ?? 4) || (a.round || 0) - (b.round || 0);
+  });
+  return sorted.map(m => renderMatchCard(m, comp)).join('');
+}
+
+function renderMatchCard(m, comp) {
+  const p1 = esc(m.p1_name || '?');
+  const p2 = esc(m.p2_name || '?');
+  const isFinished = m.status === 'finished';
+  const p1Win = isFinished && m.winner_entry_id === m.entry1_id;
+  const p2Win = isFinished && m.winner_entry_id === m.entry2_id;
+  const scoreHtml = isFinished
+    ? `<div class="match-score">${m.p1_legs || 0} – ${m.p2_legs || 0}</div>`
+    : m.status === 'live' ? `<div class="match-score" style="color:#4ade80">${m.p1_legs || 0} – ${m.p2_legs || 0}</div>`
+    : '';
+  const statusPill = `<span class="match-status-pill ${m.status === 'live' ? 'live' : m.status === 'finished' ? 'finished' : m.status === 'ready' ? 'ready' : 'pending'}">${
+    m.status === 'live' ? 'Canlı' : m.status === 'finished' ? 'Bitti' : m.status === 'ready' ? 'Hazır' : 'Bekliyor'
+  }</span>`;
+  const roundLbl = m.bracket === 'league' ? '' : `<span style="font-size:0.75rem;color:var(--text-dim)">Round ${m.round}</span>`;
+  return `
+    <div class="match-card">
+      <div class="match-players">
+        <div class="match-player ${p1Win ? 'winner' : ''}">${p1}</div>
+        <span class="match-vs">vs</span>
+        <div class="match-player ${p2Win ? 'winner' : ''}">${p2}</div>
+      </div>
+      ${scoreHtml}
+      <div style="display:flex;gap:0.5rem;align-items:center">${roundLbl}${statusPill}</div>
+    </div>
+  `;
+}
+
+// ── Basit bracket render (yatay round kolonları) ───────────────────
+function renderBracketSimple(matches, comp) {
+  const byRound = {};
+  for (const m of matches) {
+    const r = m.round || 1;
+    if (!byRound[r]) byRound[r] = [];
+    byRound[r].push(m);
+  }
+  const rounds = Object.keys(byRound).map(Number).sort((a, b) => a - b);
+  if (!rounds.length) return '';
+
+  let html = `<div style="display:flex;gap:1rem;align-items:flex-start;min-width:max-content;padding:0.5rem 0 1rem">`;
+  for (const r of rounds) {
+    const ms = byRound[r];
+    const lbl = ms[0]?.bracket === 'final' ? 'Büyük Final'
+      : ms[0]?.bracket === 'losers' ? `Losers R${r}`
+      : ms[0]?.bracket === 'rr' || ms[0]?.bracket === 'league' ? `Round ${r}`
+      : r === Math.max(...rounds) ? 'Final' : `Round ${r}`;
+    html += `<div style="display:flex;flex-direction:column;gap:0.6rem;min-width:200px">`;
+    html += `<div style="font-size:0.72rem;font-weight:700;text-transform:uppercase;letter-spacing:0.05em;color:var(--text-dim);margin-bottom:0.2rem">${esc(lbl)}</div>`;
+    for (const m of ms) {
+      const p1 = esc(m.p1_name || (m.entry1_id ? '…' : 'BYE'));
+      const p2 = esc(m.p2_name || (m.entry2_id ? '…' : 'BYE'));
+      const p1Win = m.status === 'finished' && m.winner_entry_id === m.entry1_id;
+      const p2Win = m.status === 'finished' && m.winner_entry_id === m.entry2_id;
+      const borderC = m.status === 'live' ? '#4ade80' : m.status === 'finished' ? 'rgba(245,158,11,0.4)' : 'var(--border)';
+      html += `<div style="background:var(--surface);border:1px solid ${borderC};border-radius:8px;overflow:hidden;font-size:0.88rem">
+        <div style="padding:0.35rem 0.6rem;border-bottom:1px solid var(--border);${p1Win ? 'color:#4ade80;font-weight:700' : ''}">
+          ${p1}${m.status === 'finished' ? ` <span style="float:right;font-variant-numeric:tabular-nums">${m.p1_legs || 0}</span>` : ''}
+        </div>
+        <div style="padding:0.35rem 0.6rem;${p2Win ? 'color:#4ade80;font-weight:700' : 'color:var(--text-dim)'}">
+          ${p2}${m.status === 'finished' ? ` <span style="float:right;font-variant-numeric:tabular-nums">${m.p2_legs || 0}</span>` : ''}
+        </div>
+      </div>`;
+    }
+    html += `</div>`;
+  }
+  html += `</div>`;
+  return html;
+}
+
+// ── Round başlat ──────────────────────────────────────────────────
+async function startRound(sid, compId, roundNumber) {
+  try {
+    toast('Round başlatılıyor…');
+    const res = await apiPost(
+      `/api/competitions/${compId}/sessions/${sid}/start-round`,
+      { round_number: roundNumber }
+    );
+    if (res && res.error) { toast('Hata: ' + res.error); return; }
+    toast(`Round ${roundNumber} başlatıldı ✓`);
+    await loadAndRender();
+  } catch (e) { toast('Sunucu hatası'); }
+}
+window.startRound = startRound;
+
+// ── Round finalize (lig için) ─────────────────────────────────────
+async function finalizeRound(compId, roundNumber) {
+  if (!confirm(`Round ${roundNumber} sonuçları klasmana işlensin mi?\n\nHer galibiyet için "Maç başına puan" değeri eklenir, maç G/M ve leg G/M sayıları biriktirilir. İşlem geri alınamaz.`)) return;
+  try {
+    toast('Round finalize ediliyor…');
+    const res = await apiPost(`/api/competitions/${compId}/rounds/${roundNumber}/finalize`, {});
+    if (res && res.error) { toast('Hata: ' + res.error); return; }
+    toast(`Round ${roundNumber} klasmana işlendi ✓`);
+    await loadAndRender();
+  } catch (e) { console.error(e); toast('Sunucu hatası'); }
+}
+window.finalizeRound = finalizeRound;
+
+// ── Round'u başka günden bu güne taşı ─────────────────────────────
+async function moveRoundToThisDay(compId, roundNumber, sid) {
+  if (!confirm(`Round ${roundNumber} bu güne taşınsın mı?`)) return;
+  try {
+    const res = await apiPost(`/api/competitions/${compId}/rounds/${roundNumber}/move`, { session_id: sid });
+    if (res && res.error) { toast('Hata: ' + res.error); return; }
+    toast(`Round ${roundNumber} bu güne taşındı ✓`);
+    await loadAndRender();
+  } catch (e) { console.error(e); toast('Sunucu hatası'); }
+}
+window.moveRoundToThisDay = moveRoundToThisDay;
+
+// ── Finalize (sezon — bracket oturumu için) ───────────────────────
+async function finalizeSession(sid, compId) {
+  toast('Sıralama hesaplanıyor…');
+  try {
+    const preview = await api(`/api/competitions/${compId}/sessions/${sid}/preview`);
+    if (preview && preview.error) { toast('Hata: ' + preview.error); return; }
+    if (preview.already_recorded) { toast('Zaten klasmana işlendi.'); return; }
+    const standings = preview.standings || [];
+    const lines = standings.map(r =>
+      `${r.position}. ${r.player_name || '?'}  +${r.points_earned || 0} puan`
+    ).join('\n');
+    if (!confirm(`Sonuçları klasmana işle:\n\n${lines}\n\nOnaylıyor musun?`)) return;
+    const res = await apiPost(`/api/competitions/${compId}/sessions/${sid}/finalize`, {});
+    if (res && res.error) { toast('Hata: ' + res.error); return; }
+    toast('Klasmana işlendi ✓');
+    await loadAndRender();
+  } catch (e) { toast('Sunucu hatası'); }
+}
+
+// ── Boot ──────────────────────────────────────────────────────────
+(async () => {
+  STATE.sessionId = getSessionId();
+  if (!STATE.sessionId) {
+    document.getElementById('page-content').innerHTML = '<p style="color:#ef4444">URL\'de id parametresi eksik.</p>';
+    return;
+  }
+  await loadAndRender();
+})();
+</script>
+</body>
+</html>

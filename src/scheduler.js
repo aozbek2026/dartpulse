@@ -39,8 +39,14 @@ function assignForUser(io, userId) {
   }
 
   // AŞAMA 1: maçları board'lara ata
-  // Board → turnuva eşlemesi: önce SAME_TOURNAMENT, sonra GENEL (tournament_id=null)
-  // Maç tournament_id !== board tournament_id ise atama yapma
+  // KURAL (Mayıs 2026 sonrası): Bir maç YALNIZCA kendi turnuvasına atanmış
+  // board'lara gider. Atanmamış (tournament_id=NULL) board'lar pasif kalır;
+  // hiçbir maç almaz. Tek board, birden fazla turnuva arasında paylaşılmaz.
+  //
+  // Eski "Genel" (tournament_id=NULL) fallback davranışı kaldırıldı — federasyon
+  // (çok-turnuvalı) senaryoda yanlış turnuvanın maçının yanlış tablete düşmesine
+  // sebep oluyordu. Tek-turnuvalı kullanım için: organizer'da board'u o turnuvaya
+  // atamak yeterli.
   const readyMatches = db.pendingReadyMatches(userId).filter(m => !m.board_id);
   const newlyAssigned = [];
   const usedBoards = new Set();
@@ -48,16 +54,11 @@ function assignForUser(io, userId) {
     if ((match.entry1_id && busy.has(match.entry1_id)) ||
         (match.entry2_id && busy.has(match.entry2_id))) continue;
 
-    // Bu turnuvaya bağlı boş board'lar (tournament_id === match.tournament_id)
-    const tied = allIdleBoards.find(b =>
+    // Yalnızca bu turnuvaya atanmış boş board'lar uygundur
+    const board = allIdleBoards.find(b =>
       !usedBoards.has(b.id) && b.tournament_id === match.tournament_id
     );
-    // Eğer turnuvaya özel yoksa, GENEL board'lardan al (tournament_id null)
-    const general = !tied ? allIdleBoards.find(b =>
-      !usedBoards.has(b.id) && b.tournament_id == null
-    ) : null;
-    const board = tied || general;
-    if (!board) continue; // bu turnuva için uygun board yok
+    if (!board) continue; // bu turnuva için atanmış boş board yok
 
     usedBoards.add(board.id);
     db.updateMatch(match.id, { board_id: board.id });
