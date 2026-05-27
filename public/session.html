@@ -275,13 +275,52 @@ function render() {
       html += `<div class="section-title">Maç Listesi</div>`;
       html += renderMatchList(matches, comp);
     }
+  } else if (s.tournament_id && tournStatus === 'draft') {
+    // Turnuva yaratıldı ama henüz başlatılmadı — kullanıcıya açık başlat butonu sun
+    html += `
+      <div style="margin-top:1.5rem;padding:1.5rem;background:rgba(34,197,94,0.05);border:1px solid rgba(34,197,94,0.25);border-radius:12px;text-align:center">
+        <p style="margin:0 0 0.5rem 0;font-size:1.05rem;font-weight:600">Turnuva henüz başlatılmadı</p>
+        <p style="margin:0 0 1rem 0;color:var(--text-dim);font-size:0.88rem">
+          "Başlat" tıklayınca bracket maçları oluşturulur ve boş board'lara dağıtılır. Tabletlerden skor girişi başlayabilir.
+        </p>
+        <button id="start-tournament-btn" class="primary" style="padding:0.7rem 1.4rem;font-size:1rem;background:#16a34a;border-color:#16a34a">
+          ▶ Turnuvayı Başlat
+        </button>
+      </div>
+    `;
   } else if (s.tournament_id) {
-    html += `<p style="color:var(--text-dim);margin-top:1rem">Maç yükleniyor…</p>`;
+    // Tournament status running/finished ama hiç maç gelmedi — anormal durum
+    html += `<p style="color:var(--text-dim);margin-top:1rem">Bu turnuvada maç bulunamadı (durum: ${esc(tournStatus)}). Organizatör ekranına gidip kontrol et.</p>`;
   } else {
     html += `<p style="color:var(--text-dim);margin-top:1rem">Bu oturuma henüz turnuva bağlanmamış.</p>`;
   }
 
   content.innerHTML = html;
+
+  // Turnuvayı Başlat butonu — draft + maç yok durumunda
+  const startBtn = document.getElementById('start-tournament-btn');
+  if (startBtn) {
+    startBtn.addEventListener('click', async () => {
+      startBtn.disabled = true;
+      startBtn.textContent = 'Başlatılıyor…';
+      try {
+        const res = await apiPost(`/api/tournaments/${s.tournament_id}/start`, {});
+        if (res && res.error) {
+          toast('Hata: ' + res.error);
+          startBtn.disabled = false;
+          startBtn.textContent = '▶ Turnuvayı Başlat';
+          return;
+        }
+        toast('Turnuva başlatıldı ✓');
+        await loadAndRender();
+      } catch (e) {
+        console.error(e);
+        toast('Sunucu hatası: ' + (e.message || e));
+        startBtn.disabled = false;
+        startBtn.textContent = '▶ Turnuvayı Başlat';
+      }
+    });
+  }
 }
 
 // ── League_day render ──────────────────────────────────────────────
