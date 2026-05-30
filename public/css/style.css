@@ -1159,6 +1159,34 @@ body.board-page #root.board-screen {
 }
 
 /* ========================================================
+   X01 board — yatay (landscape) düzen: sol yarı bilgi, sağ yarı keypad
+   Sadece X01 ekranı (.dp) etkilenir; cricket/karambol dokunulmaz.
+   ======================================================== */
+@media (orientation: landscape) {
+  .dp {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    grid-template-rows: auto 1fr;
+    column-gap: clamp(4px, 1vmin, 12px);
+    overflow: hidden;
+  }
+  .dp-names  { grid-column: 1; grid-row: 1; }
+  .dp-scores { grid-column: 1; grid-row: 2; min-height: 0; }
+  .dp-keypad {
+    grid-column: 2;
+    grid-row: 1 / span 2;
+    display: flex;
+    flex-direction: column;
+    min-height: 0;
+  }
+  /* keypad sağ yarıda tam yüksekliği kaplasın, tuşlar dikeyde büyüsün */
+  .dp-keypad .dp-main { flex: 1 1 auto; min-height: 0; }
+  .dp-keypad .dp-grid { height: 100%; }
+  /* dikey düzen için olan boşluk doldurucular yatayda gereksiz */
+  .dp-gap, .dp-safe { display: none; }
+}
+
+/* ========================================================
    Cricket board ekranı
    ======================================================== */
 
