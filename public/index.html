@@ -206,10 +206,19 @@
 
   /* HERO */
   .hp-hero {
-    text-align: center;
-    padding: clamp(3.5rem, 9vw, 6.5rem) 1.5rem clamp(3rem, 6vw, 4.5rem);
-    max-width: 820px;
+    display: grid;
+    grid-template-columns: 1.05fr 0.95fr;
+    align-items: center;
+    gap: clamp(1.5rem, 4vw, 3.5rem);
+    text-align: left;
+    padding: clamp(3rem, 7vw, 5.5rem) 1.5rem clamp(2.5rem, 5vw, 4rem);
+    max-width: 1080px;
     margin: 0 auto;
+  }
+  @media (max-width: 820px) {
+    .hp-hero { grid-template-columns: 1fr; text-align: center; }
+    .hp-hero .hp-cta, .hp-hero .hp-sub { margin-left: auto; margin-right: auto; }
+    .hp-preview { max-width: 460px; margin: 0.5rem auto 0; }
   }
   .hp-pill {
     display: inline-flex;
@@ -282,6 +291,52 @@
     margin-top: 0.75rem;
   }
   .hp-trust strong { color: var(--text); font-weight: 600; }
+  .hp-hero-text .hp-sub { margin-left: 0; margin-right: 0; }
+  .hp-hero-text .hp-cta { justify-content: flex-start; }
+
+  /* HERO PREVIEW */
+  .hp-preview {
+    background: var(--bg-2);
+    border: 1px solid var(--border);
+    border-radius: 16px;
+    padding: 1rem;
+    box-shadow: 0 12px 40px rgba(0,0,0,0.35);
+  }
+  .hp-preview-head {
+    display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.9rem;
+  }
+  .hp-preview-label {
+    font-size: 0.7rem; font-weight: 700; color: var(--text-dim);
+    text-transform: uppercase; letter-spacing: 0.06em;
+  }
+  .hp-preview-live {
+    font-size: 0.65rem; color: var(--success); display: inline-flex; align-items: center; gap: 5px; font-weight: 700;
+  }
+  .hp-preview-live .d {
+    width: 7px; height: 7px; border-radius: 50%; background: var(--success); display: inline-block;
+    animation: hp-pulse 1.6s ease-in-out infinite;
+  }
+  @keyframes hp-pulse { 0%,100%{opacity:1;} 50%{opacity:0.3;} }
+  .hp-preview-body { display: grid; grid-template-columns: 1fr 1fr; gap: 1.1rem; align-items: center; }
+  .hp-pv-col { display: flex; flex-direction: column; gap: 0.85rem; }
+  .hp-pv-pair { display: flex; flex-direction: column; gap: 5px; }
+  .hp-pv-row {
+    background: var(--surface); border: 1px solid var(--border); border-radius: 7px;
+    padding: 7px 9px; display: flex; justify-content: space-between; align-items: center;
+    font-size: 0.78rem; color: var(--text-dim);
+  }
+  .hp-pv-row b { color: var(--text-dim); font-weight: 700; }
+  .hp-pv-row.win { border-left: 3px solid var(--accent); color: var(--text); }
+  .hp-pv-row.win b { color: var(--success); }
+  .hp-pv-row.gold { border-left: 3px solid var(--warn); color: var(--text); }
+  .hp-pv-final-label { font-size: 0.62rem; color: var(--text-dim); text-transform: uppercase; letter-spacing: 0.05em; }
+  .hp-pv-score {
+    margin-top: 0.5rem; background: var(--bg); border: 1px solid var(--border);
+    border-radius: 9px; padding: 0.7rem; text-align: center;
+  }
+  .hp-pv-score .t { font-size: 0.6rem; color: var(--text-dim); }
+  .hp-pv-score .n { font-size: 1.7rem; font-weight: 800; color: var(--accent-2); letter-spacing: 0.02em; }
+  .hp-pv-score .b { font-size: 0.6rem; color: var(--text-dim); }
 
   /* QUICK ACCESS */
   #hp-quick { display: none; padding: 0 1.5rem 3rem; max-width: 1080px; margin: 0 auto; }
@@ -416,7 +471,7 @@
   .hp-step .num {
     width: 38px;
     height: 38px;
-    border-radius: 50%;
+    border-radius: 10px;
     background: var(--hp-grad);
     color: #fff;
     font-weight: 800;
@@ -428,6 +483,10 @@
   }
   .hp-step h3 { font-size: 1.1rem; margin: 0 0 0.4rem; font-weight: 700; }
   .hp-step p { color: var(--text-dim); margin: 0; line-height: 1.5; font-size: 0.93rem; }
+  .hp-step .num.n1 { background: rgba(255,56,96,0.15); color: #ff8099; }
+  .hp-step .num.n2 { background: rgba(0,212,255,0.15); color: var(--accent-2); }
+  .hp-step .num.n3 { background: rgba(124,92,255,0.15); color: #b9aaff; }
+  .hp-section-how { padding-top: 0; }
 
   .hp-cta-band {
     background: var(--hp-grad-soft);
@@ -521,23 +580,76 @@
 </nav>
 
 <section class="hp-hero">
-  <div class="hp-pill"><span class="dot">●</span> <span data-i18n="hero_pill">Beta — ücretsiz erken erişim</span></div>
-  <h1>
-    <span data-i18n="hero_h1_pre">Türkçe dart turnuvalarını</span>
-    <span class="hp-grad" data-i18n="hero_h1_accent">tek panelden</span>
-    <span data-i18n="hero_h1_post">yönet</span>
-  </h1>
-  <p class="hp-sub" data-i18n="hero_sub">
-    Tek eleme, çift eleme, round robin. Tabletten skor girişi, TV'de canlı bracket, organizatör panelinden tek tıkla maç akışı.
-  </p>
-  <div class="hp-cta">
-    <a id="hp-cta-primary" class="hp-btn primary" href="/login.html" data-i18n="hero_cta_primary">Ücretsiz Başla →</a>
-    <a class="hp-btn outline" href="/scorer.html" data-i18n="hero_cta_scorer">Hızlı Skor</a>
-    <a class="hp-btn outline" href="/bracket.html" data-i18n="hero_cta_bracket">Hızlı Bracket</a>
-    <a class="hp-btn outline" href="/viewer.html" data-i18n="hero_cta_viewer">📺 İzleyici Ekranı</a>
+  <div class="hp-hero-text">
+    <div class="hp-pill"><span class="dot">●</span> <span data-i18n="hero_pill">Beta — ücretsiz erken erişim</span></div>
+    <h1>
+      <span data-i18n="hero_h1_pre">Dart turnuvalarını</span>
+      <span class="hp-grad" data-i18n="hero_h1_accent">tek panelden</span>
+      <span data-i18n="hero_h1_post">yönet</span>
+    </h1>
+    <p class="hp-sub" data-i18n="hero_sub">
+      Tek eleme, çift eleme, round robin. Tabletten skor girişi, TV'de canlı bracket, organizatör panelinden tek tıkla maç akışı.
+    </p>
+    <div class="hp-cta">
+      <a id="hp-cta-primary" class="hp-btn primary" href="/login.html" data-i18n="hero_cta_primary">Ücretsiz Başla →</a>
+      <a class="hp-btn outline" href="/scorer.html" data-i18n="hero_cta_scorer">Hızlı Skor</a>
+      <a class="hp-btn outline" href="/bracket.html" data-i18n="hero_cta_bracket">Hızlı Bracket</a>
+      <a class="hp-btn outline" href="/viewer.html" data-i18n="hero_cta_viewer">📺 İzleyici Ekranı</a>
+    </div>
+    <div class="hp-trust" data-i18n-html="hero_trust">
+      <strong>Tablet uyumlu</strong> · <strong>Gerçek zamanlı</strong> · <strong>Türkçe arayüz</strong>
+    </div>
   </div>
-  <div class="hp-trust" data-i18n-html="hero_trust">
-    <strong>Tablet uyumlu</strong> · <strong>Gerçek zamanlı</strong> · <strong>Türkçe arayüz</strong>
+
+  <div class="hp-preview" aria-hidden="true">
+    <div class="hp-preview-head">
+      <span class="hp-preview-label" data-i18n="preview_label">Canlı Bracket</span>
+      <span class="hp-preview-live"><span class="d"></span> <span data-i18n="preview_live">CANLI</span></span>
+    </div>
+    <div class="hp-preview-body">
+      <div class="hp-pv-col">
+        <div class="hp-pv-pair">
+          <div class="hp-pv-row win"><span>Ahmet Ö.</span><b>3</b></div>
+          <div class="hp-pv-row"><span>Mehmet K.</span><b>1</b></div>
+        </div>
+        <div class="hp-pv-pair">
+          <div class="hp-pv-row"><span>Can D.</span><b>2</b></div>
+          <div class="hp-pv-row win"><span>Burak T.</span><b>3</b></div>
+        </div>
+      </div>
+      <div class="hp-pv-col">
+        <div class="hp-pv-final-label" data-i18n="preview_final">Final</div>
+        <div class="hp-pv-row gold"><span>Ahmet Ö.</span><b>—</b></div>
+        <div class="hp-pv-row"><span>Burak T.</span><b>—</b></div>
+        <div class="hp-pv-score">
+          <div class="t" data-i18n="preview_score_mode">SKOR · 501</div>
+          <div class="n">180</div>
+          <div class="b">Board 2 — Ahmet</div>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section class="hp-section hp-section-how" id="how">
+  <h2 data-i18n="how_h2">Nasıl çalışır?</h2>
+  <p class="lede" data-i18n="how_lede">Hesap aç, dakikalar içinde ilk turnuvanı yayına al.</p>
+  <div class="hp-steps">
+    <div class="hp-step">
+      <div class="num n1">1</div>
+      <h3 data-i18n="step1_h">Turnuva oluştur</h3>
+      <p data-i18n="step1_p">Format, oyun modu, leg ve set sayısını seç. Oyuncuları tek tek veya yapıştırarak ekle.</p>
+    </div>
+    <div class="hp-step">
+      <div class="num n2">2</div>
+      <h3 data-i18n="step2_h">Tabletleri bağla</h3>
+      <p data-i18n="step2_p">Her dart tahtası için bir tablet aç, hangi board olduğunu seç. Skor girişine hazır.</p>
+    </div>
+    <div class="hp-step">
+      <div class="num n3">3</div>
+      <h3 data-i18n="step3_h">Maça başla</h3>
+      <p data-i18n="step3_p">Bracket otomatik üretilir, board'lar otomatik atanır. TV'ye yansıt, izleyiciye link gönder.</p>
+    </div>
   </div>
 </section>
 
@@ -594,27 +706,6 @@
   </div>
 </section>
 
-<section class="hp-section" id="how">
-  <h2 data-i18n="how_h2">Nasıl çalışır?</h2>
-  <p class="lede" data-i18n="how_lede">Hesap aç, dakikalar içinde ilk turnuvanı yayına al.</p>
-  <div class="hp-steps">
-    <div class="hp-step">
-      <div class="num">1</div>
-      <h3 data-i18n="step1_h">Turnuva oluştur</h3>
-      <p data-i18n="step1_p">Format, oyun modu, leg ve set sayısını seç. Oyuncuları tek tek veya yapıştırarak ekle.</p>
-    </div>
-    <div class="hp-step">
-      <div class="num">2</div>
-      <h3 data-i18n="step2_h">Tabletleri bağla</h3>
-      <p data-i18n="step2_p">Her dart tahtası için bir tablet aç, hangi board olduğunu seç. Skor girişine hazır.</p>
-    </div>
-    <div class="hp-step">
-      <div class="num">3</div>
-      <h3 data-i18n="step3_h">Maça başla</h3>
-      <p data-i18n="step3_p">Bracket otomatik üretilir, board'lar otomatik atanır. TV'ye yansıt, izleyiciye link gönder.</p>
-    </div>
-  </div>
-</section>
 
 <section class="hp-cta-band">
   <h2 data-i18n="band_h">Ücretsiz başlat, dakikalar içinde yayında ol</h2>
@@ -642,7 +733,7 @@
       menu_perf: 'Performans & Başarımlar', menu_settings: 'Hesap Ayarları',
       menu_logout: 'Çıkış Yap', soon: 'Yakında',
       hero_pill: 'Beta — ücretsiz erken erişim',
-      hero_h1_pre: 'Türkçe dart turnuvalarını',
+      hero_h1_pre: 'Dart turnuvalarını',
       hero_h1_accent: 'tek panelden',
       hero_h1_post: 'yönet',
       hero_sub: 'Tek eleme, çift eleme, round robin. Tabletten skor girişi, TV\'de canlı bracket, organizatör panelinden tek tıkla maç akışı.',
@@ -652,6 +743,10 @@
       hero_cta_viewer: '📺 İzleyici Ekranı',
       hero_cta_secondary: 'Nasıl Çalışır',
       hero_trust: '<strong>Tablet uyumlu</strong> · <strong>Gerçek zamanlı</strong> · <strong>Türkçe arayüz</strong>',
+      preview_label: 'Canlı Bracket',
+      preview_live: 'CANLI',
+      preview_final: 'Final',
+      preview_score_mode: 'SKOR · 501',
       quick_title: 'Hızlı Erişim',
       quick_organizer: 'Organizatör', quick_boards: "Board'lar",
       quick_scorer: 'Hızlı Skor', quick_viewer: 'İzleyici',
@@ -699,6 +794,10 @@
       hero_cta_viewer: '📺 Viewer Screen',
       hero_cta_secondary: 'How it works',
       hero_trust: '<strong>Tablet-friendly</strong> · <strong>Real-time</strong> · <strong>Turkish-first UI</strong>',
+      preview_label: 'Live Bracket',
+      preview_live: 'LIVE',
+      preview_final: 'Final',
+      preview_score_mode: 'SCORE · 501',
       quick_title: 'Quick Access',
       quick_organizer: 'Organizer', quick_boards: 'Boards',
       quick_scorer: 'Quick Score', quick_viewer: 'Viewer',
