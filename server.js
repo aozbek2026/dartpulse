@@ -256,10 +256,16 @@ app.get('/api/tournaments', (req, res) => {
   res.json(db.allTournaments(uid));
 });
 
-// Herkese açık — sadece aktif (running) turnuvaların özet listesi
+// Herkese açık — running + son 7 gün içi finished turnuvalar
 app.get('/api/tournaments/public', (req, res) => {
-  const list = db.publicRunningTournaments();
-  res.json(list);
+  res.json(db.publicRunningTournaments());
+});
+
+// Organizatör: turnuvayı izleyici listesinden gizle
+app.patch('/api/tournaments/:id/hide-public', auth.requireAuth, (req, res) => {
+  db.setTournamentHiddenFromPublic(+req.params.id, req.session.userId);
+  broadcastState();
+  res.json({ ok: true });
 });
 app.post('/api/tournaments', auth.requireAuth, (req, res) => {
   try {

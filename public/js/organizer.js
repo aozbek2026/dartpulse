@@ -864,6 +864,13 @@ async function deleteTournament(id) {
   await api.del('/api/tournaments/' + id);
 }
 
+async function hideFromPublic(id, btn) {
+  if (!await showOrgConfirm('Bu turnuva izleyici listesinden kaldırılsın mı?', 'Kaldır', 'İptal')) return;
+  await api.patch('/api/tournaments/' + id + '/hide-public', {});
+  if (btn) btn.remove();
+  toast('İzleyici listesinden kaldırıldı.');
+}
+
 // ---- Performans raporu ----
 async function loadReport(tournamentId) {
   try {
@@ -1138,6 +1145,7 @@ function renderTournament(t) {
           ${t.status === 'draft' ? `<button class="primary" onclick="startTournament(${t.id})">Başlat</button>` : ''}
           ${t.status !== 'draft' ? `<button class="secondary" onclick="toggleReport(${t.id})">📊 Rapor</button>` : ''}
           ${canFinishTournament(t) ? `<button class="btn" style="background: #22c55e; color: #000; font-weight: 700;" onclick="showTournamentStats(${t.id})">🏆 Turnuvayı Bitir</button>` : ''}
+          ${t.status === 'finished' && !t.hidden_from_public ? `<button class="secondary" title="İzleyici listesinden kaldır" onclick="hideFromPublic(${t.id}, this)">👁 Listeden Kaldır</button>` : ''}
           <button class="danger" onclick="deleteTournament(${t.id})">Sil</button>
         </div>
       </div>

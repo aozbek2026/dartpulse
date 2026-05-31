@@ -416,6 +416,9 @@ function init() {
   if (!tournCols.includes('user_id')) {
     try { db.exec('ALTER TABLE tournaments ADD COLUMN user_id INTEGER'); } catch {}
   }
+  if (!tournCols.includes('hidden_from_public')) {
+    try { db.exec('ALTER TABLE tournaments ADD COLUMN hidden_from_public INTEGER DEFAULT 0'); } catch {}
+  }
   // Takım maçı kolon migrasyonları
   const teamEvCols = db.prepare("PRAGMA table_info(team_events)").all().map(c => c.name);
   if (!teamEvCols.includes('bracket_json')) {
@@ -682,14 +685,30 @@ function allTournaments(userId = null) {
     "SELECT * FROM tournaments WHERE user_id = ? AND name NOT LIKE '__team_pool_%' ORDER BY id DESC"
   ).all(userId);
 }
-// Herkese açık özet — izleyici seçim ekranı için, sadece running turnuvalar
+// Herkese açık özet — izleyici seçim ekranı için
+// Running: her zaman göster. Finished: bitti + 7 gün içi + gizlenmemiş.
 function publicRunningTournaments() {
-  const rows = db.prepare(
-    "SELECT id, name, format, game_mode, legs_to_win, sets_to_win FROM tournaments WHERE status = 'running' AND name NOT LIKE '__team_pool_%' ORDER BY id DESC"
-  ).all();
-  // Oyuncu sayısını ekle
+  const rows = db.prepare(`
+    SELECT id, name, format, game_mode, legs_to_win, sets_to_win, status, finished_at
+    FROM tournaments
+    WHERE name NOT LIKE '__team_pool_%'
+      AND hidden_from_public = 0
+      AND (
+        status = 'running'
+        OR (
+          status = 'finished'
+          AND finished_at IS NOT NULL
+          AND (julianday('now') - julianday(finished_at)) <= 7
+        )
+      )
+    ORDER BY status DESC, id DESC
+  `).all();
   const countStmt = db.prepare('SELECT COUNT(*) AS c FROM entries WHERE tournament_id = ?');
   return rows.map(t => ({ ...t, player_count: (countStmt.get(t.id) || {c:0}).c }));
+}
+
+function setTournamentHiddenFromPublic(id, userId) {
+  db.prepare('UPDATE tournaments SET hidden_from_public = 1 WHERE id = ? AND user_id = ?').run(id, userId);
 }
 
 function tournamentById(id) {
@@ -1820,7 +1839,7 @@ module.exports = {
   updatePassword, deleteUser,
   createPlayer, allPlayers, playerById, deletePlayer,
   createBoard, allBoards, boardById, deleteBoard, setBoardMatch, clearUserBoards, setBoardTournament,
-  createTournament, allTournaments, publicRunningTournaments, tournamentById, updateTournamentStatus, updateTournament, deleteTournament,
+  createTournament, allTournaments, publicRunningTournaments, setTournamentHiddenFromPublic, tournamentById, updateTournamentStatus, updateTournament, deleteTournament,
   addEntry, entriesForTournament, entryById, updateEntrySlots,
   createStage, stagesForTournament, stageById, updateStageStatus,
   createMatch, matchById, matchesForTournament, matchesForStage,
