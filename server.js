@@ -255,6 +255,12 @@ app.get('/api/tournaments', (req, res) => {
   const uid = req.user ? req.user.id : null;
   res.json(db.allTournaments(uid));
 });
+
+// Herkese açık — sadece aktif (running) turnuvaların özet listesi
+app.get('/api/tournaments/public', (req, res) => {
+  const list = db.publicRunningTournaments();
+  res.json(list);
+});
 app.post('/api/tournaments', auth.requireAuth, (req, res) => {
   try {
     const t = tournament.createTournament({ ...req.body, user_id: req.user.id });

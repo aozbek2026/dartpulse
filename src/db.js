@@ -674,13 +674,24 @@ function createTournament(data) {
 }
 function allTournaments(userId = null) {
   // __team_pool_*__ turnuvalarını gizle (organizatör listesinden)
+  // Giriş yapılmamış izleyici → sadece aktif (running) turnuvalar, draft/bitmişler gizli
   if (userId == null) {
-    return db.prepare("SELECT * FROM tournaments WHERE name NOT LIKE '__team_pool_%' ORDER BY id DESC").all();
+    return db.prepare("SELECT * FROM tournaments WHERE status = 'running' AND name NOT LIKE '__team_pool_%' ORDER BY id DESC").all();
   }
   return db.prepare(
     "SELECT * FROM tournaments WHERE user_id = ? AND name NOT LIKE '__team_pool_%' ORDER BY id DESC"
   ).all(userId);
 }
+// Herkese açık özet — izleyici seçim ekranı için, sadece running turnuvalar
+function publicRunningTournaments() {
+  const rows = db.prepare(
+    "SELECT id, name, format, game_mode, legs_to_win, sets_to_win FROM tournaments WHERE status = 'running' AND name NOT LIKE '__team_pool_%' ORDER BY id DESC"
+  ).all();
+  // Oyuncu sayısını ekle
+  const countStmt = db.prepare('SELECT COUNT(*) AS c FROM entries WHERE tournament_id = ?');
+  return rows.map(t => ({ ...t, player_count: (countStmt.get(t.id) || {c:0}).c }));
+}
+
 function tournamentById(id) {
   return db.prepare('SELECT * FROM tournaments WHERE id = ?').get(id);
 }
@@ -1809,7 +1820,7 @@ module.exports = {
   updatePassword, deleteUser,
   createPlayer, allPlayers, playerById, deletePlayer,
   createBoard, allBoards, boardById, deleteBoard, setBoardMatch, clearUserBoards, setBoardTournament,
-  createTournament, allTournaments, tournamentById, updateTournamentStatus, updateTournament, deleteTournament,
+  createTournament, allTournaments, publicRunningTournaments, tournamentById, updateTournamentStatus, updateTournament, deleteTournament,
   addEntry, entriesForTournament, entryById, updateEntrySlots,
   createStage, stagesForTournament, stageById, updateStageStatus,
   createMatch, matchById, matchesForTournament, matchesForStage,

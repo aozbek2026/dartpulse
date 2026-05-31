@@ -6,6 +6,91 @@
 <title>İzleyici · Dart Core Pro</title>
 <link rel="stylesheet" href="/css/style.css" />
 <style>
+  /* ── Turnuva seçim ekranı (giriş yapılmamış izleyici) ── */
+  #tour-picker-screen {
+    display: none;
+    min-height: 100vh;
+    background: var(--bg);
+    padding: 3rem 1.5rem;
+    box-sizing: border-box;
+  }
+  #tour-picker-screen.show { display: block; }
+  .tp-header {
+    text-align: center;
+    margin-bottom: 2.5rem;
+  }
+  .tp-header h1 {
+    font-size: clamp(1.6rem, 4vw, 2.2rem);
+    margin: 0 0 0.5rem;
+    font-weight: 800;
+  }
+  .tp-header p { color: var(--text-dim); margin: 0; font-size: 1rem; }
+  .tp-live-dot {
+    display: inline-flex; align-items: center; gap: 0.4rem;
+    background: rgba(255,56,96,0.12); color: var(--accent);
+    border-radius: 999px; padding: 0.3rem 0.85rem;
+    font-size: 0.82rem; font-weight: 700;
+    margin-bottom: 1rem;
+  }
+  .tp-live-dot .d {
+    width: 8px; height: 8px; border-radius: 50%;
+    background: var(--accent);
+    animation: tp-pulse 1.6s ease-in-out infinite;
+  }
+  @keyframes tp-pulse { 0%,100%{opacity:1;} 50%{opacity:0.25;} }
+  .tp-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+    gap: 1rem;
+    max-width: 900px;
+    margin: 0 auto;
+  }
+  .tp-card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 14px;
+    padding: 1.5rem 1.4rem;
+    cursor: pointer;
+    text-align: left;
+    transition: border-color 0.15s, transform 0.15s, box-shadow 0.15s;
+    color: var(--text);
+    text-decoration: none;
+    display: block;
+  }
+  .tp-card:hover {
+    border-color: var(--accent);
+    transform: translateY(-2px);
+    box-shadow: 0 8px 28px -8px rgba(255,56,96,0.3);
+  }
+  .tp-card-name {
+    font-size: 1.15rem; font-weight: 700; margin-bottom: 0.55rem;
+  }
+  .tp-card-meta {
+    font-size: 0.82rem; color: var(--text-dim);
+    display: flex; flex-direction: column; gap: 0.2rem;
+  }
+  .tp-card-badge {
+    display: inline-flex; align-items: center; gap: 0.3rem;
+    background: rgba(255,56,96,0.12); color: var(--accent);
+    border-radius: 6px; padding: 0.18rem 0.55rem;
+    font-size: 0.75rem; font-weight: 700;
+    margin-bottom: 0.75rem;
+  }
+  .tp-empty {
+    text-align: center; color: var(--text-dim);
+    padding: 4rem 1rem;
+    max-width: 420px; margin: 0 auto;
+  }
+  .tp-empty .ico { font-size: 3rem; margin-bottom: 1rem; }
+  .tp-empty h3 { margin: 0 0 0.5rem; font-size: 1.15rem; }
+  .tp-empty p { margin: 0; font-size: 0.95rem; }
+  .tp-footer {
+    text-align: center; margin-top: 3rem;
+    color: var(--text-dim); font-size: 0.88rem;
+  }
+  .tp-footer a { color: var(--text-dim); }
+  .tp-footer a:hover { color: var(--text); }
+
   .viewer { padding-top: 0; }
   .top-bar {
     position: sticky; top: 0; z-index: 50;
@@ -91,6 +176,23 @@
 </style>
 </head>
 <body>
+
+<!-- Giriş yapılmamış izleyici için turnuva seçim ekranı -->
+<div id="tour-picker-screen">
+  <div class="tp-header">
+    <div class="tp-live-dot"><span class="d"></span> CANLI</div>
+    <h1>🎯 Dart Core Pro — Canlı Turnuvalar</h1>
+    <p>İzlemek istediğin turnuvayı seç</p>
+  </div>
+  <div class="tp-grid" id="tp-grid">
+    <div class="tp-empty"><div class="ico">⏳</div><h3>Yükleniyor…</h3></div>
+  </div>
+  <div class="tp-footer">
+    <a href="/login.html">Organizatör girişi</a> &nbsp;·&nbsp;
+    <a href="/">Ana sayfa</a>
+  </div>
+</div>
+
 <div class="viewer">
   <div class="top-bar">
     <h2>🎯 Canlı Turnuva</h2>
@@ -133,6 +235,59 @@
   </div>
 </div>
 
+<script>
+// Turnuva seçim ekranı — giriş yapılmamış izleyici için
+(function() {
+  const FORMAT_LABEL = { single_elim:'Tek Eleme', double_elim:'Çift Eleme', round_robin:'Round Robin' };
+  const MODE_LABEL   = { '501':'501','701':'701','1001':'1001', cricket:'Cricket', fb_cezali:'FB Cezalı', karambol:'Karambol' };
+
+  function esc(s) { return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
+
+  function showPicker(list) {
+    document.querySelector('.viewer').style.display = 'none';
+    document.getElementById('tour-picker-screen').classList.add('show');
+    const grid = document.getElementById('tp-grid');
+    if (!list || !list.length) {
+      grid.innerHTML = `<div class="tp-empty" style="grid-column:1/-1"><div class="ico">🎯</div><h3>Şu an aktif turnuva yok</h3><p>Turnuva başladığında burada görünecek.</p></div>`;
+      return;
+    }
+    grid.innerHTML = list.map(t => {
+      const fmt  = FORMAT_LABEL[t.format] || t.format || '';
+      const mode = MODE_LABEL[t.game_mode] || t.game_mode || '';
+      const legs = t.legs_to_win ? `Bo${t.legs_to_win * 2 - 1}` : '';
+      const sets = t.sets_to_win > 1 ? ` · ${t.sets_to_win} set` : '';
+      const cnt  = t.player_count ? t.player_count + ' oyuncu' : '';
+      const info = [fmt, mode, legs + sets, cnt].filter(Boolean).join(' · ');
+      return `<a class="tp-card" href="/viewer.html?t=${t.id}">
+        <div class="tp-card-badge">🔴 Canlı</div>
+        <div class="tp-card-name">${esc(t.name)}</div>
+        <div class="tp-card-meta">${esc(info)}</div>
+      </a>`;
+    }).join('');
+  }
+
+  // ?t= parametresi varsa giriş şartı yok, direkt viewer
+  const tParam = new URLSearchParams(location.search).get('t');
+  if (tParam) return; // scripts aşağıda normal yüklenecek
+
+  // Giriş var mı?
+  fetch('/auth/me', { credentials: 'same-origin' })
+    .then(r => r.json())
+    .then(d => {
+      if (d && d.user) return; // giriş var → normal viewer
+      // Giriş yok → public turnuva listesini çek
+      return fetch('/api/tournaments/public')
+        .then(r => r.ok ? r.json() : [])
+        .then(list => showPicker(list));
+    })
+    .catch(() => {
+      fetch('/api/tournaments/public')
+        .then(r => r.ok ? r.json() : [])
+        .then(list => showPicker(list))
+        .catch(() => showPicker([]));
+    });
+})();
+</script>
 <script src="/socket.io/socket.io.js"></script>
 <script src="/js/common.js"></script>
 <script src="/js/viewer.js"></script>

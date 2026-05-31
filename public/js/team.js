@@ -383,19 +383,94 @@ function renderBeerBody(ev, ph) {
 }
 
 // ── Aksiyonlar ───────────────────────────────────────────────────────────────
+// ── Yeni Maç formu — geçici oyuncu listeleri ────────────────────────────────
+const newFormRoster = { team1: [], team2: [] };
+
+function addNewFormPlayer(teamNum) {
+  const key   = teamNum === 1 ? 'team1' : 'team2';
+  const input = document.getElementById(`ne-t${teamNum}-input`);
+  const name  = input?.value.trim();
+  if (!name) return;
+  if (newFormRoster[key].includes(name)) { input.value = ''; return; }
+  newFormRoster[key].push(name);
+  renderNewFormPlayers(teamNum);
+  input.value = '';
+  input.focus();
+}
+
+function removeNewFormPlayer(teamNum, idx) {
+  const key = teamNum === 1 ? 'team1' : 'team2';
+  newFormRoster[key].splice(idx, 1);
+  renderNewFormPlayers(teamNum);
+}
+
+function renderNewFormPlayers(teamNum) {
+  const key = teamNum === 1 ? 'team1' : 'team2';
+  const el  = document.getElementById(`ne-t${teamNum}-players`);
+  if (!el) return;
+  const list = newFormRoster[key];
+  if (!list.length) { el.innerHTML = ''; return; }
+  el.innerHTML = list.map((p, i) => `
+    <div style="display:flex;align-items:center;gap:0.4rem;padding:0.28rem 0;
+      border-bottom:1px solid var(--border,rgba(255,255,255,0.05))">
+      <span style="flex:1;font-size:0.88rem">${i + 1}. ${esc(p)}</span>
+      <button class="edit-btn" style="font-size:0.72rem;color:#f87171;padding:0.1rem 0.35rem"
+        onclick="removeNewFormPlayer(${teamNum},${i})">✕</button>
+    </div>`).join('');
+}
+
+function updateNewFormTeamHeader(teamNum) {
+  const nameEl   = document.getElementById(`ne-t${teamNum}`);
+  const headerEl = document.getElementById(`ne-t${teamNum}-header`);
+  const defaults = { 1: 'Şahinler', 2: 'Kartallar' };
+  if (!headerEl) return;
+  const val = nameEl?.value.trim() || defaults[teamNum];
+  headerEl.textContent = val + ' — Oyuncular';
+}
+
 async function submitNewEvent() {
   const name = document.getElementById('ne-name').value.trim();
   const t1   = document.getElementById('ne-t1').value.trim();
   const t2   = document.getElementById('ne-t2').value.trim();
   if (!name || !t1 || !t2) { alert('Lütfen maç adı ve her iki takım adını gir.'); return; }
 
+  const btn = document.getElementById('ne-submit-btn');
+  if (btn) btn.disabled = true;
+
   const res = await fetch('/api/team-events', {
     method: 'POST', credentials: 'same-origin',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ name, team1_name: t1, team2_name: t2 }),
   });
-  if (!res.ok) { alert('Oluşturulamadı.'); return; }
+  if (!res.ok) {
+    alert('Oluşturulamadı.');
+    if (btn) btn.disabled = false;
+    return;
+  }
+  const ev = await res.json();
+
+  // Oyuncu listesi varsa hemen kaydet
+  if (newFormRoster.team1.length || newFormRoster.team2.length) {
+    await fetch(`/api/team-events/${ev.id}`, {
+      method: 'PATCH', credentials: 'same-origin',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ teams_json: JSON.stringify({
+        team1: newFormRoster.team1,
+        team2: newFormRoster.team2,
+      }) }),
+    });
+  }
+
+  // Formu temizle
   ['ne-name','ne-t1','ne-t2'].forEach(id => { const el = document.getElementById(id); if (el) el.value = ''; });
+  newFormRoster.team1 = [];
+  newFormRoster.team2 = [];
+  renderNewFormPlayers(1);
+  renderNewFormPlayers(2);
+  updateNewFormTeamHeader(1);
+  updateNewFormTeamHeader(2);
+  if (btn) btn.disabled = false;
+
   document.querySelector('[data-tab="events"]').click();
 }
 

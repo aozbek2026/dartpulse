@@ -229,28 +229,55 @@
     <!-- YENİ MAÇ -->
     <section class="tab" id="tab-new" hidden>
       <h2>Yeni Takım Maçı</h2>
-      <p class="subtitle">İki takım arasındaki maç serisini oluştur.</p>
+      <p class="subtitle">Maç adını, takım adlarını ve oyuncuları gir — sonra oluştur.</p>
+
       <div class="card" id="new-event-form">
-        <div class="grid">
-          <div>
-            <label>Maç adı</label>
-            <input id="ne-name" placeholder="Hafta 1 — Şahinler vs Kartallar" style="width:100%;" />
-          </div>
-          <div></div>
+        <!-- Maç adı -->
+        <div style="margin-bottom:1rem">
+          <label>Maç adı</label>
+          <input id="ne-name" placeholder="Hafta 1 — Şahinler vs Kartallar" style="width:100%;" />
+        </div>
+
+        <!-- İki takım yan yana -->
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:1rem;" id="ne-teams-grid">
+          <!-- Takım 1 -->
           <div>
             <label>Takım 1 adı</label>
-            <input id="ne-t1" placeholder="Şahinler" style="width:100%;" />
+            <input id="ne-t1" placeholder="Şahinler" style="width:100%;margin-bottom:0.75rem;"
+              oninput="updateNewFormTeamHeader(1)" />
+            <div style="font-weight:700;font-size:0.88rem;color:var(--accent);margin-bottom:0.4rem" id="ne-t1-header">Şahinler — Oyuncular</div>
+            <div id="ne-t1-players" style="margin-bottom:0.4rem"></div>
+            <div style="display:flex;gap:0.35rem">
+              <input id="ne-t1-input" list="player-pool-dl" placeholder="Oyuncu adı…"
+                style="flex:1;padding:0.3rem 0.5rem;font-size:0.85rem"
+                onkeydown="if(event.key==='Enter'){event.preventDefault();addNewFormPlayer(1)}" />
+              <button class="secondary" style="font-size:0.82rem;padding:0.3rem 0.6rem;white-space:nowrap"
+                onclick="addNewFormPlayer(1)">+ Ekle</button>
+            </div>
           </div>
+
+          <!-- Takım 2 -->
           <div>
             <label>Takım 2 adı</label>
-            <input id="ne-t2" placeholder="Kartallar" style="width:100%;" />
+            <input id="ne-t2" placeholder="Kartallar" style="width:100%;margin-bottom:0.75rem;"
+              oninput="updateNewFormTeamHeader(2)" />
+            <div style="font-weight:700;font-size:0.88rem;color:var(--accent);margin-bottom:0.4rem" id="ne-t2-header">Kartallar — Oyuncular</div>
+            <div id="ne-t2-players" style="margin-bottom:0.4rem"></div>
+            <div style="display:flex;gap:0.35rem">
+              <input id="ne-t2-input" list="player-pool-dl" placeholder="Oyuncu adı…"
+                style="flex:1;padding:0.3rem 0.5rem;font-size:0.85rem"
+                onkeydown="if(event.key==='Enter'){event.preventDefault();addNewFormPlayer(2)}" />
+              <button class="secondary" style="font-size:0.82rem;padding:0.3rem 0.6rem;white-space:nowrap"
+                onclick="addNewFormPlayer(2)">+ Ekle</button>
+            </div>
           </div>
         </div>
-        <p style="color:var(--text-dim);font-size:0.85rem;margin-top:0.75rem;">
-          3 aşama (Tekli · Bira · Eşli) varsayılan olarak oluşturulur; oluşturduktan sonra istediğin aşamayı devre dışı bırakabilirsin.
+
+        <p style="color:var(--text-dim);font-size:0.82rem;margin-top:1rem;margin-bottom:0">
+          3 aşama (Tekli · Bira · Eşli) varsayılan oluşturulur; sonradan devre dışı bırakabilirsin.
         </p>
         <div class="row end" style="margin-top:1rem;">
-          <button class="primary" onclick="submitNewEvent()">Oluştur</button>
+          <button class="primary" id="ne-submit-btn" onclick="submitNewEvent()">Oluştur</button>
         </div>
       </div>
     </section>
