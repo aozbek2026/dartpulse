@@ -525,8 +525,17 @@
   .hp-foot-row a:hover { color: var(--text); }
   .hp-foot-copy { font-size: 0.82rem; opacity: 0.8; }
 
+  /* INTRO OVERLAY (DartCorePro Nedir? / tanıtım videosu) */
+  .dcp-intro-overlay {
+    position: fixed; inset: 0; background: #000; z-index: 1000;
+    display: none; align-items: center; justify-content: center;
+  }
+  .dcp-intro-overlay.show { display: flex; }
+  .dcp-intro-overlay iframe { width: 100%; height: 100%; border: 0; display: block; }
+
   @media (max-width: 540px) {
     .hp-nav { padding: 0.85rem 1rem; }
+    #hp-about { display: none; }
     .hp-hero { padding: 3rem 1rem 2.5rem; }
     .hp-cta { gap: 0.6rem; }
     .hp-btn { width: 100%; justify-content: center; padding: 0.9rem 1rem; }
@@ -544,6 +553,7 @@
       <button id="lang-tr" class="on" onclick="setLang('tr')">TR</button>
       <button id="lang-en" onclick="setLang('en')">EN</button>
     </div>
+    <a class="hp-nav-link" href="/tanitim.html" id="hp-about" onclick="return openIntroLink(event)" data-i18n="nav_about">DartCorePro Nedir?</a>
     <a id="hp-auth-link" class="hp-nav-link" href="/login.html" data-i18n="nav_login">Giriş Yap</a>
     <div class="hp-user" id="hp-user">
       <button class="hp-user-trigger" onclick="toggleUserMenu(event)">
@@ -723,11 +733,44 @@
   <div class="hp-foot-copy" data-i18n="foot_copy">© 2026 Dart Core Pro · Türkiye'de geliştirildi</div>
 </footer>
 
+<div class="dcp-intro-overlay" id="dcpIntro">
+  <iframe id="dcpIntroFrame" title="DartCorePro Nedir? — Tanıtım"></iframe>
+</div>
+
 <script>
+  // === Tanıtım videosu (DartCorePro Nedir?) ===
+  function openIntro() {
+    const o = document.getElementById('dcpIntro');
+    const f = document.getElementById('dcpIntroFrame');
+    f.src = '/tanitim.html';
+    o.classList.add('show');
+    document.body.style.overflow = 'hidden';
+  }
+  function closeIntro() {
+    const o = document.getElementById('dcpIntro');
+    const f = document.getElementById('dcpIntroFrame');
+    o.classList.remove('show');
+    f.src = 'about:blank';
+    document.body.style.overflow = '';
+    try { localStorage.setItem('dcp_intro_seen', '1'); } catch {}
+  }
+  function openIntroLink(e) { e.preventDefault(); openIntro(); return false; }
+  // Video bitince veya "Geç"e basınca tanıtım kapanır, anasayfa görünür
+  window.addEventListener('message', (e) => {
+    if (e.data === 'dcp-intro-done') closeIntro();
+  });
+  // Sadece ilk ziyarette otomatik aç
+  (function () {
+    let seen = null;
+    try { seen = localStorage.getItem('dcp_intro_seen'); } catch {}
+    if (!seen) openIntro();
+  })();
+
   // === I18N ===
   const I18N = {
     tr: {
       nav_login: 'Giriş Yap',
+      nav_about: 'DartCorePro Nedir?',
       nav_panel: 'Panele Git',
       menu_panel: 'Panel', menu_boards: "Board'lar",
       menu_perf: 'Performans & Başarımlar', menu_settings: 'Hesap Ayarları',
@@ -779,6 +822,7 @@
     },
     en: {
       nav_login: 'Sign In',
+      nav_about: 'What is DartCorePro?',
       nav_panel: 'Go to Panel',
       menu_panel: 'Dashboard', menu_boards: 'Boards',
       menu_perf: 'Performance & Achievements', menu_settings: 'Account Settings',
