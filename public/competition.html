@@ -282,6 +282,20 @@
             <p style="color:var(--text-dim);font-size:0.85rem;margin:0">Yükleniyor…</p>
           </div>
           <div id="ns-participant-count" style="font-size:0.78rem;color:var(--text-dim);margin-top:0.3rem;"></div>
+
+          <!-- Kura & Seri Başı — yeni turnuva modülündeki sistemin sezona uyarlaması -->
+          <div id="ns-seed-section" style="margin-top:0.7rem;">
+            <div style="display:flex;justify-content:space-between;align-items:center;gap:0.5rem;flex-wrap:wrap">
+              <label style="font-size:0.82rem;color:var(--text-dim);margin:0">Kura & Seri Başı <span style="opacity:0.7">(opsiyonel)</span></label>
+              <div style="display:flex;gap:0.4rem;flex-wrap:wrap">
+                <button type="button" id="ns-seed-open-btn" onclick="openSeedDraft()" style="font-size:0.75rem;padding:0.25rem 0.5rem">🎲 Düzenle</button>
+                <button type="button" id="ns-seed-shuffle-btn" onclick="drawSeedLots()" style="display:none;font-size:0.75rem;padding:0.25rem 0.5rem">🎲 Kura Çek</button>
+                <button type="button" id="ns-seed-reset-btn" onclick="resetSeedDraft()" style="display:none;font-size:0.75rem;padding:0.25rem 0.5rem">↺ Sıfırla</button>
+              </div>
+            </div>
+            <p style="font-size:0.76rem;color:var(--text-dim);margin:0.3rem 0 0 0">Seri başı numarası verilen oyuncular bracket'te ayrı kollara dağıtılır; numara verilmeyenler kura ile karıştırılır. Boş bırakırsan havuz sırası kullanılır.</p>
+            <div id="ns-seed-list" style="display:none;margin-top:0.5rem;border:1px solid var(--border, rgba(255,255,255,0.08));border-radius:8px;padding:0.5rem;max-height:280px;overflow-y:auto;"></div>
+          </div>
         </div>
 
         <!-- Dilim 5c-1: Ustalar (Masters) oturumu — sezona daha yüksek puan ekler -->

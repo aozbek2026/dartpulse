@@ -990,6 +990,7 @@ function updateParticipantCount() {
   const checked = Array.from(cbs).filter(c => c.checked).length;
   const lbl = document.getElementById('ns-participant-count');
   if (lbl) lbl.textContent = `${checked} oyuncu seçili (en az 2 gerekli)`;
+  invalidateSeedDraft();
 }
 window.updateParticipantCount = updateParticipantCount;
 
@@ -998,6 +999,122 @@ function toggleAllParticipants(check) {
   updateParticipantCount();
 }
 window.toggleAllParticipants = toggleAllParticipants;
+
+// ── Kura & Seri Başı (sezon oturumu) ──────────────────────────────
+// STATE.seedDraft: null = panel kapalı (havuz sırası kullanılır)
+//                  [{player_id, seed}] = organizatör sıraladı/seri başı verdi
+// Yeni turnuva modülündeki (organizer.js) drawLots + seri başı mantığının
+// sezon oturumu formuna uyarlamasıdır.
+
+function checkedParticipantIds() {
+  return Array.from(document.querySelectorAll('.ns-part-cb:checked')).map(c => +c.value);
+}
+
+// Panel açıkken katılımcı seçimi değişirse taslağı geçersiz say (eski sıra kalmasın)
+function invalidateSeedDraft() {
+  if (!STATE.seedDraft) return;
+  STATE.seedDraft = null;
+  const list = document.getElementById('ns-seed-list');
+  const shuf = document.getElementById('ns-seed-shuffle-btn');
+  const reset = document.getElementById('ns-seed-reset-btn');
+  const open = document.getElementById('ns-seed-open-btn');
+  if (list) { list.style.display = 'none'; list.innerHTML = ''; }
+  if (shuf) shuf.style.display = 'none';
+  if (reset) reset.style.display = 'none';
+  if (open) open.textContent = '🎲 Düzenle';
+}
+
+function openSeedDraft() {
+  const ids = checkedParticipantIds();
+  if (ids.length < 2) { toast('Önce en az 2 katılımcı seç'); return; }
+  const byId = new Map((STATE.players || []).map(p => [p.player_id, p]));
+  // Mevcut taslak varsa seçili olanları koruyup seed'leri sakla, yenileri sona ekle
+  const prevSeed = new Map((STATE.seedDraft || []).map(d => [d.player_id, d.seed]));
+  STATE.seedDraft = ids
+    .map(id => ({ player_id: id, seed: prevSeed.has(id) ? prevSeed.get(id) : null }))
+    .filter(d => byId.has(d.player_id));
+  document.getElementById('ns-seed-shuffle-btn').style.display = '';
+  document.getElementById('ns-seed-reset-btn').style.display = '';
+  document.getElementById('ns-seed-open-btn').textContent = '🔄 Yenile';
+  document.getElementById('ns-seed-list').style.display = 'block';
+  renderSeedDraft();
+}
+window.openSeedDraft = openSeedDraft;
+
+function resetSeedDraft() {
+  if (!STATE.seedDraft) return;
+  const ids = checkedParticipantIds();
+  STATE.seedDraft = ids.map(id => ({ player_id: id, seed: null }));
+  renderSeedDraft();
+  toast('Sıra havuz sırasına döndü');
+}
+window.resetSeedDraft = resetSeedDraft;
+
+// Seri başı verilmeyenleri Fisher-Yates ile karıştır, seri başlılar (seed'e göre sıralı) önde kalsın
+function drawSeedLots() {
+  if (!STATE.seedDraft) { openSeedDraft(); }
+  if (!STATE.seedDraft) return;
+  const seeded = STATE.seedDraft.filter(d => d.seed).sort((a, b) => a.seed - b.seed);
+  const unseeded = STATE.seedDraft.filter(d => !d.seed);
+  for (let i = unseeded.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [unseeded[i], unseeded[j]] = [unseeded[j], unseeded[i]];
+  }
+  STATE.seedDraft = [...seeded, ...unseeded];
+  renderSeedDraft();
+  toast('Kura çekildi — seri başları yerinde, diğerleri karıştırıldı');
+}
+window.drawSeedLots = drawSeedLots;
+
+function renderSeedDraft() {
+  const host = document.getElementById('ns-seed-list');
+  if (!host || !STATE.seedDraft) return;
+  const byId = new Map((STATE.players || []).map(p => [p.player_id, p]));
+  host.innerHTML = STATE.seedDraft.map((d, i) => {
+    const p = byId.get(d.player_id);
+    const name = p ? p.player_name : `(silinmiş #${d.player_id})`;
+    const nick = p && p.player_nickname ? ` <span style="color:var(--text-dim);font-size:0.78rem">(${escapeHtml(p.player_nickname)})</span>` : '';
+    return `
+      <div class="ns-seed-row" draggable="true" data-idx="${i}"
+           ondragstart="seedDragStart(event, ${i})" ondragover="seedDragOver(event)"
+           ondrop="seedDrop(event, ${i})" ondragend="seedDragEnd(event)"
+           style="display:flex;align-items:center;gap:0.5rem;padding:0.3rem 0.4rem;border-radius:6px;background:rgba(255,255,255,0.02);margin-bottom:0.3rem">
+        <span style="cursor:grab;color:var(--text-dim);min-width:2.6em;font-size:0.85rem" title="Sürükle">⠿ ${i + 1}.</span>
+        <span style="flex:1;font-size:0.9rem">${escapeHtml(name)}${nick}</span>
+        <input type="number" min="1" placeholder="Seri başı" title="Seri başı (opsiyonel)"
+               value="${d.seed || ''}" onchange="updateSeedValue(${i}, this.value)"
+               style="width:84px;font-size:0.82rem" />
+      </div>`;
+  }).join('');
+}
+
+function updateSeedValue(idx, val) {
+  if (!STATE.seedDraft || !STATE.seedDraft[idx]) return;
+  const n = parseInt(val, 10);
+  STATE.seedDraft[idx].seed = (n && n >= 1) ? n : null;
+}
+window.updateSeedValue = updateSeedValue;
+
+// Sürükle-bırak sıralama
+function seedDragStart(e, idx) {
+  STATE.seedDragIdx = idx;
+  if (e.dataTransfer) { e.dataTransfer.effectAllowed = 'move'; }
+}
+function seedDragOver(e) { e.preventDefault(); if (e.dataTransfer) e.dataTransfer.dropEffect = 'move'; }
+function seedDrop(e, idx) {
+  e.preventDefault();
+  const from = STATE.seedDragIdx;
+  if (from == null || from === idx || !STATE.seedDraft) return;
+  const moved = STATE.seedDraft.splice(from, 1)[0];
+  STATE.seedDraft.splice(idx, 0, moved);
+  STATE.seedDragIdx = null;
+  renderSeedDraft();
+}
+function seedDragEnd() { STATE.seedDragIdx = null; }
+window.seedDragStart = seedDragStart;
+window.seedDragOver = seedDragOver;
+window.seedDrop = seedDrop;
+window.seedDragEnd = seedDragEnd;
 
 async function submitNewSession() {
   const name = document.getElementById('ns-name').value.trim();
@@ -1027,6 +1144,20 @@ async function submitNewSession() {
       return;
     }
     body = { name: name || null, session_date, format, participant_player_ids: ids };
+
+    // Kura & Seri Başı taslağı varsa ve seçili oyuncularla birebir eşleşiyorsa,
+    // sıralı + seed'li entries gönder (server bunu participant_player_ids yerine kullanır).
+    if (!isMasters && Array.isArray(STATE.seedDraft) && STATE.seedDraft.length === ids.length) {
+      const draftIds = STATE.seedDraft.map(d => d.player_id);
+      const sameSet = draftIds.length === ids.length &&
+        new Set([...draftIds, ...ids]).size === ids.length;
+      if (sameSet) {
+        body.entries = STATE.seedDraft.map(d => ({
+          player_id: d.player_id,
+          seed: (d.seed && d.seed >= 1) ? d.seed : null,
+        }));
+      }
+    }
 
     if (isMasters) {
       const pts = readMastersPoints();

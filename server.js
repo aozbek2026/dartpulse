@@ -1396,7 +1396,30 @@ app.post('/api/competitions/:id/sessions', auth.requireAuth, (req, res) => {
     if (invalid.length) return res.status(400).json({ error: `Bazi katilimcilar havuzda degil: ${invalid.join(', ')}` });
 
     const tName = sessionName;
-    const entries = ids.map(pid => ({ player1_id: pid, player2_id: null, seed: null }));
+    // Kura & Seri Başı: frontend opsiyonel `entries: [{player_id, seed}]` gönderebilir.
+    // Gelirse sıra + seri başı uygulanır; gelmezse eski davranış (havuz sırası, seed yok).
+    // Geriye dönük uyumlu — entries yoksa hiçbir şey değişmez.
+    let entries;
+    const rawEntries = Array.isArray(req.body.entries) ? req.body.entries : null;
+    if (rawEntries && rawEntries.length) {
+      const idSet = new Set(ids);
+      const seen = new Set();
+      const ordered = [];
+      for (const e of rawEntries) {
+        const pid = Number(e && e.player_id);
+        if (!Number.isInteger(pid) || pid <= 0) continue;
+        if (!idSet.has(pid) || seen.has(pid)) continue; // havuz dışı / tekrar → atla
+        seen.add(pid);
+        const seedNum = Number(e.seed);
+        const seed = (Number.isInteger(seedNum) && seedNum >= 1) ? seedNum : null;
+        ordered.push({ player1_id: pid, player2_id: null, seed });
+      }
+      // Sadece tüm seçili katılımcıları kapsıyorsa kullan; eksikse eskiye düş.
+      if (ordered.length === ids.length) entries = ordered;
+    }
+    if (!entries) {
+      entries = ids.map(pid => ({ player1_id: pid, player2_id: null, seed: null }));
+    }
     const t = tournament.createTournament({
       user_id: userId, name: tName,
       game_mode: comp.game_mode || '501',
