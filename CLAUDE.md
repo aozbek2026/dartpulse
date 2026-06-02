@@ -366,6 +366,13 @@ Detay: Kod konvansiyonu #8'e bak.
 - 4 sekme: Klasman, oturum sonuçları, maç dökümü, atış istatistikleri.
 - Frontend: `competition.html` üst barda "📊 Excel İndir" butonu (`downloadReport()` → yeni sekmede dosya indirir).
 
+**✅ Sezon oturumu — Kura & Seri Başı (Haziran 2026, tamam):**
+- Yeni turnuva modülündeki (organizer.js `drawLots` + seri başı) sistemin sezon oturum formuna uyarlaması. Sezon oturumu artık katılımcı seçildikten sonra araya bir kura/seri başı adımı koyabiliyor.
+- Frontend: `competition.html` `#ns-seed-section` + `competition.js` `STATE.seedDraft` (`openSeedDraft`, `drawSeedLots`, `resetSeedDraft`, `renderSeedDraft`, `updateSeedValue`, sürükle-bırak `seedDrag*`). "🎲 Düzenle" seçili katılımcıları sıralı satırlara açar; seri başı input + "Kura Çek" (Fisher-Yates, seed'liler önde) + sürükle-sırala + "Sıfırla". Katılımcı seçimi değişince taslak `invalidateSeedDraft()` ile geçersizleşir.
+- Backend: `server.js` sezon oturumu POST'u opsiyonel `entries: [{player_id, seed}]` kabul eder (`server.js:~1398`). Gelirse + tüm seçili katılımcıları kapsıyorsa sıra+seed uygulanır, aksi halde eski davranışa düşer (havuz sırası, seed yok). **Geriye dönük uyumlu** — `participant_player_ids` aynen çalışır. `tournament.createTournament` → `orderEntriesBySeed` zaten seed/sırayı uyguluyor, dokunulmadı.
+- Lig (league_day) tarafına dokunulmadı — orası Berger planlamasıyla ayrı.
+- Ustalar (Masters) roster akışı da değişmedi; kura bölümü sadece normal sezon oturumunda görünür.
+
 **Bekleyen — Dilim 5c, 5d:**
 
 5c. **Ustalar (Masters) + Playoff** — iki ayrı kavram, ayrı uygulama. Tasarım kararları (26 Mayıs 2026, kullanıcıyla netleşti):
