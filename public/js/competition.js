@@ -136,9 +136,22 @@ function renderOverview() {
   const c = STATE.comp;
   if (!c) return;
   const pts = c.points_json || {};
-  const ptsRows = ['1','2','3','4','5','6','7','8']
-    .filter(k => pts[k] !== undefined)
-    .map(k => `<tr><td>${k}.</td><td>${pts[k]} puan</td></tr>`).join('');
+  // Yeni tur-bazlı anahtarlar; eski sezonlar için pozisyon anahtarlarına düş.
+  const STAGE_LABELS = [
+    ['birinci', 'Birinci'], ['final', 'Final (ikinci)'], ['yari_final', 'Yarı final'],
+    ['ceyrek_final', 'Çeyrek final'], ['son_16', 'Son 16'], ['son_32', 'Son 32'],
+    ['son_64', 'Son 64'], ['son_128', 'Son 128'], ['son_256', 'Son 256'],
+  ];
+  let ptsRows = STAGE_LABELS
+    .filter(([k]) => pts[k] !== undefined)
+    .map(([k, lbl]) => `<tr><td>${lbl}</td><td>${pts[k]} puan</td></tr>`).join('');
+  let ptsHeader = 'Tur';
+  if (!ptsRows) {
+    ptsRows = ['1','2','3','4','5','6','7','8']
+      .filter(k => pts[k] !== undefined)
+      .map(k => `<tr><td>${k}.</td><td>${pts[k]} puan</td></tr>`).join('');
+    ptsHeader = 'Pozisyon';
+  }
   const defaultPts = pts['default'] != null ? pts['default'] : 0;
 
   document.getElementById('overview-content').innerHTML = `
@@ -147,7 +160,7 @@ function renderOverview() {
         <h3 style="margin-top:0">Puan Sistemi</h3>
         ${ptsRows ? `
         <table style="width:100%;font-size:0.9rem">
-          <thead><tr><th style="text-align:left">Pozisyon</th><th style="text-align:left">Puan</th></tr></thead>
+          <thead><tr><th style="text-align:left">${ptsHeader}</th><th style="text-align:left">Puan</th></tr></thead>
           <tbody>${ptsRows}<tr><td>Diğer</td><td>${defaultPts} puan</td></tr></tbody>
         </table>` : '<p style="color:var(--text-dim)">Puan tablosu tanımlanmamış.</p>'}
       </div>
@@ -761,22 +774,33 @@ function toggleNewSessionForm() {
 window.toggleNewSessionForm = toggleNewSessionForm;
 
 // ── Ustalar (Masters) puan tablosu ────────────────────────────────
-// 1–8. pozisyon için input grid'i render eder. Varsayılan değerler
+// Ulaşılan tur için input grid'i render eder. Varsayılan değerler
 // sezon puanının yaklaşık 2 katı (federasyon mantığı: Ustalar = sezonun
 // son oturumu, daha yüksek puan dağıtır).
+// Anahtarlar server.js'teki positionToStage ile birebir aynıdır.
+const MASTERS_STAGES = [
+  { key: 'birinci',      label: 'Birinci',        def: 40 },
+  { key: 'final',        label: 'Final (ikinci)', def: 30 },
+  { key: 'yari_final',   label: 'Yarı final',     def: 22 },
+  { key: 'ceyrek_final', label: 'Çeyrek final',   def: 16 },
+  { key: 'son_16',       label: 'Son 16',         def: 10 },
+  { key: 'son_32',       label: 'Son 32',         def: 6 },
+  { key: 'son_64',       label: 'Son 64',         def: 4 },
+  { key: 'son_128',      label: 'Son 128',        def: 2 },
+  { key: 'son_256',      label: 'Son 256',        def: 2 },
+];
 function renderMastersGrid() {
   const grid = document.getElementById('ns-masters-grid');
   if (!grid) return;
   const base = (STATE.comp && STATE.comp.points_json) || {};
-  const defaults = { 1: 20, 2: 14, 3: 10, 4: 8, 5: 6, 6: 4, 7: 3, 8: 2 };
   let html = '';
-  for (let i = 1; i <= 8; i++) {
-    const baseVal = base[String(i)] != null ? +base[String(i)] : null;
-    const sugg = baseVal != null ? Math.max(baseVal * 2, defaults[i]) : defaults[i];
+  for (const st of MASTERS_STAGES) {
+    const baseVal = base[st.key] != null ? +base[st.key] : null;
+    const sugg = baseVal != null ? Math.max(baseVal * 2, st.def) : st.def;
     html += `
       <div style="display:flex;align-items:center;gap:0.4rem">
-        <label style="font-size:0.82rem;color:var(--text-dim);min-width:30px">${i}.</label>
-        <input type="number" class="ns-masters-pt" data-pos="${i}" min="0" step="1" value="${sugg}" style="width:65px" />
+        <label style="font-size:0.82rem;color:var(--text-dim);min-width:78px">${st.label}</label>
+        <input type="number" class="ns-masters-pt" data-pos="${st.key}" min="0" step="1" value="${sugg}" style="width:65px" />
       </div>
     `;
   }
@@ -1007,7 +1031,7 @@ async function submitNewSession() {
     if (isMasters) {
       const pts = readMastersPoints();
       if (Object.keys(pts).length === 0) {
-        toast('Ustalar puan tablosu boş — en az 1. pozisyon puanını gir');
+        toast('Ustalar puan tablosu boş — en az Birinci puanını gir');
         return;
       }
       body.is_masters = true;

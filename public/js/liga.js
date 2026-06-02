@@ -28,17 +28,28 @@ function syncTypeUI() {
 typeEl.addEventListener('change', syncTypeUI);
 syncTypeUI();
 
-// ── Puan tablosu inputları (1.-8. pozisyon) ────────────────────
-const DEFAULT_POINTS = { '1': 10, '2': 7, '3': 5, '4': 4, '5': 3, '6': 2, '7': 1, '8': 1 };
+// ── Puan tablosu inputları (ulaşılan tur bazlı) ────────────────
+// Anahtarlar server.js'teki positionToStage ile birebir aynıdır.
+const POINT_STAGES = [
+  { key: 'birinci',      label: 'Birinci',         def: 20 },
+  { key: 'final',        label: 'Final (ikinci)',  def: 15 },
+  { key: 'yari_final',   label: 'Yarı final',      def: 11 },
+  { key: 'ceyrek_final', label: 'Çeyrek final',    def: 8 },
+  { key: 'son_16',       label: 'Son 16',          def: 5 },
+  { key: 'son_32',       label: 'Son 32',          def: 3 },
+  { key: 'son_64',       label: 'Son 64',          def: 2 },
+  { key: 'son_128',      label: 'Son 128',         def: 1 },
+  { key: 'son_256',      label: 'Son 256',         def: 1 },
+];
 function buildPointsGrid() {
   const grid = document.getElementById('points-grid');
   grid.innerHTML = '';
-  for (let pos = 1; pos <= 8; pos++) {
+  for (const st of POINT_STAGES) {
     const cell = document.createElement('div');
     cell.className = 'pt-cell';
     cell.innerHTML = `
-      <label for="pt-${pos}">${pos}.</label>
-      <input id="pt-${pos}" type="number" min="0" step="0.5" value="${DEFAULT_POINTS[pos] || 0}" />
+      <label for="pt-${st.key}">${st.label}</label>
+      <input id="pt-${st.key}" type="number" min="0" step="0.5" value="${st.def}" />
     `;
     grid.appendChild(cell);
   }
@@ -46,19 +57,20 @@ function buildPointsGrid() {
 buildPointsGrid();
 
 function readPointsJson() {
-  // Lig: sadece "match" anahtarı (maç başına puan). Sezon mantığı (pozisyon) lig için anlamsız.
+  // Lig: sadece "match" anahtarı (maç başına puan). Sezon mantığı (tur) lig için anlamsız.
   if (typeEl.value === 'league') {
     const v = parseFloat(document.getElementById('nc-match-points').value);
     return { match: isNaN(v) ? 3 : v };
   }
-  // Sezon: pozisyon-bazlı tablo
+  // Sezon: ulaşılan tur bazlı tablo
   const out = {};
-  for (let pos = 1; pos <= 8; pos++) {
-    const el = document.getElementById('pt-' + pos);
+  for (const st of POINT_STAGES) {
+    const el = document.getElementById('pt-' + st.key);
     if (!el) continue;
     const v = parseFloat(el.value);
-    if (!isNaN(v)) out[String(pos)] = v;
+    if (!isNaN(v)) out[st.key] = v;
   }
+  // "Diğer" (son 256'dan önceki turlar / RR alt sıralar) → default
   const def = parseFloat(document.getElementById('nc-default-points').value);
   out['default'] = isNaN(def) ? 0 : def;
   return out;
@@ -131,9 +143,18 @@ function renderCompCard(c) {
   const gameLabel = window.modeLabel ? window.modeLabel(c.game_mode) : c.game_mode;
   const teamLabel = c.team_mode === 'doubles' ? 'Eşli' : 'Bireysel';
   const pts = c.points_json || {};
-  const ptsPreview = ['1','2','3']
-    .filter(k => pts[k] !== undefined)
-    .map(k => `${k}.→${pts[k]}p`).join(' ');
+  // Yeni tur-bazlı anahtarlar; eski sezonlar için pozisyon anahtarlarına düş.
+  const previewStages = [
+    ['birinci', '1.'], ['final', '2.'], ['yari_final', 'YF'],
+  ];
+  let ptsPreview = previewStages
+    .filter(([k]) => pts[k] !== undefined)
+    .map(([k, lbl]) => `${lbl}→${pts[k]}p`).join(' ');
+  if (!ptsPreview) {
+    ptsPreview = ['1','2','3']
+      .filter(k => pts[k] !== undefined)
+      .map(k => `${k}.→${pts[k]}p`).join(' ');
+  }
 
   return `
     <div class="comp-card">

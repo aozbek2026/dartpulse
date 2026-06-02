@@ -56,11 +56,11 @@
   .form-hint { font-size: 0.78rem; color: var(--text-dim); margin-top: 0.2rem; }
 
   .points-grid {
-    display: grid; grid-template-columns: repeat(auto-fill, minmax(90px, 1fr));
+    display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
     gap: 0.4rem;
   }
   .points-grid .pt-cell { display: flex; align-items: center; gap: 0.3rem; }
-  .points-grid .pt-cell label { margin: 0; font-size: 0.75rem; min-width: 28px; }
+  .points-grid .pt-cell label { margin: 0; font-size: 0.75rem; min-width: 78px; }
   .points-grid .pt-cell input { width: 100%; padding: 0.25rem 0.4rem; font-size: 0.85rem; }
 </style>
 </head>
@@ -177,12 +177,12 @@
 
         <!-- SEZON: pozisyon-bazlı puan tablosu -->
         <div id="points-season-block">
-          <p class="subtitle" style="margin-bottom:0.6rem">Her oturum bitince oyuncuların aldığı pozisyona göre verilecek puanlar.</p>
+          <p class="subtitle" style="margin-bottom:0.6rem">Her oturum bitince oyuncuların ulaştığı tura göre verilecek puanlar.</p>
           <div class="points-grid" id="points-grid">
             <!-- JS dolduracak -->
           </div>
           <div style="margin-top:0.4rem;display:flex;gap:0.4rem;align-items:center">
-            <label style="margin:0;font-size:0.82rem">Diğer pozisyonlar:</label>
+            <label style="margin:0;font-size:0.82rem">Diğer (alt turlar):</label>
             <input id="nc-default-points" type="number" min="0" step="0.5" value="1" style="max-width:80px;" />
             <span class="form-hint" style="margin:0">puan</span>
           </div>

@@ -292,11 +292,11 @@
           </label>
           <div id="ns-masters-points" style="display:none;margin-top:0.6rem;padding:0.6rem;background:rgba(255,193,7,0.05);border:1px solid rgba(255,193,7,0.25);border-radius:8px;">
             <p style="font-size:0.82rem;color:var(--text-dim);margin:0 0 0.5rem 0">Bu oturuma özel puan tablosu (sezonun varsayılan puanları yerine geçer):</p>
-            <div id="ns-masters-grid" style="display:grid;grid-template-columns:repeat(4, 1fr);gap:0.4rem 0.6rem;">
-              <!-- pozisyon input'ları JS ile -->
+            <div id="ns-masters-grid" style="display:grid;grid-template-columns:repeat(auto-fill, minmax(160px, 1fr));gap:0.4rem 0.6rem;">
+              <!-- tur input'ları JS ile -->
             </div>
             <div style="display:flex;align-items:center;gap:0.5rem;margin-top:0.5rem">
-              <label style="font-size:0.82rem;color:var(--text-dim);min-width:135px">Diğer pozisyonlar:</label>
+              <label style="font-size:0.82rem;color:var(--text-dim);min-width:135px">Diğer (alt turlar):</label>
               <input id="ns-masters-default" type="number" min="0" step="1" value="2" style="width:80px" />
             </div>
           </div>

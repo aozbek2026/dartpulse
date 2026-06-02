@@ -1460,8 +1460,7 @@ app.get('/api/competitions/:id/sessions/:sid/preview', auth.requireAuth, (req, r
 
     // Pozisyon → puan
     const enriched = standings.map(row => {
-      const ptKey = String(row.position);
-      const pts = points[ptKey] != null ? +points[ptKey] : defaultPts;
+      const pts = pointsForRow(points, row.position, defaultPts);
       const player = row.player_id ? db.playerById(row.player_id) : null;
       const p2 = row.p2_player_id ? db.playerById(row.p2_player_id) : null;
       return {
@@ -1547,8 +1546,7 @@ app.post('/api/competitions/:id/sessions/:sid/finalize', auth.requireAuth, (req,
       for (const row of standings) {
         const pid = row.player_id;
         if (!pid) continue;
-        const ptKey = String(row.position);
-        const pts = points[ptKey] != null ? +points[ptKey] : defaultPts;
+        const pts = pointsForRow(points, row.position, defaultPts);
 
         // session_results
         db.recordSessionResult(sid, compId, pid, row.position, pts);
@@ -1994,6 +1992,40 @@ function safeParse(s) {
   if (typeof s !== 'string') return s;
   try { return JSON.parse(s); } catch { return null; }
 }
+
+// Pozisyon → ulasilan tur (stage) anahtari.
+// computeFinalStandings esit pozisyonlar uretir (1, 2, 3, 5, 9, 17, ...).
+// Birinci=1, Final(ikinci/runner-up)=2, Yari final=3-4, Ceyrek final=5-8,
+// Son 16=9-16, Son 32=17-32, Son 64=33-64, Son 128=65-128, Son 256=129-256, Diger=257+.
+function positionToStage(pos) {
+  const p = +pos;
+  if (!(p >= 1)) return 'diger';
+  if (p === 1) return 'birinci';
+  if (p === 2) return 'final';
+  if (p <= 4) return 'yari_final';
+  if (p <= 8) return 'ceyrek_final';
+  if (p <= 16) return 'son_16';
+  if (p <= 32) return 'son_32';
+  if (p <= 64) return 'son_64';
+  if (p <= 128) return 'son_128';
+  if (p <= 256) return 'son_256';
+  return 'diger';
+}
+
+// Bir standings satiri icin puani coz: once tur (stage) anahtari, yoksa
+// geriye donuk uyumluluk icin eski pozisyon anahtari ("1","2"...), yoksa default.
+function pointsForRow(points, position, defaultPts) {
+  const stageKey = positionToStage(position);
+  if (points[stageKey] != null) return +points[stageKey];
+  const posKey = String(position);
+  if (points[posKey] != null) return +points[posKey];
+  return defaultPts;
+}
+
+// Test/require modunda yardımcıları dışa aç ve sunucuyu BAŞLATMA.
+// (Top-level return CommonJS modülünde geçerlidir — Node modülü fonksiyonla sarar.)
+module.exports = { positionToStage, pointsForRow };
+if (require.main !== module) return;
 
 // --- Start ---
 const PORT = process.env.PORT || 3000;
