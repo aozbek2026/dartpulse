@@ -401,22 +401,27 @@ function renderStandings() {
 
 // ========== Render: Bracket ==========
 function scaleBrackets(host) {
-  requestAnimationFrame(() => {
-    host.querySelectorAll('.bsv-wrap').forEach(wrap => {
-      const inner = wrap.firstElementChild;
-      if (!inner) return;
-      const availW = wrap.offsetWidth;
-      const innerW = parseInt(wrap.dataset.bsvW, 10);
-      const innerH = parseInt(wrap.dataset.bsvH, 10);
-      if (availW > 0 && innerW > availW) {
-        const scale = availW / innerW;
-        inner.style.transform = `scale(${scale})`;
-        wrap.style.height = Math.round(innerH * scale) + 'px';
+  host.querySelectorAll('.bsv-wrap').forEach(wrap => {
+    const inner = wrap.firstElementChild;
+    if (!inner) return;
+    const innerW = parseInt(wrap.dataset.bsvW, 10);
+    const innerH = parseInt(wrap.dataset.bsvH, 10);
+    let lastW = -1;
+    const apply = () => {
+      const w = wrap.offsetWidth;
+      if (w <= 0 || w === lastW) return;
+      lastW = w;
+      if (innerW > w) {
+        const s = w / innerW;
+        inner.style.transform = `scale(${s})`;
+        wrap.style.height = Math.round(innerH * s) + 'px';
       } else {
         inner.style.transform = '';
         wrap.style.height = innerH + 'px';
       }
-    });
+    };
+    requestAnimationFrame(apply);
+    new ResizeObserver(apply).observe(wrap);
   });
 }
 
@@ -475,7 +480,7 @@ function renderElimBracketSVG(columns, matchFn) {
     });
   });
 
-  return `<div class="bsv-wrap" style="overflow:hidden;width:100%;" data-bsv-w="${totalW}" data-bsv-h="${totalH}">
+  return `<div class="bsv-wrap" style="overflow:hidden;width:100%;height:${totalH}px;" data-bsv-w="${totalW}" data-bsv-h="${totalH}">
     <div style="position:relative;width:${totalW}px;height:${totalH}px;transform-origin:top left;">
       <svg style="position:absolute;top:${LH}px;left:0;width:${totalW}px;height:${totalH - LH}px;pointer-events:none;overflow:visible;">${svgLines}</svg>
       ${html}
