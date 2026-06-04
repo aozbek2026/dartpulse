@@ -1,0 +1,558 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Dart Core Pro — Tanıtım</title>
+<style>
+  /* ===== Dart Core Pro gerçek renk değişkenleri (style.css) ===== */
+  :root{
+    --bg:#0b0d14; --bg-2:#111420; --surface:#1a1e2d; --surface-2:#232840;
+    --border:#2a2f48; --text:#e8ebf5; --text-dim:#9099b4;
+    --accent:#ff3860; --accent-2:#00d4ff; --accent-3:#7c5cff;
+    --success:#4ade80; --warn:#fbbf24; --danger:#ef4444;
+  }
+  *{margin:0;padding:0;box-sizing:border-box;-webkit-font-smoothing:antialiased}
+  html,body{height:100%;background:#000;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Inter,sans-serif}
+  body{display:flex;align-items:center;justify-content:center}
+
+  /* stage = 16:9, viewport'a tam otur (gerçek ekranların vw ölçüleri stage ile örtüşür) */
+  .stage{position:relative;width:min(100vw,177.78vh);height:min(56.25vw,100vh);
+    background:var(--bg);overflow:hidden;color:var(--text);
+    box-shadow:0 30px 80px rgba(0,0,0,.6)}
+
+  .scene{position:absolute;inset:0;display:flex;flex-direction:column;
+    align-items:center;justify-content:center;text-align:center;
+    padding:4% 7%;opacity:0;pointer-events:none;transition:opacity .5s ease}
+  .scene.active{opacity:1}
+  /* gerçek-ekran sahneleri kenardan kenara */
+  .scene.real{padding:0;justify-content:flex-start}
+
+  h1{font-size:clamp(28px,6.2vw,76px);font-weight:800;letter-spacing:-1px;line-height:1.02}
+  h2{font-size:clamp(18px,3.4vw,40px);font-weight:800;line-height:1.1}
+  .sub{font-size:clamp(12px,1.8vw,21px);color:var(--text-dim);margin-top:12px;max-width:84%}
+  .tag{display:inline-block;font-size:clamp(11px,1.4vw,15px);letter-spacing:3px;
+    text-transform:uppercase;color:var(--accent);font-weight:700;margin-bottom:14px}
+  .accent{color:var(--accent)}
+  .cyan{color:var(--accent-2)}
+
+  .active .up{animation:up .7s both}
+  .active .up2{animation:up .7s .15s both}
+  .active .up3{animation:up .7s .3s both}
+  .active .up4{animation:up .7s .45s both}
+  @keyframes up{from{opacity:0;transform:translateY(24px)}to{opacity:1;transform:none}}
+  .active .pop{animation:pop .6s .1s both}
+  @keyframes pop{0%{opacity:0;transform:scale(.8)}60%{transform:scale(1.04)}100%{opacity:1;transform:scale(1)}}
+
+  /* dartboard intro */
+  .board{width:clamp(120px,22vw,240px);height:clamp(120px,22vw,240px);margin-bottom:6px}
+  .active .board{animation:spinIn 1s cubic-bezier(.2,.8,.2,1) both}
+  @keyframes spinIn{from{opacity:0;transform:rotate(-90deg) scale(.6)}to{opacity:1;transform:none}}
+  .dartt{transform-origin:center}
+  .active .dartt{animation:throw 1s .5s both}
+  @keyframes throw{0%{opacity:0;transform:translate(120px,-90px) rotate(35deg)}70%{opacity:1}100%{opacity:1;transform:none}}
+
+  /* scene caption (gerçek ekranların üstünde) */
+  .cap{position:absolute;left:0;right:0;top:0;z-index:4;text-align:center;
+    padding:10px 6px 14px;background:linear-gradient(180deg,rgba(11,13,20,.92),rgba(11,13,20,0));
+    pointer-events:none}
+  .cap .tag{margin:0}
+  .cap h2{margin-top:4px;font-size:clamp(14px,2.2vw,26px)}
+
+  /* ============ GERÇEK style.css BLOKLARI ============ */
+  .btn{font-family:inherit;cursor:pointer;border:none;border-radius:8px;padding:.6rem 1.1rem;
+    font-weight:600;font-size:.95rem;background:var(--surface-2);color:var(--text)}
+  .btn.secondary{background:transparent;border:1px solid var(--border);color:var(--text-dim)}
+  .card{background:var(--surface);border:1px solid var(--border);border-radius:12px}
+
+  .board-header{display:flex;justify-content:space-between;align-items:center;
+    padding:clamp(.5rem,1.2vmin,1rem) clamp(.75rem,1.8vmin,1.5rem);
+    background:var(--surface);border-radius:14px;border:1px solid var(--border);flex:0 0 auto}
+  .board-header .board-name{font-size:clamp(1rem,2.4vmin,1.4rem);font-weight:700}
+  .board-header .match-info{color:var(--text-dim);font-size:clamp(.7rem,1.6vmin,.9rem)}
+
+  /* bracket */
+  .bracket{display:flex;gap:1.25rem;padding:.75rem 0}
+  .bracket-round{display:flex;flex-direction:column;justify-content:space-around;
+    min-width:170px;position:relative;padding-top:1.6rem}
+  .bracket-round h4{font-size:.75rem;color:var(--text-dim);text-transform:uppercase;
+    letter-spacing:.05em;position:absolute;top:0;left:0}
+  .bracket-match{background:var(--surface);border:1px solid var(--border);border-radius:8px;
+    padding:.35rem .6rem;font-size:.82rem;min-height:48px;margin:.3rem 0}
+  .bracket-match.live{border-color:var(--accent)}
+  .bracket-match.finished{opacity:.85}
+  .bracket-match .slot{display:flex;justify-content:space-between;padding:.15rem 0}
+  .bracket-match .slot.winner{color:var(--success);font-weight:600}
+  .bracket-match .slot .score{color:var(--text-dim);font-variant-numeric:tabular-nums}
+
+  /* dp (X01 skor ekranı) — gerçek */
+  .dp{display:flex;flex-direction:column;flex:1 1 auto;min-height:0;background:#0b0d14}
+  .dp-gap{flex:0}
+  .dp-names{display:grid;grid-template-columns:1fr 1fr;border-bottom:1px solid #1e2336;flex:0 0 auto}
+  .dp-name-col{padding:2.1vw 2.6vw;display:flex;align-items:center;justify-content:space-between;
+    gap:1.6vw;border-top:3px solid transparent;background:#0f1220}
+  .dp-name-col.active{border-top-color:#ff3860;background:#140a10}
+  .dp-leg-big{font-size:clamp(22px,7.4vw,60px);font-weight:900;line-height:1;color:#2a2e42;
+    flex-shrink:0;font-variant-numeric:tabular-nums}
+  .dp-name-col.active .dp-leg-big{color:#ff3860}
+  .dp-name-center{flex:1;text-align:center;min-width:0}
+  .dp-pname{font-size:clamp(12px,3.7vw,28px);font-weight:500;color:#e2e8f0;margin-bottom:.8vw;
+    white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .dp-name-col.active .dp-pname{color:#ff3860}
+  .dp-meta{display:flex;justify-content:center;gap:2.6vw}
+  .dp-meta span{font-size:clamp(9px,2.6vw,20px);color:#4a5568}
+  .dp-meta strong{font-size:clamp(10px,2.9vw,22px);color:#8892b0}
+  .dp-scores{display:flex;flex-direction:column;flex:1 1 0;min-height:0;border-bottom:1px solid #1e2336}
+  .dp-rem-row{display:grid;grid-template-columns:1fr clamp(18px,7.4vw,36px) 1fr;flex-shrink:0}
+  .dp-rem-row > :first-child{padding:2.1vw 2.6vw;text-align:center}
+  .dp-rem-row > :last-child{padding:2.1vw 2.6vw;text-align:center}
+  .dp-scores.p1-active .dp-rem-row > :first-child{background:#140a10}
+  .dp-scores.p1-active .dp-rem-row > :last-child{background:#0f1220}
+  .dp-rem-row > :nth-child(2){background:#0d0f1c;border-left:1px solid #1e2336;border-right:1px solid #1e2336}
+  .dp-visit-table{flex:1;min-height:0;overflow:hidden;display:flex;flex-direction:column;justify-content:flex-end}
+  .dp-visit-row{display:grid;grid-template-columns:1fr clamp(18px,7.4vw,36px) 1fr;flex-shrink:0}
+  .dp-scores.p1-active .dp-visit-row > :first-child{background:#140a10}
+  .dp-scores.p1-active .dp-visit-row > :last-child{background:#0f1220}
+  .dp-visit-row > :nth-child(2){background:#0d0f1c;border-left:1px solid #1e2336;border-right:1px solid #1e2336}
+  .dp-visit-num{font-size:clamp(13px,3.8vw,28px);color:#2a2e42;line-height:2;font-weight:500;
+    font-variant-numeric:tabular-nums;text-align:center}
+  .dp-rem{font-size:clamp(32px,10vw,80px);font-weight:900;line-height:1;letter-spacing:-.05em;
+    margin-bottom:clamp(4px,1.3vw,10px);font-variant-numeric:tabular-nums}
+  .dp-throw{font-size:clamp(16px,4.8vw,36px);color:#4a5568;text-align:center;line-height:2;
+    font-variant-numeric:tabular-nums}
+  .dp-throw.last{color:#00d4ff;font-weight:500}
+  .dp-throw.bust{color:#ef4444}
+  .dp-keypad{background:#0b0d14;padding:1.8vw;flex:0 0 auto}
+  .dp-top{display:grid;grid-template-columns:1fr 1.6fr 1fr;gap:clamp(3px,1.3vw,10px);margin-bottom:clamp(3px,1.3vw,10px)}
+  .dp-undo{background:#1a1e2d;border:1px solid #2a2e42;border-radius:7px;padding:clamp(6px,1.84vw,14px) 0;
+    text-align:center;color:#8892b0;font-size:clamp(11px,3.2vw,24px)}
+  .dp-inp{background:#111526;border:1.5px solid #2a2e42;border-radius:7px;padding:clamp(6px,1.84vw,14px);
+    text-align:center;font-size:clamp(18px,5.3vw,40px);font-weight:500;color:#fff;font-variant-numeric:tabular-nums}
+  .dp-gon{background:#ff3860;border-radius:7px;padding:clamp(6px,1.84vw,14px) 0;text-align:center;
+    color:#000;font-size:clamp(11px,3.2vw,24px);font-weight:500}
+  .dp-main{display:grid;grid-template-columns:clamp(26px,8.9vw,52px) 1fr clamp(26px,8.9vw,52px);gap:clamp(3px,1.3vw,10px)}
+  .dp-quick{display:flex;flex-direction:column;gap:clamp(2px,.8vw,5px)}
+  .dp-qbtn{flex:1;background:#1a1e2d;border:1px solid #2a2e42;border-radius:5px;padding:clamp(3px,1.05vw,8px) 0;
+    text-align:center;font-size:clamp(10px,2.9vw,22px);color:#8892b0;display:flex;align-items:center;justify-content:center}
+  .dp-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:clamp(2px,.8vw,5px)}
+  .dp-key{background:#1a1e2d;border:1px solid #2a2e42;border-radius:5px;padding:clamp(7px,1.84vw,14px) 0;
+    text-align:center;font-size:clamp(13px,3.95vw,30px);color:#e2e8f0}
+  .dp-key.c{color:#f6ad55}
+  .dp-key.dp-key-180{color:var(--accent);font-size:clamp(11px,3vw,22px);font-weight:700}
+  .dp-key.bust{background:#2d1020;border-color:#5a1f35;color:#ff6b8a;font-size:clamp(9px,2.6vw,20px)}
+  /* landscape — gerçek media query (stage 16:9 olduğu için bu düzen geçerli) */
+  .dp{display:grid;grid-template-columns:1fr 1fr;grid-template-rows:auto 1fr;
+    column-gap:clamp(4px,1vmin,12px);overflow:hidden}
+  .dp-names{grid-column:1;grid-row:1}
+  .dp-scores{grid-column:1;grid-row:2;min-height:0}
+  .dp-keypad{grid-column:2;grid-row:1 / span 2;display:flex;flex-direction:column;min-height:0}
+  .dp-keypad .dp-main{flex:1 1 auto;min-height:0}
+  .dp-keypad .dp-grid{height:100%}
+  .dp-gap{display:none}
+
+  /* gerçek ekran sahnesini stage'e oturtan sarmalayıcı */
+  .device{position:absolute;inset:0;display:flex;flex-direction:column;
+    padding:64px 14px 14px;gap:.5rem}
+  .device.tablet-pad{padding-top:64px}
+
+  /* bracket sığdırma kabı — 128'lik braketin tamamı görünsün */
+  .bkwrap{position:absolute;inset:0;overflow:hidden}
+  .bkpan{position:absolute;left:0;top:0;transform-origin:top left}
+  .bkpan .bracket{padding:0}
+
+  /* standings */
+  .table{width:min(620px,90%);border:1px solid var(--border);border-radius:10px;overflow:hidden;margin-top:6px}
+  .tr{display:grid;grid-template-columns:36px 1fr 64px;gap:6px;align-items:center;
+    padding:clamp(7px,1.2vw,13px) clamp(10px,1.6vw,18px);font-size:clamp(11px,1.5vw,18px);
+    border-top:1px solid var(--border);text-align:left}
+  .tr:first-child{border-top:none;color:var(--text-dim);font-size:.85em;letter-spacing:1px}
+  .tr .pos{font-weight:800;text-align:center}
+  .tr.t1{background:rgba(74,222,128,.10)} .tr.t1 .pos{color:var(--success)}
+  .tr.t2 .pos{color:#cfd8dc} .tr.t3 .pos{color:#cd7f32}
+  .tr .pts{text-align:right;font-weight:800;color:var(--accent-2)}
+  .active .tr{animation:up .5s both}
+  .active .tr:nth-child(2){animation-delay:.1s}
+  .active .tr:nth-child(3){animation-delay:.2s}
+  .active .tr:nth-child(4){animation-delay:.3s}
+  .active .tr:nth-child(5){animation-delay:.4s}
+
+  /* pills */
+  .pills{display:flex;flex-wrap:wrap;gap:10px;justify-content:center;margin-top:20px;max-width:90%}
+  .pill{background:rgba(255,56,96,.12);border:1px solid rgba(255,56,96,.4);color:#ff8fa6;
+    font-weight:700;border-radius:999px;padding:clamp(6px,1vw,11px) clamp(12px,1.8vw,22px);font-size:clamp(11px,1.5vw,18px)}
+  .active .pill{animation:pop .5s both}
+  .active .pill:nth-child(2){animation-delay:.1s}.active .pill:nth-child(3){animation-delay:.2s}
+  .active .pill:nth-child(4){animation-delay:.3s}.active .pill:nth-child(5){animation-delay:.4s}.active .pill:nth-child(6){animation-delay:.5s}
+
+  /* autopilot boards */
+  .boards{display:grid;grid-template-columns:repeat(2,1fr);gap:clamp(10px,1.8vw,20px);width:min(760px,92%);margin-top:10px}
+  .bcard{background:var(--surface);border:1px solid var(--border);border-radius:10px;padding:clamp(8px,1.4vw,16px);text-align:left}
+  .bcard .bh{display:flex;align-items:center;justify-content:space-between;font-size:clamp(10px,1.3vw,15px);
+    color:var(--text-dim);font-weight:700;margin-bottom:8px;letter-spacing:.5px}
+  .bcard .dotlive{width:9px;height:9px;border-radius:50%;background:var(--success);animation:pulse 1.4s infinite}
+  @keyframes pulse{0%{box-shadow:0 0 0 0 rgba(74,222,128,.6)}70%{box-shadow:0 0 0 9px rgba(74,222,128,0)}100%{box-shadow:0 0 0 0 rgba(74,222,128,0)}}
+  .bcard .match{font-weight:700;font-size:clamp(12px,1.6vw,19px)}
+  .bcard .match .sc{color:var(--accent)}
+  .bcard .nxt{font-size:clamp(9px,1.2vw,13px);color:var(--text-dim);margin-top:6px}
+  .active .bcard{animation:slot .6s both}
+  .active .bcard:nth-child(1){animation-delay:.15s}.active .bcard:nth-child(2){animation-delay:.35s}
+  .active .bcard:nth-child(3){animation-delay:.55s}.active .bcard:nth-child(4){animation-delay:.75s}
+  @keyframes slot{from{opacity:0;transform:translateY(20px) scale(.95)}to{opacity:1;transform:none}}
+
+  /* portrait cihaz çerçevesi (maç öncesi + skor ekranı iframe içinde) */
+  .devwrap{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;padding-top:46px}
+  .dev{height:calc(100% - 70px);aspect-ratio:10/16;background:#05070c;border:7px solid #1c2233;
+    border-radius:22px;box-shadow:0 24px 60px rgba(0,0,0,.6);overflow:hidden;position:relative}
+  .active .dev{animation:pop .6s .1s both}
+  .dev iframe{width:100%;height:100%;border:0;display:block;background:#0b0d14}
+
+  /* CTA */
+  .url{display:inline-block;margin-top:8px;font-size:clamp(22px,4.4vw,54px);font-weight:800;
+    background:linear-gradient(90deg,var(--accent),var(--accent-2));-webkit-background-clip:text;background-clip:text;color:transparent}
+  .free{display:inline-block;margin-top:18px;background:var(--accent);color:#000;font-weight:800;
+    border-radius:999px;padding:clamp(9px,1.5vw,15px) clamp(20px,3vw,40px);font-size:clamp(13px,2vw,24px)}
+  .active .free{animation:pop .6s .3s both}
+
+  .progress{position:absolute;left:0;bottom:0;height:4px;width:0;
+    background:linear-gradient(90deg,var(--accent),var(--accent-2));z-index:5}
+  .controls{position:absolute;top:12px;right:14px;display:flex;gap:8px;z-index:6}
+  .ctrlbtn{background:rgba(255,255,255,.08);border:1px solid var(--border);color:var(--text);
+    font-size:12px;font-weight:600;border-radius:7px;padding:7px 12px;cursor:pointer}
+  .ctrlbtn:hover{background:rgba(255,255,255,.16)}
+  .brand{position:absolute;top:14px;left:18px;font-weight:800;font-size:clamp(12px,1.5vw,18px);z-index:6;opacity:.92}
+  .brand .dot{color:var(--accent)}
+  .replay{position:absolute;inset:0;display:none;align-items:center;justify-content:center;
+    background:rgba(11,13,20,.7);z-index:7;flex-direction:column;gap:14px}
+  .replay.show{display:flex}
+</style>
+</head>
+<body>
+<div class="stage" id="stage">
+  <div class="brand">DART CORE<span class="dot">.</span>PRO</div>
+  <div class="controls"><button class="ctrlbtn" id="restart">↻ Baştan</button></div>
+
+  <!-- 1: INTRO -->
+  <section class="scene" data-dur="4000">
+    <svg class="board" viewBox="0 0 200 200">
+      <circle cx="100" cy="100" r="98" fill="#0a0f13" stroke="#2a2f48" stroke-width="2"/>
+      <circle cx="100" cy="100" r="84" fill="#11181f"/>
+      <g stroke="#1a2530" stroke-width="1.5" fill="none"><circle cx="100" cy="100" r="84"/><circle cx="100" cy="100" r="52"/><circle cx="100" cy="100" r="50"/></g>
+      <path d="M100 16 A84 84 0 0 1 159 41 L131 69 A44 44 0 0 0 100 56 Z" fill="#ff3860" opacity=".85"/>
+      <path d="M41 159 A84 84 0 0 1 16 100 L56 100 A44 44 0 0 0 69 131 Z" fill="#00d4ff" opacity=".8"/>
+      <path d="M159 159 A84 84 0 0 1 100 184 L100 144 A44 44 0 0 0 131 131 Z" fill="#ff3860" opacity=".7"/>
+      <path d="M16 100 A84 84 0 0 1 41 41 L69 69 A44 44 0 0 0 56 100 Z" fill="#00d4ff" opacity=".65"/>
+      <circle cx="100" cy="100" r="16" fill="#1f2c36"/><circle cx="100" cy="100" r="7" fill="#ff3860"/>
+      <g class="dartt"><line x1="148" y1="52" x2="104" y2="96" stroke="#fbbf24" stroke-width="3.5" stroke-linecap="round"/>
+        <polygon points="104,96 112,98 110,90" fill="#eaf2f0"/><polygon points="148,52 158,44 152,60" fill="#00d4ff"/></g>
+    </svg>
+    <h1 class="up">DART CORE <span class="accent">PRO</span></h1>
+    <p class="sub up2">Türkçe dart turnuvası yönetim sistemi — kura, skor, klasman, hepsi tek yerde.</p>
+  </section>
+
+  <!-- 2: PROBLEM -->
+  <section class="scene" data-dur="3600">
+    <span class="tag up">TANIDIK MI?</span>
+    <h2 class="up2">Kağıt fikstür, dağınık skorlar,<br>kafa karıştıran klasman.</h2>
+    <p class="sub up3">Turnuva yönetmek bu kadar zor olmamalı.</p>
+  </section>
+
+  <!-- 3: GERÇEK BRAKET (128) -->
+  <section class="scene real" data-dur="7600">
+    <div class="cap"><span class="tag">128 OYUNCUYA KADAR · GERÇEK BRAKET</span><h2>Bütün kadroyu gir, braketi sistem kursun</h2></div>
+    <div class="bkwrap"><div class="bkpan" id="bkpan"></div></div>
+  </section>
+
+  <!-- 4: OTOPİLOT -->
+  <section class="scene" data-dur="5200">
+    <span class="tag up">KUR VE BIRAK · OTOPİLOT</span>
+    <h2 class="up2">Turnuvayı başlat — maçlar tabletlere <span class="accent">kendiliğinden</span> düşer</h2>
+    <div class="boards">
+      <div class="bcard"><div class="bh"><span>📱 Board 1</span><span class="dotlive"></span></div><div class="match">Yusuf <span class="sc">3</span> – <span class="sc">2</span> Kaan</div><div class="nxt">Bitince → sıradaki maç otomatik</div></div>
+      <div class="bcard"><div class="bh"><span>📱 Board 2</span><span class="dotlive"></span></div><div class="match">Ece <span class="sc">2</span> – <span class="sc">1</span> Deniz</div><div class="nxt">Bitince → sıradaki maç otomatik</div></div>
+      <div class="bcard"><div class="bh"><span>📱 Board 3</span><span class="dotlive"></span></div><div class="match">Mert <span class="sc">3</span> – <span class="sc">0</span> Onur</div><div class="nxt">Bitince → sıradaki maç otomatik</div></div>
+      <div class="bcard"><div class="bh"><span>📱 Board 4</span><span class="dotlive"></span></div><div class="match">Selin <span class="sc">1</span> – <span class="sc">1</span> Burak</div><div class="nxt">Bitince → sıradaki maç otomatik</div></div>
+    </div>
+    <p class="sub up4">Eşleştirme, board ataması ve sıradaki maç — sistem hallediyor. Sen sadece izle.</p>
+  </section>
+
+  <!-- 5: GERÇEK MAÇ ÖNCESİ EKRANI (portrait) -->
+  <section class="scene real" data-dur="5200">
+    <div class="cap"><span class="tag">TABLET · MAÇ ÖNCESİ EKRANI</span></div>
+    <div class="devwrap"><div class="dev"><iframe id="pmFrame" title="Maç öncesi"></iframe></div></div>
+  </section>
+
+  <!-- 6: GERÇEK SKOR EKRANI (.dp portrait) -->
+  <section class="scene real" data-dur="5600">
+    <div class="cap"><span class="tag">TABLET · SKOR EKRANI</span></div>
+    <div class="devwrap"><div class="dev"><iframe id="scoreFrame" title="Skor ekranı"></iframe></div></div>
+  </section>
+
+  <!-- 7: KLASMAN -->
+  <section class="scene" data-dur="4800">
+    <span class="tag up">LİG &amp; SEZON</span>
+    <h2 class="up2">Canlı klasman, anında güncellenir</h2>
+    <div class="table">
+      <div class="tr"><span class="pos">#</span><span>Oyuncu</span><span class="pts">Puan</span></div>
+      <div class="tr t1"><span class="pos">1</span><span>Yusuf Kaya 🥇</span><span class="pts">48</span></div>
+      <div class="tr t2"><span class="pos">2</span><span>Ece Yıldız 🥈</span><span class="pts">41</span></div>
+      <div class="tr t3"><span class="pos">3</span><span>Kaan Demir 🥉</span><span class="pts">37</span></div>
+      <div class="tr"><span class="pos">4</span><span>Deniz Arslan</span><span class="pts">29</span></div>
+    </div>
+    <p class="sub up4">Berger fikstürü, podyum, G/M yüzdeleri, Excel raporu — otomatik.</p>
+  </section>
+
+  <!-- 8: TÜM EKRANLAR -->
+  <section class="scene" data-dur="4200">
+    <span class="tag up">HER EKRAN İÇİN</span>
+    <h2 class="up2">Tablet, TV ve organizatör — <span class="accent">canlı senkron</span></h2>
+    <div class="pills">
+      <span class="pill">📱 Tablet skor</span><span class="pill">📺 TV bracket</span><span class="pill">🎲 Otomatik kura</span>
+      <span class="pill">🏅 Seri başı</span><span class="pill">📊 Excel rapor</span><span class="pill">⚡ Anlık güncelleme</span>
+    </div>
+  </section>
+
+  <!-- 9: CTA -->
+  <section class="scene" data-dur="5000">
+    <span class="tag up">ÜCRETSİZ BAŞLA</span>
+    <h2 class="up2">Kendi turnuvanı dakikalar içinde kur</h2>
+    <span class="url">dartcorepro.com</span>
+    <span class="free">Hemen Dene — Ücretsiz</span>
+  </section>
+
+  <div class="progress" id="progress"></div>
+  <div class="replay" id="replay">
+    <div style="font-weight:800;font-size:22px">dartcorepro.com</div>
+    <button class="ctrlbtn" id="replayBtn">↻ Tekrar oynat</button>
+  </div>
+</div>
+
+<script>
+  // ===== Gerçek braket DOM'unu üret (organizer.js renderBracketMatch yapısı) =====
+  (function buildBracket(){
+    const pan=document.getElementById('bkpan'); if(!pan) return;
+    const first=["Yusuf","Kaan","Ece","Deniz","Onur","Selin","Burak","Mert","Emir","Cem",
+      "Derya","Aslı","Kerem","Berk","Tolga","Sinan","Gökhan","Murat","Eren","Barış",
+      "Hakan","Serkan","Tunç","Ozan","Volkan","Uğur","Caner","Doruk","Arda","Efe",
+      "Bora","Çağrı","Furkan","Kuzey","Ali","Veli","Sıla","Naz","İpek","Berke"];
+    const last=["K.","Y.","D.","A.","T.","S.","B.","Ç.","Ö.","G.","M.","E.","U.","O.","V.","Ş."];
+    function nm(i){return first[i%first.length]+" "+last[(i*5+((i/first.length)|0))%last.length];}
+    // 128 oyuncu → 64 maç ilk tur
+    let players=[]; for(let i=0;i<128;i++) players.push(nm(i));
+    const roundNames=["Son 128","Son 64","Son 32","Son 16","Çeyrek Final","Yarı Final","Final"];
+    const bracket=document.createElement('div'); bracket.className='bracket';
+    let current=players.slice();
+    for(let r=0;r<7;r++){
+      const round=document.createElement('div'); round.className='bracket-round';
+      const h=document.createElement('h4'); h.textContent=roundNames[r]; round.appendChild(h);
+      const winners=[];
+      for(let p=0;p<current.length;p+=2){
+        const a=current[p], b=current[p+1]||'BYE';
+        const aw=(p/2+r)%2===0; // görsel kazanan
+        const wa=aw, wb=!aw && b!=='BYE';
+        const sa=wa?'3':((p+r)%3); const sb=wb?'3':((p+r+1)%3);
+        const finished=r<5; const live=r>=5 && p===0;
+        const mt=document.createElement('div');
+        mt.className='bracket-match'+(live?' live':(finished?' finished':''));
+        mt.innerHTML=
+          '<div style="font-size:.68rem;color:var(--text-dim);padding:.15rem .4rem 0;display:flex;justify-content:space-between;"><span></span><span style="opacity:.7;">#'+(p/2+1)+'</span></div>'+
+          '<div class="slot '+(wa?'winner':'')+'"><span>'+a+'</span><span class="score">'+sa+'</span></div>'+
+          '<div class="slot '+(wb?'winner':'')+'"><span>'+b+'</span><span class="score">'+(b==='BYE'?'':sb)+'</span></div>';
+        round.appendChild(mt);
+        winners.push(wa?a:b);
+      }
+      bracket.appendChild(round);
+      current=winners;
+    }
+    // şampiyon kolonu
+    const champ=document.createElement('div'); champ.className='bracket-round';
+    champ.innerHTML='<h4>Şampiyon</h4>';
+    const c=document.createElement('div'); c.className='bracket-match'; c.style.borderColor='var(--success)';
+    c.innerHTML='<div class="slot winner" style="font-size:1rem;">🏆 <span>'+current[0]+'</span></div>';
+    champ.appendChild(c); bracket.appendChild(champ);
+    pan.appendChild(bracket);
+    window.__bracket={pan,bracket};
+  })();
+
+  // Braket: ÖNCE tüm braket görünür (fit), SONDA şampiyona zoom-in
+  const BK={s0:1,s1:1,tx0:0,ty0:0,tx1:0,ty1:0};
+  function setupBracketPan(){
+    const b=window.__bracket; if(!b) return;
+    const stage=document.getElementById('stage');
+    const bw=b.bracket.scrollWidth, bh=b.bracket.scrollHeight;
+    if(!bw||!bh) return;
+    const padTop=58, padBot=16, padX=22;
+    const availW=stage.clientWidth-padX*2;
+    const availH=stage.clientHeight-padTop-padBot;
+    const cx=stage.clientWidth/2, cy=padTop+availH/2;
+    const cols=8;                      // 7 tur + şampiyon kolonu
+    const colPitch=bw/cols;
+    // --- BAŞLANGIÇ: tüm braket sığar ---
+    BK.s0=Math.min(availW/bw, availH/bh);
+    BK.tx0=(stage.clientWidth-bw*BK.s0)/2;
+    BK.ty0=padTop+(availH-bh*BK.s0)/2;
+    // --- BİTİŞ: son ~3 kolona (Final + Şampiyon) zoom-in ---
+    BK.s1=Math.max(BK.s0*1.6, Math.min(2.4, stage.clientWidth/(colPitch*3)));
+    const fx=bw-colPitch*1.5;          // odak: final/şampiyon bandı
+    const fy=bh/2;                     // dikey orta (huni burada yakınsar)
+    BK.tx1=cx-fx*BK.s1;
+    BK.ty1=cy-fy*BK.s1;
+    b.pan.style.transform=`translate(${BK.tx0}px,${BK.ty0}px) scale(${BK.s0})`;
+  }
+  function panBracket(p){
+    const b=window.__bracket; if(!b) return;
+    // 0–45% tüm braketi göster, 45–100% şampiyona zoom-in (yumuşak)
+    let e=(p-0.45)/0.55; e=Math.max(0,Math.min(1,e));
+    e=e*e*(3-2*e);                     // smoothstep
+    const s=BK.s0+(BK.s1-BK.s0)*e;
+    const tx=BK.tx0+(BK.tx1-BK.tx0)*e;
+    const ty=BK.ty0+(BK.ty1-BK.ty0)*e;
+    b.pan.style.transform=`translate(${tx}px,${ty}px) scale(${s})`;
+  }
+  window.addEventListener('resize',setupBracketPan);
+
+  // ===== Gerçek ekranları iframe içinde gerçek CSS ile render et (portrait) =====
+  const REALCSS=`
+  :root{--bg:#0b0d14;--bg-2:#111420;--surface:#1a1e2d;--surface-2:#232840;--border:#2a2f48;
+    --text:#e8ebf5;--text-dim:#9099b4;--accent:#ff3860;--accent-2:#00d4ff;--success:#4ade80;--danger:#ef4444;}
+  *{margin:0;padding:0;box-sizing:border-box}
+  html,body{height:100%;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Inter,sans-serif;background:var(--bg);color:var(--text)}
+  body{display:flex;flex-direction:column;height:100vh;overflow:hidden}
+  .btn{font-family:inherit;border:none;border-radius:8px;padding:.6rem 1.1rem;font-weight:600;font-size:.95rem;background:var(--surface-2);color:var(--text)}
+  .btn.secondary{background:transparent;border:1px solid var(--border);color:var(--text-dim)}
+  .card{background:var(--surface);border:1px solid var(--border);border-radius:12px}
+  .board-header{display:flex;justify-content:space-between;align-items:center;padding:.7rem .9rem;background:var(--surface);border-radius:14px;border:1px solid var(--border);flex:0 0 auto}
+  .board-header .board-name{font-size:1.2rem;font-weight:700}
+  .board-header .match-info{color:var(--text-dim);font-size:.8rem}
+  .screen{display:flex;flex-direction:column;height:100vh;padding:10px;gap:.5rem;overflow:hidden}
+  /* dp — PORTRAIT (gerçek varsayılan board düzeni) */
+  .dp{display:flex;flex-direction:column;flex:1 1 auto;min-height:0;background:#0b0d14}
+  .dp-names{display:grid;grid-template-columns:1fr 1fr;border-bottom:1px solid #1e2336;flex:0 0 auto}
+  .dp-name-col{padding:2.1vw 2.6vw;display:flex;align-items:center;justify-content:space-between;gap:1.6vw;border-top:3px solid transparent;background:#0f1220}
+  .dp-name-col.active{border-top-color:#ff3860;background:#140a10}
+  .dp-leg-big{font-size:clamp(22px,7.4vw,60px);font-weight:900;line-height:1;color:#2a2e42;flex-shrink:0;font-variant-numeric:tabular-nums}
+  .dp-name-col.active .dp-leg-big{color:#ff3860}
+  .dp-name-center{flex:1;text-align:center;min-width:0}
+  .dp-pname{font-size:clamp(12px,3.7vw,28px);font-weight:500;color:#e2e8f0;margin-bottom:.8vw;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .dp-name-col.active .dp-pname{color:#ff3860}
+  .dp-meta{display:flex;justify-content:center;gap:2.6vw}
+  .dp-meta span{font-size:clamp(9px,2.6vw,20px);color:#4a5568}
+  .dp-meta strong{font-size:clamp(10px,2.9vw,22px);color:#8892b0}
+  .dp-scores{display:flex;flex-direction:column;flex:1 1 0;min-height:0;border-bottom:1px solid #1e2336}
+  .dp-rem-row{display:grid;grid-template-columns:1fr clamp(18px,7.4vw,36px) 1fr;flex-shrink:0}
+  .dp-rem-row>:first-child{padding:2.1vw 2.6vw;text-align:center}
+  .dp-rem-row>:last-child{padding:2.1vw 2.6vw;text-align:center}
+  .dp-scores.p1-active .dp-rem-row>:first-child{background:#140a10}
+  .dp-scores.p1-active .dp-rem-row>:last-child{background:#0f1220}
+  .dp-rem-row>:nth-child(2){background:#0d0f1c;border-left:1px solid #1e2336;border-right:1px solid #1e2336}
+  .dp-visit-table{flex:1;min-height:0;overflow:hidden;display:flex;flex-direction:column;justify-content:flex-end}
+  .dp-visit-row{display:grid;grid-template-columns:1fr clamp(18px,7.4vw,36px) 1fr;flex-shrink:0}
+  .dp-scores.p1-active .dp-visit-row>:first-child{background:#140a10}
+  .dp-scores.p1-active .dp-visit-row>:last-child{background:#0f1220}
+  .dp-visit-row>:nth-child(2){background:#0d0f1c;border-left:1px solid #1e2336;border-right:1px solid #1e2336}
+  .dp-visit-num{font-size:clamp(13px,3.8vw,28px);color:#2a2e42;line-height:2;font-weight:500;font-variant-numeric:tabular-nums;text-align:center}
+  .dp-rem{font-size:clamp(32px,10vw,80px);font-weight:900;line-height:1;letter-spacing:-.05em;margin-bottom:clamp(4px,1.3vw,10px);font-variant-numeric:tabular-nums}
+  .dp-throw{font-size:clamp(16px,4.8vw,36px);color:#4a5568;text-align:center;line-height:2;font-variant-numeric:tabular-nums}
+  .dp-throw.last{color:#00d4ff;font-weight:500}
+  .dp-throw.bust{color:#ef4444}
+  .dp-keypad{background:#0b0d14;padding:1.8vw;flex:0 0 auto}
+  .dp-top{display:grid;grid-template-columns:1fr 1.6fr 1fr;gap:clamp(3px,1.3vw,10px);margin-bottom:clamp(3px,1.3vw,10px)}
+  .dp-undo{background:#1a1e2d;border:1px solid #2a2e42;border-radius:7px;padding:clamp(6px,1.84vw,14px) 0;text-align:center;color:#8892b0;font-size:clamp(11px,3.2vw,24px)}
+  .dp-inp{background:#111526;border:1.5px solid #2a2e42;border-radius:7px;padding:clamp(6px,1.84vw,14px);text-align:center;font-size:clamp(18px,5.3vw,40px);font-weight:500;color:#fff;font-variant-numeric:tabular-nums}
+  .dp-gon{background:#ff3860;border-radius:7px;padding:clamp(6px,1.84vw,14px) 0;text-align:center;color:#000;font-size:clamp(11px,3.2vw,24px);font-weight:500}
+  .dp-main{display:grid;grid-template-columns:clamp(26px,8.9vw,52px) 1fr clamp(26px,8.9vw,52px);gap:clamp(3px,1.3vw,10px)}
+  .dp-quick{display:flex;flex-direction:column;gap:clamp(2px,.8vw,5px)}
+  .dp-qbtn{flex:1;background:#1a1e2d;border:1px solid #2a2e42;border-radius:5px;padding:clamp(3px,1.05vw,8px) 0;text-align:center;font-size:clamp(10px,2.9vw,22px);color:#8892b0;display:flex;align-items:center;justify-content:center}
+  .dp-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:clamp(2px,.8vw,5px)}
+  .dp-key{background:#1a1e2d;border:1px solid #2a2e42;border-radius:5px;padding:clamp(7px,1.84vw,14px) 0;text-align:center;font-size:clamp(13px,3.95vw,30px);color:#e2e8f0}
+  .dp-key.c{color:#f6ad55}
+  .dp-key.dp-key-180{color:var(--accent);font-size:clamp(11px,3vw,22px);font-weight:700}
+  .dp-key.bust{background:#2d1020;border-color:#5a1f35;color:#ff6b8a;font-size:clamp(9px,2.6vw,20px)}
+  `;
+
+  const PREMATCH=`<div class="screen">
+    <div class="board-header"><div><div class="board-name">Board 2</div><div class="match-info">Bahar Kupası · Son 16</div></div><span class="btn secondary">Board değiştir</span></div>
+    <div style="flex:1;display:flex;flex-direction:column;align-items:center;justify-content:flex-start;gap:1rem;padding:.6rem;overflow:hidden;min-height:0;">
+      <div style="text-align:center;"><div style="font-size:.9rem;letter-spacing:.1em;color:var(--text-dim);text-transform:uppercase;">Bahar Kupası</div>
+        <div style="font-size:2.2rem;font-weight:800;margin-top:.2rem;color:var(--accent);">Son 16</div>
+        <div style="font-size:1rem;color:var(--text-dim);">Board 2</div></div>
+      <div style="width:100%;display:grid;grid-template-columns:1fr auto 1fr;gap:1rem;align-items:center;">
+        <div class="card" style="text-align:center;padding:1.4rem .6rem;background:var(--surface-2);border:2px solid var(--surface-2);">
+          <div style="font-size:.7rem;color:var(--text-dim);letter-spacing:.1em;text-transform:uppercase;">Oyuncu 1</div>
+          <div style="font-size:1.7rem;font-weight:700;margin-top:.4rem;">Yusuf</div></div>
+        <div style="font-size:1.4rem;font-weight:800;color:var(--text-dim);">VS</div>
+        <div class="card" style="text-align:center;padding:1.4rem .6rem;background:var(--surface-2);border:2px solid var(--surface-2);">
+          <div style="font-size:.7rem;color:var(--text-dim);letter-spacing:.1em;text-transform:uppercase;">Oyuncu 2</div>
+          <div style="font-size:1.7rem;font-weight:700;margin-top:.4rem;">Kaan</div></div>
+      </div>
+      <div class="card" style="width:100%;background:var(--surface-2);padding:1rem;">
+        <div style="font-size:.7rem;color:var(--text-dim);letter-spacing:.1em;text-transform:uppercase;margin-bottom:.6rem;">🎯 Hangi takım başlıyor?</div>
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:1rem;">
+          <button class="btn" style="font-size:1.1rem;padding:.9rem;background:var(--accent);color:#000;font-weight:800;">▶ Yusuf</button>
+          <button class="btn secondary" style="font-size:1.1rem;padding:.9rem;">Kaan</button></div></div>
+      <button class="btn" style="font-size:1.5rem;padding:1.1rem 3rem;background:var(--accent);color:#000;font-weight:800;border-radius:12px;margin-top:.3rem;">▶ MAÇA BAŞLA</button>
+      <div style="display:flex;gap:.8rem;margin-top:.2rem;">
+        <button class="btn secondary" style="font-size:.85rem;border-color:var(--danger);color:var(--danger);">Kaan gelmedi</button>
+        <button class="btn secondary" style="font-size:.85rem;border-color:var(--danger);color:var(--danger);">Yusuf gelmedi</button></div>
+    </div></div>`;
+
+  const SCORE=`<div class="dp">
+    <div class="dp-names">
+      <div class="dp-name-col active"><div class="dp-leg-big">2</div>
+        <div class="dp-name-center"><div class="dp-pname">Yusuf</div><div class="dp-meta"><span>Ort <strong>64.3</strong></span></div></div></div>
+      <div class="dp-name-col" style="flex-direction:row-reverse;"><div class="dp-leg-big">1</div>
+        <div class="dp-name-center"><div class="dp-pname">Kaan</div><div class="dp-meta"><span>Ort <strong>57.8</strong></span></div></div></div>
+    </div>
+    <div class="dp-scores p1-active">
+      <div class="dp-rem-row"><div class="dp-rem" style="color:#ff3860;">40</div><div></div><div class="dp-rem" style="color:#4a5568;">182</div></div>
+      <div class="dp-visit-table">
+        <div class="dp-visit-row"><div class="dp-throw">60</div><div class="dp-visit-num">3</div><div class="dp-throw">45</div></div>
+        <div class="dp-visit-row"><div class="dp-throw">100</div><div class="dp-visit-num">6</div><div class="dp-throw">81</div></div>
+        <div class="dp-visit-row"><div class="dp-throw">140</div><div class="dp-visit-num">9</div><div class="dp-throw">60</div></div>
+        <div class="dp-visit-row"><div class="dp-throw">85</div><div class="dp-visit-num">12</div><div class="dp-throw">41</div></div>
+        <div class="dp-visit-row"><div class="dp-throw last">76</div><div class="dp-visit-num">15</div><div class="dp-throw bust">Bust</div></div>
+      </div>
+    </div>
+    <div class="dp-keypad">
+      <div class="dp-top"><div class="dp-undo">Geri Al</div><div class="dp-inp">0</div><div class="dp-gon">Gönder ▶</div></div>
+      <div class="dp-main">
+        <div class="dp-quick"><div class="dp-qbtn">26</div><div class="dp-qbtn">40</div><div class="dp-qbtn">41</div><div class="dp-qbtn">43</div><div class="dp-qbtn">45</div></div>
+        <div class="dp-grid">
+          <div class="dp-key">1</div><div class="dp-key">2</div><div class="dp-key">3</div>
+          <div class="dp-key">4</div><div class="dp-key">5</div><div class="dp-key">6</div>
+          <div class="dp-key">7</div><div class="dp-key">8</div><div class="dp-key">9</div>
+          <div class="dp-key c">C</div><div class="dp-key dp-key-180">180</div><div class="dp-key bust">Bust</div></div>
+        <div class="dp-quick"><div class="dp-qbtn">60</div><div class="dp-qbtn">81</div><div class="dp-qbtn">85</div><div class="dp-qbtn">100</div><div class="dp-qbtn">140</div></div>
+      </div>
+    </div></div>`;
+
+  function frameDoc(inner){return `<!doctype html><html lang="tr"><head><meta charset="utf-8"><style>${REALCSS}</style></head><body>${inner}</body></html>`;}
+  document.getElementById('pmFrame').srcdoc=frameDoc(PREMATCH);
+  document.getElementById('scoreFrame').srcdoc=frameDoc(SCORE);
+
+  const scenes=[...document.querySelectorAll('.scene')];
+  const BRACKET_SCENE=2; // 0:intro 1:problem 2:braket
+  const progress=document.getElementById('progress');
+  const replay=document.getElementById('replay');
+  let timer=null,startT=0,dur=0,raf=null,curScene=0;
+  function tickBar(){
+    const p=Math.min(1,(performance.now()-startT)/dur);
+    progress.style.width=(p*100)+'%';
+    if(curScene===BRACKET_SCENE) panBracket(p);
+    if(p<1)raf=requestAnimationFrame(tickBar);
+  }
+  function show(n){
+    scenes.forEach(s=>s.classList.remove('active'));
+    const s=scenes[n]; void s.offsetWidth; s.classList.add('active');
+    curScene=n; dur=+s.dataset.dur||4000; startT=performance.now();
+    if(n===BRACKET_SCENE){ setupBracketPan(); panBracket(0); }
+    cancelAnimationFrame(raf); tickBar();
+    clearTimeout(timer);
+    timer=setTimeout(()=>{ if(n<scenes.length-1) show(n+1); else replay.classList.add('show'); },dur);
+  }
+  function play(){replay.classList.remove('show');show(0);}
+  document.getElementById('restart').onclick=play;
+  document.getElementById('replayBtn').onclick=play;
+  play();
+</script>
+</body>
+</html>

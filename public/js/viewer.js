@@ -415,7 +415,32 @@ function renderBracket() {
       ${t.stages.map(s => renderStage(t, s)).join('')}
     </div>
   `).join('');
+  fitBrackets();
 }
+
+// Her braketi, içinde bulunduğu kutuya yatayda sığacak şekilde ölçekler.
+// Sabit px'li iç katman (.bracket-fit-inner) kutudan genişse küçültülür; asla büyütülmez.
+function fitBrackets() {
+  document.querySelectorAll('#bracket-host .bracket-fit').forEach(wrap => {
+    const inner = wrap.querySelector('.bracket-fit-inner');
+    if (!inner) return;
+    inner.style.transform = 'none';
+    wrap.style.height = '';
+    const avail = wrap.clientWidth;
+    const contentW = inner.scrollWidth;
+    if (!avail || !contentW) return;
+    const scale = Math.min(1, avail / contentW);
+    inner.style.transform = `scale(${scale})`;
+    // Ölçeklenince yükseklik de küçülür; boş alan kalmasın diye kutuyu daralt.
+    wrap.style.height = (inner.scrollHeight * scale) + 'px';
+  });
+}
+
+// Pencere yeniden boyutlanınca (örn. TV/izleyici döndürme) yeniden sığdır.
+window.addEventListener('resize', () => {
+  clearTimeout(window.__fitBracketsTO);
+  window.__fitBracketsTO = setTimeout(fitBrackets, 150);
+});
 
 function renderStage(t, stage) {
   const stageMatches = t.matches.filter(m => m.stage_id === stage.id);
@@ -454,8 +479,9 @@ function renderElimBracketSVG(columns, matchFn) {
     });
   });
 
-  return `<div style="overflow-x:auto;padding-bottom:0.5rem;">
-    <div style="position:relative;width:${totalW}px;height:${totalH}px;">
+  // Braket kutuya sığsın diye: sabit px'li iç katman, dışarıda ölçeklenir (fitBrackets).
+  return `<div class="bracket-fit" style="padding-bottom:0.5rem;overflow:hidden;">
+    <div class="bracket-fit-inner" style="position:relative;width:${totalW}px;height:${totalH}px;transform-origin:top left;">
       <svg style="position:absolute;top:${LH}px;left:0;width:${totalW}px;height:${totalH - LH}px;pointer-events:none;overflow:visible;">${svgLines}</svg>
       ${html}
     </div>
