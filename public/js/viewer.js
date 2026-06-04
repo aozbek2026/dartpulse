@@ -451,6 +451,9 @@ function renderStage(t, stage) {
 
 function renderElimBracketSVG(columns, matchFn) {
   if (!columns.length) return '';
+  // Boş sütunları ele — son maç (Final) gerçekten en sağda kalsın, hayalet sütun olmasın.
+  columns = columns.filter(c => c.matches && c.matches.length);
+  if (!columns.length) return '';
   const MW = 180, MH = 64, CS = 225, LH = 24, UH = 72;
   const firstCount = columns[0].matches.length;
   const cy = (r, i) => i * UH * Math.pow(2, r) + UH * Math.pow(2, r) / 2;
@@ -459,14 +462,22 @@ function renderElimBracketSVG(columns, matchFn) {
 
   let svgLines = '';
   for (let r = 0; r < columns.length - 1; r++) {
+    const prevCount = columns[r].matches.length;
     const nextCount = columns[r + 1].matches.length;
     const xR = r * CS + MW, xN = (r + 1) * CS, xM = (xR + xN) / 2;
     for (let i = 0; i < nextCount; i++) {
-      const c1 = cy(r, i * 2), c2 = cy(r, i * 2 + 1), cm = (c1 + c2) / 2;
-      svgLines += `<line x1="${xR}" y1="${c1}" x2="${xM}" y2="${c1}" stroke="var(--border)" stroke-width="1.5"/>`;
-      svgLines += `<line x1="${xR}" y1="${c2}" x2="${xM}" y2="${c2}" stroke="var(--border)" stroke-width="1.5"/>`;
-      svgLines += `<line x1="${xM}" y1="${c1}" x2="${xM}" y2="${c2}" stroke="var(--border)" stroke-width="1.5"/>`;
-      svgLines += `<line x1="${xM}" y1="${cm}" x2="${xN}" y2="${cm}" stroke="var(--border)" stroke-width="1.5"/>`;
+      // Bu çocuk maçın iki ebeveyni: 2i ve 2i+1. Sadece GERÇEKTEN var olan
+      // ebeveynler için çizgi çiz — yoksa boşluğa sarkan çizgiler kalıyor.
+      const p1 = i * 2, p2 = i * 2 + 1;
+      const has1 = p1 < prevCount, has2 = p2 < prevCount;
+      if (!has1 && !has2) continue;
+      const c1 = cy(r, p1), c2 = cy(r, p2), cm = (c1 + c2) / 2;
+      if (has1) svgLines += `<line x1="${xR}" y1="${c1}" x2="${xM}" y2="${c1}" stroke="var(--border)" stroke-width="1.5"/>`;
+      if (has2) svgLines += `<line x1="${xR}" y1="${c2}" x2="${xM}" y2="${c2}" stroke="var(--border)" stroke-width="1.5"/>`;
+      if (has1 && has2) svgLines += `<line x1="${xM}" y1="${c1}" x2="${xM}" y2="${c2}" stroke="var(--border)" stroke-width="1.5"/>`;
+      // Çocuğa giden yatay çizgi: tek ebeveyn varsa onun hizasından gitsin.
+      const yChild = (has1 && has2) ? cm : (has1 ? c1 : c2);
+      svgLines += `<line x1="${xM}" y1="${yChild}" x2="${xN}" y2="${yChild}" stroke="var(--border)" stroke-width="1.5"/>`;
     }
   }
 
@@ -497,7 +508,8 @@ function renderElim(stage, matches) {
   const sortKeys = (keys) => keys.sort((a, b) => {
     const [ba, ra] = a.split('-'); const [bb, rb] = b.split('-');
     const order = { winners: 0, losers: 1, final: 2 };
-    return (order[ba] || 99) - (order[bb] || 99) || +ra - +rb;
+    // NOT: `|| 99` kullanma — winners=0 falsy olduğu için 99 olur ve Final sola kaçar.
+    return ((order[ba] ?? 99) - (order[bb] ?? 99)) || (+ra - +rb);
   });
   const allKeys = sortKeys(Object.keys(rounds));
   const isDoubleElim = stage.format === 'double_elim';

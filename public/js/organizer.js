@@ -1229,7 +1229,8 @@ function renderElimStage(stage, matches) {
   const sortKeys = (keys) => keys.sort((a, b) => {
     const [ba, ra] = a.split('-'); const [bb, rb] = b.split('-');
     const order = { winners: 0, losers: 1, final: 2 };
-    return (order[ba] || 99) - (order[bb] || 99) || +ra - +rb;
+    // `|| 99` kullanma — winners=0 falsy olur, Final sola kaçar. `??` ile düzelt.
+    return ((order[ba] ?? 99) - (order[bb] ?? 99)) || (+ra - +rb);
   });
 
   const allKeys = sortKeys(Object.keys(rounds));

@@ -307,7 +307,8 @@ function renderBracket() {
   const keys = Object.keys(rounds).sort((a, b) => {
     const [ba, ra] = a.split('-'); const [bb, rb] = b.split('-');
     const order = { winners: 0, losers: 1, final: 2 };
-    return (order[ba] || 99) - (order[bb] || 99) || +ra - +rb;
+    // `|| 99` kullanma — winners=0 falsy olur, Final sola kaçar. `??` ile düzelt.
+    return ((order[ba] ?? 99) - (order[bb] ?? 99)) || (+ra - +rb);
   });
 
   // Bir round'un kaç maçtan oluştuğuna göre etiket isimlendir (final, yarı final, çeyrek)
