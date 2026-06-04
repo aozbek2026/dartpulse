@@ -135,11 +135,55 @@ app.post('/auth/delete-account', auth.deleteAccountHandler);
 // --- Helpers ---
 // Multi-organizer: her bağlı socket için (userId varsa) o kullanıcıya özel
 // snapshot yayınla. userId yoksa (login olmamış izleyici) public snapshot.
-function broadcastState() {
+//
+// PERF (Haziran 2026): İki katmanlı optimizasyon — bkz. CLAUDE.md "Ölçek".
+//  1) flushBroadcast: yayın başına uid başına snapshot'ı TEK SEFER kurar.
+//     Aynı organizatörün 40 tableti varsa eskiden snapshot 40 kez yeniden
+//     üretiliyordu; artık 1 kez kurulup aynı nesne tüm socket'lere gönderilir.
+//  2) scheduleBroadcast: 300ms trailing debounce. Her atış yerine, aynı tick'te
+//     biriken N olay tek yayına iner. Skoru giren tablet zaten board:state +
+//     match:update ile anlık güncelleniyor; bu debounce yalnızca izleyici/TV/
+//     organizatör dashboard'unu etkiler (~300ms fark, hissedilmez).
+function flushBroadcast() {
+  const snapByKey = new Map(); // uid (veya '__public__') -> snapshot (tek sefer kur)
   for (const [, socket] of io.sockets.sockets) {
     const uid = socket.data && socket.data.userId ? socket.data.userId : null;
-    socket.emit('state', getSnapshot(uid));
+    const key = uid == null ? '__public__' : uid;
+    let snap = snapByKey.get(key);
+    if (!snap) { snap = getSnapshot(uid); snapByKey.set(key, snap); }
+    socket.emit('state', snap);
   }
+}
+
+let _broadcastTimer = null;
+// İzleyici/TV/organizatör panelinin tazelenme aralığı. Skoru giren tablet
+// bundan ETKİLENMEZ (board:state + match:update ile anlık). Spectator bir maça
+// girince o maç da match:update ile anlık yenilenir; bu debounce yalnızca genel
+// bracket/klasman listesinin tazelenme sıklığını belirler.
+// Env ile ayarlanabilir (Render'da kod değişikliği gerekmez). ~750ms üstünde
+// TV'de canlı skor aynası gözle görülür gecikir, CPU kazancı ise ihmal edilebilir.
+const BROADCAST_DEBOUNCE_MS = Math.max(0, parseInt(process.env.BROADCAST_DEBOUNCE_MS || '500', 10) || 500);
+// Tüm endpoint'ler bunu çağırır. Burst'ler tek yayına coalesce edilir.
+function scheduleBroadcast() {
+  if (_broadcastTimer) return; // zaten planlandı, biriktir
+  _broadcastTimer = setTimeout(() => {
+    _broadcastTimer = null;
+    flushBroadcast();
+  }, BROADCAST_DEBOUNCE_MS);
+}
+
+// Report (entry başına agregat istatistik) en pahalı sorgu ve yalnızca bir
+// maç/leg bitince anlamlı değişir — visit ortasında değil. 1.5sn TTL cache
+// ile atış başına yeniden hesaplamayı engelliyoruz. İstemci şekli değişmez.
+const _reportCache = new Map(); // tournamentId -> { at, report }
+const REPORT_TTL_MS = 1500;
+function cachedReport(tournamentId) {
+  const now = Date.now();
+  const c = _reportCache.get(tournamentId);
+  if (c && now - c.at < REPORT_TTL_MS) return c.report;
+  const report = db.tournamentPlayerReport(tournamentId);
+  _reportCache.set(tournamentId, { at: now, report });
+  return report;
 }
 
 function getSnapshot(userId = null) {
@@ -151,7 +195,7 @@ function getSnapshot(userId = null) {
       matches: db.matchesForTournament(t.id),
       entries: db.entriesForTournament(t.id),
       // Klasman için entry başına agregat istatistikler (3-ok ort, leg, 180 vs.)
-      report: t.status !== 'draft' ? db.tournamentPlayerReport(t.id) : [],
+      report: t.status !== 'draft' ? cachedReport(t.id) : [],
     })),
     boards: db.allBoards(userId).map(b => ({
       ...b,
@@ -177,7 +221,7 @@ app.post('/api/players', auth.requireAuth, (req, res) => {
   const dupe = existing.find(p => p.name.toLowerCase() === trimmed.toLowerCase());
   if (dupe) return res.status(400).json({ error: `"${trimmed}" isimli oyuncu zaten mevcut` });
   const p = db.createPlayer(trimmed, nickname?.trim() || null, req.user.id);
-  broadcastState();
+  scheduleBroadcast();
   res.json(p);
 });
 app.delete('/api/players/:id', auth.requireAuth, (req, res) => {
@@ -186,7 +230,7 @@ app.delete('/api/players/:id', auth.requireAuth, (req, res) => {
     return res.status(403).json({ error: 'Yetkiniz yok' });
   }
   db.deletePlayer(+req.params.id);
-  broadcastState();
+  scheduleBroadcast();
   res.json({ ok: true });
 });
 
@@ -207,7 +251,7 @@ app.post('/api/boards', auth.requireAuth, (req, res) => {
     tid = +tournament_id;
   }
   const b = db.createBoard(name.trim(), req.user.id, tid);
-  broadcastState();
+  scheduleBroadcast();
   res.json(b);
 });
 app.patch('/api/boards/:id', auth.requireAuth, (req, res) => {
@@ -234,7 +278,7 @@ app.patch('/api/boards/:id', auth.requireAuth, (req, res) => {
   if (changedTournament) {
     try { scheduler.assignPendingMatches(io, req.user.id); } catch (e) { console.warn('[patch board] scheduler:', e.message); }
   }
-  broadcastState();
+  scheduleBroadcast();
   res.json({ ok: true });
 });
 app.delete('/api/boards/:id', auth.requireAuth, (req, res) => {
@@ -246,7 +290,7 @@ app.delete('/api/boards/:id', auth.requireAuth, (req, res) => {
   // Board silinince o board'a atanmis mac (varsa) board_id=NULL'a cekildi.
   // Hemen scheduler'i tetikle ki bos kalan baska tablete yeniden atansin.
   scheduler.assignPendingMatches(io, req.user.id);
-  broadcastState();
+  scheduleBroadcast();
   res.json({ ok: true });
 });
 
@@ -264,13 +308,13 @@ app.get('/api/tournaments/public', (req, res) => {
 // Organizatör: turnuvayı izleyici listesinden gizle
 app.patch('/api/tournaments/:id/hide-public', auth.requireAuth, (req, res) => {
   db.setTournamentHiddenFromPublic(+req.params.id, req.session.userId);
-  broadcastState();
+  scheduleBroadcast();
   res.json({ ok: true });
 });
 app.post('/api/tournaments', auth.requireAuth, (req, res) => {
   try {
     const t = tournament.createTournament({ ...req.body, user_id: req.user.id });
-    broadcastState();
+    scheduleBroadcast();
     res.json(t);
   } catch (e) {
     res.status(400).json({ error: e.message });
@@ -284,7 +328,7 @@ app.post('/api/tournaments/:id/start', auth.requireAuth, (req, res) => {
     }
     tournament.startTournament(+req.params.id);
     scheduler.assignPendingMatches(io, req.user.id);
-    broadcastState();
+    scheduleBroadcast();
     res.json({ ok: true });
   } catch (e) {
     res.status(400).json({ error: e.message });
@@ -299,7 +343,7 @@ app.patch('/api/tournaments/:id', auth.requireAuth, (req, res) => {
     if (t.status !== 'draft') return res.status(400).json({ error: 'Sadece taslak turnuvalar düzenlenebilir' });
     const { name, game_mode, legs_to_win, sets_to_win } = req.body;
     db.updateTournament(t.id, { name, game_mode, legs_to_win, sets_to_win });
-    broadcastState();
+    scheduleBroadcast();
     res.json({ ok: true });
   } catch (e) {
     res.status(400).json({ error: e.message });
@@ -318,7 +362,7 @@ app.put('/api/tournaments/:id/entries/reorder', auth.requireAuth, (req, res) => 
       return res.status(400).json({ error: 'Geçersiz sıralama dizisi' });
     }
     db.updateEntrySlots(+req.params.id, order);
-    broadcastState();
+    scheduleBroadcast();
     res.json({ ok: true });
   } catch (e) {
     res.status(400).json({ error: e.message });
@@ -331,7 +375,7 @@ app.delete('/api/tournaments/:id', auth.requireAuth, (req, res) => {
     return res.status(403).json({ error: 'Yetkiniz yok' });
   }
   db.deleteTournament(+req.params.id);
-  broadcastState();
+  scheduleBroadcast();
   res.json({ ok: true });
 });
 
@@ -416,7 +460,7 @@ app.post('/api/matches/:id/begin', (req, res) => {
         match: db.matchById(id),
       });
     }
-    broadcastState();
+    scheduleBroadcast();
     res.json({ ok: true });
   } catch (e) {
     res.status(400).json({ error: e.message });
@@ -459,7 +503,7 @@ app.post('/api/matches/:id/cricket-throw', (req, res) => {
         match: m,
       });
     }
-    broadcastState();
+    scheduleBroadcast();
     res.json(result);
   } catch (e) {
     res.status(400).json({ error: e.message });
@@ -481,7 +525,7 @@ app.post('/api/matches/:id/fb-cezali-throw', (req, res) => {
         match: m,
       });
     }
-    broadcastState();
+    scheduleBroadcast();
     res.json(result);
   } catch (e) {
     res.status(400).json({ error: e.message });
@@ -503,7 +547,7 @@ app.post('/api/matches/:id/karambol-throw', (req, res) => {
         match: m,
       });
     }
-    broadcastState();
+    scheduleBroadcast();
     res.json(result);
   } catch (e) {
     res.status(400).json({ error: e.message });
@@ -541,7 +585,7 @@ app.post('/api/matches/:id/cricket-undo', (req, res) => {
         match: updated,
       });
     }
-    broadcastState();
+    scheduleBroadcast();
     res.json({ ok: true });
   } catch (e) {
     res.status(400).json({ error: e.message });
@@ -598,7 +642,7 @@ app.post('/api/boards/:id/next', (req, res) => {
       board: refreshed,
       match: refreshed.current_match_id ? db.matchById(refreshed.current_match_id) : null,
     });
-    broadcastState();
+    scheduleBroadcast();
     res.json({ ok: true });
   } catch (e) {
     res.status(400).json({ error: e.message });
@@ -619,7 +663,7 @@ app.patch('/api/matches/:id/scorer', (req, res) => {
         match: db.matchById(id),
       });
     }
-    broadcastState();
+    scheduleBroadcast();
     res.json({ ok: true });
   } catch (e) {
     res.status(400).json({ error: e.message });
@@ -659,9 +703,9 @@ app.post('/api/matches/:id/throw', (req, res) => {
           }
         }
       }
-      broadcastState();
+      scheduleBroadcast();
     } else {
-      broadcastState();
+      scheduleBroadcast();
     }
     res.json(result);
   } catch (e) {
@@ -705,7 +749,7 @@ app.post('/api/matches/:id/walkover', (req, res) => {
       }
     }
     io.emit('match:update', { matchId });
-    broadcastState();
+    scheduleBroadcast();
     res.json({ ok: true });
   } catch (e) {
     res.status(400).json({ error: e.message });
@@ -727,7 +771,7 @@ app.post('/api/tournament/:id/create-reset-final', auth.requireAuth, (req, res) 
     }
     const resetMatch = tournament.createResetFinal(+gfMatchId, legsNum);
     scheduler.assignPendingMatches(io, req.session.userId);
-    broadcastState();
+    scheduleBroadcast();
     res.json({ ok: true, matchId: resetMatch.id });
   } catch (e) {
     res.status(400).json({ error: e.message });
@@ -737,7 +781,7 @@ app.post('/api/tournament/:id/create-reset-final', auth.requireAuth, (req, res) 
 app.post('/api/matches/:id/undo', (req, res) => {
   try {
     const result = engine.undoLastThrow(+req.params.id);
-    broadcastState();
+    scheduleBroadcast();
     res.json(result);
   } catch (e) {
     res.status(400).json({ error: e.message });
@@ -747,7 +791,7 @@ app.post('/api/matches/:id/undo', (req, res) => {
 // Reset — yalnızca giriş yapan organizatörün verisini siler (per-user)
 app.post('/api/reset', auth.requireAuth, (req, res) => {
   db.resetAll(req.user.id);
-  broadcastState();
+  scheduleBroadcast();
   res.json({ ok: true });
 });
 
@@ -1357,7 +1401,7 @@ app.post('/api/competitions/:id/sessions', auth.requireAuth, (req, res) => {
         session_type: 'league_day',
         status: 'pending',
       });
-      broadcastState();
+      scheduleBroadcast();
       return res.json({ ...sessionRow, tournament_status: null, entries_count: 0 });
     }
 
@@ -1448,7 +1492,7 @@ app.post('/api/competitions/:id/sessions', auth.requireAuth, (req, res) => {
       }
     } catch (_) {}
 
-    broadcastState();
+    scheduleBroadcast();
     res.json({ ...sessionRow, tournament_status: t.status, entries_count: entries.length, claimed_boards: claimedBoards });
   } catch (e) {
     console.error('POST /api/competitions/:id/sessions:', e);
@@ -1615,7 +1659,7 @@ app.post('/api/competitions/:id/sessions/:sid/finalize', auth.requireAuth, (req,
     });
     tx();
 
-    broadcastState();
+    scheduleBroadcast();
     res.json({ ok: true, recorded: standings.length });
   } catch (e) {
     console.error('POST finalize:', e);
@@ -1694,7 +1738,7 @@ app.delete('/api/competitions/:id/sessions/:sid', auth.requireAuth, (req, res) =
     }
 
     db.deleteSession(sid);
-    broadcastState();
+    scheduleBroadcast();
     res.json({ ok: true });
   } catch (e) {
     console.error('DELETE /api/competitions/:id/sessions/:sid:', e);
@@ -1817,7 +1861,7 @@ app.post('/api/competitions/:id/plan', auth.requireAuth, (req, res) => {
       }
     }
 
-    broadcastState();
+    scheduleBroadcast();
     res.json({ ok: true, ...result, auto_session: autoCreatedSession, target_session_id: targetSessionId });
   } catch (e) {
     console.error('POST /api/competitions/:id/plan:', e);
@@ -1931,7 +1975,7 @@ app.post('/api/competitions/:id/sessions/:sid/start-round', auth.requireAuth, (r
       console.log(`[start-round] scheduler sonrası: atandı=${assigned}, hâlâ_bekleyen=${stillReady}`);
     } catch (e) { console.warn('[start-round] scheduler:', e.message); }
 
-    broadcastState();
+    scheduleBroadcast();
     res.json({ ok: true, tournament_id: t.id, round_number: roundNumber, claimed_boards: claimedBoards });
   } catch (e) {
     console.error('POST /api/competitions/:id/sessions/:sid/start-round:', e);
@@ -1963,7 +2007,7 @@ app.post('/api/competitions/:id/rounds/:roundNumber/move', auth.requireAuth, (re
     if (round.tournament_id) return res.status(400).json({ error: `Round ${roundNumber} zaten baslatildi, tasinamaz` });
 
     db.linkRoundToSession(compId, roundNumber, targetSid, null);
-    broadcastState();
+    scheduleBroadcast();
     res.json({ ok: true, round_number: roundNumber, session_id: targetSid });
   } catch (e) {
     console.error('POST /api/competitions/:id/rounds/:roundNumber/move:', e);
@@ -1978,7 +2022,7 @@ app.post('/api/competitions/:id/backfill-shot-stats', auth.requireAuth, (req, re
     const userId = req.session.userId;
     const compId = +req.params.id;
     const result = db.backfillShotStatsForCompetition(compId, userId);
-    broadcastState();
+    scheduleBroadcast();
     res.json({ ok: true, ...result });
   } catch (e) {
     console.error('POST /api/competitions/:id/backfill-shot-stats:', e);
@@ -2001,7 +2045,7 @@ app.post('/api/competitions/:id/rounds/:roundNumber/finalize', auth.requireAuth,
     if (result && result.already) {
       return res.status(400).json({ error: 'Bu round zaten klasmana islendi (cift sayim yapilmaz).' });
     }
-    broadcastState();
+    scheduleBroadcast();
     res.json({ ok: true, ...result });
   } catch (e) {
     console.error('POST /api/competitions/:id/rounds/:roundNumber/finalize:', e);

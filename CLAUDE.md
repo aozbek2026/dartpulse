@@ -566,6 +566,29 @@ Görev numaralarıyla birlikte (TaskList sisteminde): #1-#46. Önemli olanlar:
 - Lig planlama Dilim 5b: Berger/circle-method round-robin planlama, `league_schedule` tablosu, `league_day` oturum tipi, `session.html` round başlatma akışı (Mayıs 2026)
 - Lig akışı tamamlama (Mayıs 2026): otomatik 1. Gün, round-bazlı finalize, scheduler tetikleme noktaları + startup poke, board claim 3 katmanlı kural (aynı lig boşta board paylaşımı serbest), liga.html lig/sezon puan formu ayrımı, tanı scriptleri — ayrı bölüme bak
 - **Production deploy (26 Mayıs 2026)**: Lig & Sezon sistemi (Dilim 1-5b) + board PWA + Excel raporu altyapısı `dartcorepro.com` üzerinde canlıya alındı. Render Starter ($7/ay) + 1GB kalıcı disk (`/data/data.db`) + auto-deploy from `main`. Faz 1 (Render deploy) tamamlandı; sıradaki yol haritası Faz 2 hardening.
+- **Tanıtım videosu / "DartCorePro Nedir?" (Haziran 2026)**: Anasayfaya gömülü, otomatik oynayan animasyonlu tanıtım — ayrı bölüme bak.
+
+## Tanıtım videosu — "DartCorePro Nedir?" (Haziran 2026)
+
+Anasayfaya (`public/index.html`) gömülü, kendi başına çalışan animasyonlu bir tanıtım. Gerçek video/ses değil; saf HTML+CSS+JS sahne animasyonu (ekran kaydı alınıp gerçek videoya da çevrilebilir).
+
+### Dosyalar
+- **`public/tanitim.html`** (yeni) — bağımsız tanıtım sayfası. ~9 sahne, ~45 sn, 16:9. Sahneler: intro → sorun → **gerçek braket (128, soldan tümü görünür sonra şampiyona zoom-in)** → otopilot board akışı → **gerçek tablet maç-öncesi ekranı (portrait)** → **gerçek tablet skor ekranı (portrait `.dp`)** → klasman → tüm ekranlar → CTA. Sağ üstte "↻ Baştan" ve vurgulu "**Geç ⏭**" butonu.
+- **`public/index.html`** (değişti) — nav'a "**DartCorePro Nedir?**" linki (`#hp-about`, i18n `nav_about` TR/EN), tam ekran `.dcp-intro-overlay` + iframe, ilk-ziyaret otomatik açılış mantığı.
+
+### Önemli tasarım kararları
+- **Gerçek ekran kodu kullanılır, mockup değil**: Braket `organizer.js`'deki `renderBracketMatch` + `style.css` `.bracket*` yapısının birebir kopyası; tablet ekranları `board.js`'deki `renderPreMatch` ve X01 `.dp` markup'ının kopyası. Renkler uygulamanın gerçek paletinden (`--accent:#ff3860`, `--accent-2:#00d4ff`, `--bg:#0b0d14`).
+- **Tablet ekranları portrait iframe içinde**: `.dp` ve maç-öncesi ekranı `vw` tabanlı ölçüler kullandığı için, ölçülerin çerçeveyle birebir örtüşmesi adına ekranlar **iframe `srcdoc`** içine gerçek CSS ile gömülür (iframe'in kendi viewport'u = çerçeve genişliği). iframe `body{display:flex;flex-direction:column;height:100vh}` olmazsa `.dp` taşıp keypad kesilir — bilinen tuzak.
+- **Braket**: 128 oyuncu JS ile üretilir; önce tümü ekrana sığar, sahnenin 2. yarısında smoothstep ile Final/Şampiyon bandına zoom-in (`setupBracketPan`/`panBracket`, `BRACKET_SCENE` index'ine bağlı).
+- **Stage** viewport'a tam oturur (`width:min(100vw,177.78vh);height:min(56.25vw,100vh)`) ki gerçek ekranların `vw` ölçüleri stage ile örtüşsün.
+
+### Açılış / kapanış akışı
+- **Sadece ilk ziyarette** otomatik açılır (`localStorage: dcp_intro_seen`). "DartCorePro Nedir?" linki her zaman tekrar açar.
+- Video bitince **veya** "Geç"e basınca → iframe içindeyse `parent.postMessage('dcp-intro-done')` ile overlay kapanır ve anasayfa görünür; doğrudan `/tanitim.html` açıldıysa `location.href='/'`.
+- Otomatik açılışı yeniden test: konsolda `localStorage.removeItem('dcp_intro_seen')` + reload.
+
+### Yan deliverable'lar (repoya dahil DEĞİL, `promo/` klasöründe)
+`dartcorepro-senaryo-storyboard.docx` (sahne planı + seslendirme metni), `dartcorepro-sosyal-medya.md` (Instagram/TikTok/YouTube metinleri). `public/tanitim.html` bunların güncel sürümüyle eşit.
 
 ## Takım Maçı — Yarın Yapılacaklar (öncelik sırası)
 
@@ -622,6 +645,43 @@ Görev numaralarıyla birlikte (TaskList sisteminde): #1-#46. Önemli olanlar:
   "
   ```
   Bu komutu çalıştırmadan ÖNCE `npm start`'ı durdur (Ctrl+C), sonra çalıştır, sonra tekrar başlat — aksi halde foreground sunucu öldürür.
+
+## Ölçek / Performans — snapshot yayını (Haziran 2026)
+
+Soru: "Aynı anda kaç 512 kişilik turnuva sorunsuz çalışır?" İncelemede asıl darboğazın
+turnuva büyüklüğü değil, `server.js`'teki **snapshot yayını (broadcastState)** olduğu
+görüldü. Eski hâlde her atış (`/api/matches/:id/throw`), bağlı **her socket için ayrı
+ayrı** `getSnapshot(uid)` çağırıyordu — yani 512 kişilik bir turnuvada koca bracket ağacı
+(511 maç + 512 entry + entry başına `tournamentPlayerReport` agregasyonu) her atışta,
+her cihaz için yeniden kuruluyordu. 40 tabletli bir organizatörde bu = atış başına 40×
+yeniden kurulum.
+
+**Skoru giren tablet bundan etkilenmiyordu zaten** — board.js canlı güncellemeyi
+`board:state` (scoped) + `match:update` (sadece matchId) ile alıyor. Ağır `state`
+snapshot'ı yalnızca izleyici/TV/organizatör dashboard'u + board seçim ekranı için.
+
+Üç katmanlı optimizasyon (hepsi `server.js`, korumalı modüllere dokunulmadı):
+1. **`flushBroadcast`** — yayın başına uid başına snapshot'ı **tek sefer** kurar
+   (`Map<uid, snapshot>`), aynı uid'li tüm socket'lere aynı nesneyi gönderir. Cihaz
+   sayısı çarpanını kaldırır.
+2. **`scheduleBroadcast`** — trailing debounce, varsayılan **500ms** (`BROADCAST_DEBOUNCE_MS`
+   env ile ayarlanabilir, Render'da kod değişmeden). Tüm 30+ `broadcastState()` çağrısı
+   buna çevrildi. Aynı tick'teki burst tek yayına iner; yayın hızı atış hızından bağımsız
+   (500ms → ~2 yayın/sn tavan). Yalnızca izleyici/TV/organizatör panelini geciktirir; skoru
+   giren board zaten ayrı event'le anlık güncelleniyor, spectator bir maça girince o maç da
+   `match:update` ile anlık yenilenir. ~750ms üstünde TV'de canlı skor aynası gözle görülür
+   gecikir, CPU kazancı ihmal edilebilir (yayın başı maliyet zaten ~2-5ms).
+3. **`cachedReport`** — en pahalı sorgu olan `tournamentPlayerReport` 1.5sn TTL cache'e
+   alındı (maç bitmeden anlamlı değişmez). İstemci payload şekli değişmedi.
+
+**Ölçüm** (`scripts/load-snapshot-bench.js` — gerçek db.js ile Mac'te çalıştırılır;
+sandbox'ta node:sqlite ile alınan tahmini rakamlar): 4 turnuva × 512 oyuncu × 40 cihaz
+senaryosunda yayın maliyeti ~245ms → ~2ms (**~112×**). ~0.5 vCPU Starter'da eş zamanlı
+bağımsız organizatör tavanı kabaca 0 → ~27'ye çıkıyor. Tek organizatör + birkaç 512'lik
+turnuva (federasyon: 4 kategori, ~40 board) artık tek instance'ta rahat.
+
+Not: Postgres'e geçiş hâlâ 50+ eş zamanlı turnuva eşiğinde geçerli; bu optimizasyon o
+eşiği yukarı taşır ama değiştirmez.
 
 ## Karar verilmiş ama henüz uygulanmamış konular
 
