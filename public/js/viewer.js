@@ -424,6 +424,44 @@ function renderStage(t, stage) {
   return renderElim(stage, stageMatches);
 }
 
+function renderElimBracketSVG(columns, matchFn) {
+  if (!columns.length) return '';
+  const MW = 180, MH = 64, CS = 225, LH = 24, UH = 72;
+  const firstCount = columns[0].matches.length;
+  const cy = (r, i) => i * UH * Math.pow(2, r) + UH * Math.pow(2, r) / 2;
+  const totalW = (columns.length - 1) * CS + MW;
+  const totalH = firstCount * UH + LH + 8;
+
+  let svgLines = '';
+  for (let r = 0; r < columns.length - 1; r++) {
+    const nextCount = columns[r + 1].matches.length;
+    const xR = r * CS + MW, xN = (r + 1) * CS, xM = (xR + xN) / 2;
+    for (let i = 0; i < nextCount; i++) {
+      const c1 = cy(r, i * 2), c2 = cy(r, i * 2 + 1), cm = (c1 + c2) / 2;
+      svgLines += `<line x1="${xR}" y1="${c1}" x2="${xM}" y2="${c1}" stroke="var(--border)" stroke-width="1.5"/>`;
+      svgLines += `<line x1="${xR}" y1="${c2}" x2="${xM}" y2="${c2}" stroke="var(--border)" stroke-width="1.5"/>`;
+      svgLines += `<line x1="${xM}" y1="${c1}" x2="${xM}" y2="${c2}" stroke="var(--border)" stroke-width="1.5"/>`;
+      svgLines += `<line x1="${xM}" y1="${cm}" x2="${xN}" y2="${cm}" stroke="var(--border)" stroke-width="1.5"/>`;
+    }
+  }
+
+  let html = '';
+  columns.forEach((col, r) => {
+    html += `<div style="position:absolute;top:0;left:${r * CS}px;width:${MW}px;text-align:center;font-size:0.7rem;color:var(--text-dim);text-transform:uppercase;letter-spacing:0.07em;line-height:${LH}px;">${col.label}</div>`;
+    col.matches.forEach((m, i) => {
+      const top = Math.round(cy(r, i) - MH / 2 + LH);
+      html += `<div style="position:absolute;top:${top}px;left:${r * CS}px;width:${MW}px;">${matchFn(m)}</div>`;
+    });
+  });
+
+  return `<div style="overflow-x:auto;padding-bottom:0.5rem;">
+    <div style="position:relative;width:${totalW}px;height:${totalH}px;">
+      <svg style="position:absolute;top:${LH}px;left:0;width:${totalW}px;height:${totalH - LH}px;pointer-events:none;overflow:visible;">${svgLines}</svg>
+      ${html}
+    </div>
+  </div>`;
+}
+
 function renderElim(stage, matches) {
   const rounds = {};
   for (const m of matches) {
@@ -445,23 +483,30 @@ function renderElim(stage, matches) {
 
     const renderSection = (keys, sectionLabel) => {
       if (!keys.length) return '';
+      const isWB = keys[0].startsWith('winners-');
+      let bracketHTML;
+      if (isWB) {
+        const cols = keys.map(k => {
+          const [, round] = k.split('-');
+          const cnt = rounds[k].length;
+          const label = cnt === 1 ? 'WB Final' : cnt === 2 ? 'WB Yarı Final' : `WB R${round}`;
+          return { label, matches: rounds[k] };
+        });
+        bracketHTML = renderElimBracketSVG(cols, renderBracketMatch);
+      } else {
+        bracketHTML = `<div class="bracket">
+          ${keys.map(k => {
+            const ms = rounds[k];
+            const [bracket, round] = k.split('-');
+            const label = bracket === 'losers' ? `LB R${round}` : 'Grand Final';
+            return `<div class="bracket-round"><h4>${label}</h4>${ms.map(m => renderBracketMatch(m)).join('')}</div>`;
+          }).join('')}
+        </div>`;
+      }
       return `
         <div style="margin-bottom: 0.6rem;">
           <div style="font-size: 0.7rem; color: var(--text-dim); text-transform: uppercase; letter-spacing: 0.06em; margin-bottom: 0.3rem; padding: 0.15rem 0.4rem; background: var(--bg-2); border-radius: 4px; display: inline-block;">${sectionLabel}</div>
-          <div class="bracket">
-            ${keys.map(k => {
-              const ms = rounds[k];
-              const [bracket, round] = k.split('-');
-              const label = bracket === 'winners' ? `WB R${round}` :
-                bracket === 'losers' ? `LB R${round}` : 'Grand Final';
-              return `
-                <div class="bracket-round">
-                  <h4>${label}</h4>
-                  ${ms.map(m => renderBracketMatch(m)).join('')}
-                </div>
-              `;
-            }).join('')}
-          </div>
+          ${bracketHTML}
         </div>
       `;
     };
@@ -476,25 +521,22 @@ function renderElim(stage, matches) {
     `;
   }
 
+  // Tek eleme — SVG bağlantı çizgili, hizalamalı görünüm
+  const columns = allKeys.map(k => {
+    const [bracket, round] = k.split('-');
+    const cnt = rounds[k].length;
+    const label = bracket === 'final' ? 'Final' :
+      cnt === 1 ? 'Final' : cnt === 2 ? 'Yarı Final' :
+      cnt === 4 ? 'Çeyrek Final' : cnt === 8 ? 'Son 16' :
+      cnt === 16 ? 'Son 32' : `R${round}`;
+    return { label, matches: rounds[k] };
+  });
   return `
     <div style="margin-top: 0.5rem;">
       <h4 style="color: var(--text-dim); font-size: 0.78rem; text-transform: uppercase; letter-spacing: 0.05em; margin-bottom: 0.5rem;">
         ${formatLabel(stage.format)}
       </h4>
-      <div class="bracket">
-        ${allKeys.map(k => {
-          const ms = rounds[k];
-          const [bracket, round] = k.split('-');
-          const label = bracket === 'final' ? 'Final' :
-            bracket === 'losers' ? `Losers R${round}` : `R${round}`;
-          return `
-            <div class="bracket-round">
-              <h4>${label}</h4>
-              ${ms.map(m => renderBracketMatch(m)).join('')}
-            </div>
-          `;
-        }).join('')}
-      </div>
+      ${renderElimBracketSVG(columns, renderBracketMatch)}
     </div>
   `;
 }
