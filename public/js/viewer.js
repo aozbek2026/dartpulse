@@ -400,6 +400,26 @@ function renderStandings() {
 }
 
 // ========== Render: Bracket ==========
+function scaleBrackets(host) {
+  requestAnimationFrame(() => {
+    host.querySelectorAll('.bsv-wrap').forEach(wrap => {
+      const inner = wrap.firstElementChild;
+      if (!inner) return;
+      const availW = wrap.offsetWidth;
+      const innerW = parseInt(wrap.dataset.bsvW, 10);
+      const innerH = parseInt(wrap.dataset.bsvH, 10);
+      if (availW > 0 && innerW > availW) {
+        const scale = availW / innerW;
+        inner.style.transform = `scale(${scale})`;
+        wrap.style.height = Math.round(innerH * scale) + 'px';
+      } else {
+        inner.style.transform = '';
+        wrap.style.height = innerH + 'px';
+      }
+    });
+  });
+}
+
 function renderBracket() {
   const host = document.getElementById('bracket-host');
   const tourns = getVisibleTournaments(state.tournaments.filter(t => t.status !== 'draft'));
@@ -415,6 +435,7 @@ function renderBracket() {
       ${t.stages.map(s => renderStage(t, s)).join('')}
     </div>
   `).join('');
+  scaleBrackets(host);
 }
 
 function renderStage(t, stage) {
@@ -454,8 +475,8 @@ function renderElimBracketSVG(columns, matchFn) {
     });
   });
 
-  return `<div style="overflow-x:auto;padding-bottom:0.5rem;">
-    <div style="position:relative;width:${totalW}px;height:${totalH}px;">
+  return `<div class="bsv-wrap" style="overflow:hidden;width:100%;" data-bsv-w="${totalW}" data-bsv-h="${totalH}">
+    <div style="position:relative;width:${totalW}px;height:${totalH}px;transform-origin:top left;">
       <svg style="position:absolute;top:${LH}px;left:0;width:${totalW}px;height:${totalH - LH}px;pointer-events:none;overflow:visible;">${svgLines}</svg>
       ${html}
     </div>
