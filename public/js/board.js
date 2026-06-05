@@ -538,7 +538,7 @@ function renderMatch() {
     </div>
 
     <div class="dp">
-      <div class="dp-names">
+      <div class="dp-names ${isTurn1 ? 'p1-active' : 'p2-active'}">
         <div class="dp-name-col${isTurn1 ? ' active' : ''}">
           <div class="dp-leg-big">${legs1}</div>
           <div class="dp-name-center">

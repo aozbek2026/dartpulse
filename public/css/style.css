@@ -913,11 +913,7 @@ body.board-page #root.board-screen {
   grid-template-columns: 1fr clamp(18px, 7.4vw, 36px) 1fr;
   flex: 0 0 auto;
 }
-.dp-names-mid {
-  background: #0d0f1c;
-  border-left: 1px solid #1e2336;
-  border-right: 1px solid #1e2336;
-}
+.dp-names-mid { background: transparent; }
 
 .dp-name-col {
   padding: 2.1vw 2.6vw;
@@ -927,15 +923,12 @@ body.board-page #root.board-screen {
   gap: 1.6vw;
   border-top: 3px solid transparent;
   border-bottom: 1px solid #1e2336;
-  background: #0f1220;
+  background: transparent;
 }
 
 .dp-name-col.active {
-  border-top: 3px solid #ff3860;
-  border-left: 3px solid #ff3860;
-  border-right: 3px solid #ff3860;
-  border-bottom: 1px solid transparent;
-  background: #2a0e16;
+  border-top-color: #ff3860;
+  border-bottom-color: transparent;
 }
 
 .dp-leg-big {
@@ -998,7 +991,7 @@ body.board-page #root.board-screen {
 }
 /* Aktif yarının TÜM zemini + pembe kenarları tek sürekli katmanda (ek yeri yok).
    var = orta sütunun yarısı = clamp(9px,3.7vw,18px) */
-.dp-scores.p1-active {
+.dp-scores.p1-active, .dp-names.p1-active {
   background: linear-gradient(to right,
     #ff3860 0, #ff3860 3px,
     #2a0e16 3px, #2a0e16 calc(50% - clamp(9px,3.7vw,18px) - 3px),
@@ -1007,7 +1000,7 @@ body.board-page #root.board-screen {
     #1e2336 calc(50% + clamp(9px,3.7vw,18px) - 1px), #1e2336 calc(50% + clamp(9px,3.7vw,18px)),
     #0f1220 calc(50% + clamp(9px,3.7vw,18px)), #0f1220 100%);
 }
-.dp-scores.p2-active {
+.dp-scores.p2-active, .dp-names.p2-active {
   background: linear-gradient(to right,
     #0f1220 0, #0f1220 calc(50% - clamp(9px,3.7vw,18px)),
     #1e2336 calc(50% - clamp(9px,3.7vw,18px)), #1e2336 calc(50% - clamp(9px,3.7vw,18px) + 1px),
