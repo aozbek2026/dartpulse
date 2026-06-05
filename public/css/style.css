@@ -911,7 +911,6 @@ body.board-page #root.board-screen {
 .dp-names {
   display: grid;
   grid-template-columns: 1fr 1fr;
-  border-bottom: 1px solid #1e2336;
   flex: 0 0 auto;
 }
 
@@ -922,13 +921,15 @@ body.board-page #root.board-screen {
   justify-content: space-between;
   gap: 1.6vw;
   border-top: 3px solid transparent;
+  border-bottom: 1px solid #1e2336;
   background: #0f1220;
 }
 
 .dp-name-col.active {
-  border-top: 4px solid #ff3860;
+  border-top: 3px solid #ff3860;
   border-left: 3px solid #ff3860;
   border-right: 3px solid #ff3860;
+  border-bottom: 1px solid transparent;
   background: #2a0e16;
 }
 
