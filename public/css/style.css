@@ -988,7 +988,21 @@ body.board-page #root.board-screen {
   flex: 1 1 0;
   min-height: 0;
   border-bottom: 1px solid #1e2336;
+  position: relative;
 }
+/* Aktif yarının alt pembe kenarı — dikey gradient çizgileriyle aynı hizada */
+.dp-scores.p1-active::after,
+.dp-scores.p2-active::after {
+  content: '';
+  position: absolute;
+  bottom: 0;
+  height: 3px;
+  width: calc(50% - clamp(9px,3.7vw,18px));
+  background: #ff3860;
+  pointer-events: none;
+}
+.dp-scores.p1-active::after { left: 0; }
+.dp-scores.p2-active::after { right: 0; }
 /* Aktif yarının TÜM zemini + pembe kenarları tek sürekli katmanda (ek yeri yok).
    var = orta sütunun yarısı = clamp(9px,3.7vw,18px) */
 .dp-scores.p1-active, .dp-names.p1-active {
