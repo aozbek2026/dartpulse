@@ -1020,6 +1020,24 @@ body.board-page #root.board-screen {
   flex-direction: column;
   justify-content: flex-end;
 }
+/* Üstteki boş bölgenin de aktif yarı zemini + pembe kenarlarıyla dolması için
+   (atış satırları aynı renklerle bunun üzerine oturur → kesintisiz çerçeve) */
+.dp-scores.p1-active .dp-visit-table {
+  background: linear-gradient(to right,
+    #ff3860 0, #ff3860 3px,
+    #2a0e16 3px, #2a0e16 calc(50% - clamp(9px,3.7vw,18px) - 3px),
+    #ff3860 calc(50% - clamp(9px,3.7vw,18px) - 3px), #ff3860 calc(50% - clamp(9px,3.7vw,18px)),
+    #0d0f1c calc(50% - clamp(9px,3.7vw,18px)), #0d0f1c calc(50% + clamp(9px,3.7vw,18px)),
+    #0f1220 calc(50% + clamp(9px,3.7vw,18px)), #0f1220 100%);
+}
+.dp-scores.p2-active .dp-visit-table {
+  background: linear-gradient(to right,
+    #0f1220 0, #0f1220 calc(50% - clamp(9px,3.7vw,18px)),
+    #0d0f1c calc(50% - clamp(9px,3.7vw,18px)), #0d0f1c calc(50% + clamp(9px,3.7vw,18px)),
+    #ff3860 calc(50% + clamp(9px,3.7vw,18px)), #ff3860 calc(50% + clamp(9px,3.7vw,18px) + 3px),
+    #2a0e16 calc(50% + clamp(9px,3.7vw,18px) + 3px), #2a0e16 calc(100% - 3px),
+    #ff3860 calc(100% - 3px), #ff3860 100%);
+}
 
 /* Her visit = tek satır → hizalama otomatik */
 .dp-visit-row {
