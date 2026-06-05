@@ -250,6 +250,15 @@ function renderLive() {
           ? `${m.p1_sets}-${m.p2_sets} (${m.p1_legs}-${m.p2_legs})`
           : `${m.p1_legs}-${m.p2_legs}`;
         const scorerName = m.scorer ? entryLabel(m.scorer) : '—';
+        // Maç başladıysa (live) canlı istatistik satırı — 3DA, atılan ok, 180, en iyi checkout
+        const st1 = (m.stats || []).find(s => s.player_slot === 1) || {};
+        const st2 = (m.stats || []).find(s => s.player_slot === 2) || {};
+        const statsLine = m.status === 'live'
+          ? `<div style="display:grid;grid-template-columns:1fr 1fr;gap:0.5rem;margin-top:0.5rem;padding-top:0.5rem;border-top:1px solid var(--border);">
+               ${liveStatCell(st1, m.current_turn === 1)}
+               ${liveStatCell(st2, m.current_turn === 2)}
+             </div>`
+          : '';
         const statusChip = m.status === 'ready'
           ? '<span class="chip" style="background: var(--warn, #f59e0b); color:#000;">BEKLİYOR</span>'
           : '<span class="chip live">CANLI</span>';
@@ -273,12 +282,29 @@ function renderLive() {
                 <div style="font-weight: 600;">${setLeg}</div>
               </div>
             </div>
+            ${statsLine}
             <div style="margin-top: 0.5rem; padding-top: 0.5rem; border-top: 1px solid var(--border); color: var(--text-dim); font-size: 0.82rem;">
               ✍️ Yazıcı-Hakem: <strong style="color: var(--text);">${scorerName}</strong>
             </div>
           </div>
         `;
       }).join('')}
+    </div>
+  `;
+}
+
+// Canlı maç kartı için tek oyuncunun istatistik hücresi.
+// 3DA (3-ok ortalaması), atılan ok sayısı (3, 6, 9... = kaçıncı visit),
+// 180 sayısı ve en iyi checkout. Sıradaki oyuncu vurgulanır.
+function liveStatCell(st, active) {
+  const darts = st.darts_thrown || 0;
+  const avg3 = darts ? ((st.total_score / darts) * 3).toFixed(1) : '—';
+  return `
+    <div style="font-size:0.72rem;color:var(--text-dim);line-height:1.5;${active ? 'color:var(--accent);' : ''}">
+      <span title="3-ok ortalaması">Ort <strong style="color:var(--text);">${avg3}</strong></span> ·
+      <span title="Atılan ok sayısı">${darts} ok</span><br>
+      <span title="180 sayısı">180: <strong style="color:var(--text);">${st.one_eighty || 0}</strong></span> ·
+      <span title="En iyi checkout">CO: <strong style="color:var(--text);">${st.best_checkout || '—'}</strong></span>
     </div>
   `;
 }

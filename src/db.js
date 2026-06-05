@@ -877,6 +877,7 @@ function activeMatches(userId = null) {
     entry1: entryById(m.entry1_id),
     entry2: entryById(m.entry2_id),
     scorer: m.scorer_entry_id ? entryById(m.scorer_entry_id) : null,
+    stats: statsForMatch(m.id),
   }));
 }
 function pendingReadyMatches(userId = null) {
