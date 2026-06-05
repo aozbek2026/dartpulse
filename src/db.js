@@ -623,6 +623,18 @@ function allPlayers(userId = null) {
 function playerById(id) {
   return db.prepare('SELECT * FROM players WHERE id = ?').get(id);
 }
+// Oyuncu bitmemiş (aktif/bekleyen) bir turnuvada yer alıyor mu?
+// Yer alıyorsa silmek turnuvayı bozar — silme engellenir.
+function playerActiveTournament(id) {
+  return db.prepare(`
+    SELECT t.name AS tournament_name
+    FROM entries e
+    JOIN tournaments t ON t.id = e.tournament_id
+    WHERE (e.player1_id = ? OR e.player2_id = ?)
+      AND t.status != 'finished'
+    LIMIT 1
+  `).get(id, id);
+}
 function deletePlayer(id) {
   db.prepare('DELETE FROM players WHERE id = ?').run(id);
 }
@@ -1842,7 +1854,7 @@ module.exports = {
   setVerifyToken, verifyEmailToken,
   setResetToken, getUserByResetToken, clearResetToken,
   updatePassword, deleteUser,
-  createPlayer, allPlayers, playerById, deletePlayer,
+  createPlayer, allPlayers, playerById, deletePlayer, playerActiveTournament,
   createBoard, allBoards, boardById, deleteBoard, setBoardMatch, clearUserBoards, setBoardTournament,
   createTournament, allTournaments, publicRunningTournaments, setTournamentHiddenFromPublic, tournamentById, updateTournamentStatus, updateTournament, deleteTournament,
   addEntry, entriesForTournament, entryById, updateEntrySlots,

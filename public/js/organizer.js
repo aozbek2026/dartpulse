@@ -1,5 +1,7 @@
 // Organizatör paneli
 let state = { players: [], boards: [], tournaments: [] };
+// Silinemeyen oyuncular için satır-içi uyarı mesajları { playerId: 'mesaj' }
+let playerDeleteWarnings = {};
 let stagesDraft = [{ format: 'single_elim', qualifier_count: null, config: {} }];
 let entriesDraft = [{ player1_id: null, player2_id: null, seed: null }];
 let reportsCache = {}; // tournamentId -> report data
@@ -124,7 +126,14 @@ async function addPlayer() {
 
 async function deletePlayer(id) {
   if (!await showOrgConfirm('Silinsin mi?', 'Sil', 'İptal')) return;
-  await api.del('/api/players/' + id);
+  const res = await api.del('/api/players/' + id);
+  if (res && res.error) {
+    playerDeleteWarnings[id] = res.error;
+    renderPlayers();
+    toast('Silinemedi: ' + res.error);
+  } else {
+    delete playerDeleteWarnings[id];
+  }
 }
 
 async function bulkAddPlayers() {
@@ -1053,16 +1062,65 @@ document.addEventListener('DOMContentLoaded', () => {
 function renderPlayers() {
   document.getElementById('player-count').textContent = state.players.length;
   const list = document.getElementById('player-list');
+  const bulkBar = document.getElementById('player-bulk-bar');
   if (!state.players.length) {
     list.innerHTML = '<div class="empty">Henüz oyuncu yok</div>';
+    if (bulkBar) bulkBar.style.display = 'none';
     return;
   }
-  list.innerHTML = state.players.map(p => `
+  if (bulkBar) bulkBar.style.display = 'flex';
+  list.innerHTML = state.players.map(p => {
+    const warn = playerDeleteWarnings[p.id];
+    return `
     <li>
-      <span><strong>${p.name}</strong>${p.nickname ? ` <span style="color: var(--text-dim);">(${p.nickname})</span>` : ''}</span>
+      <span style="display: flex; align-items: center; gap: 0.6rem; flex-wrap: wrap;">
+        <input type="checkbox" class="player-check" value="${p.id}" onchange="updatePlayerSelection()" />
+        <span><strong>${p.name}</strong>${p.nickname ? ` <span style="color: var(--text-dim);">(${p.nickname})</span>` : ''}</span>
+        ${warn ? `<span class="player-warn" style="color: #2ecc71; font-size: 0.82rem;">⚠ ${warn}</span>` : ''}
+      </span>
       <button class="icon danger" onclick="deletePlayer(${p.id})">Sil</button>
-    </li>
-  `).join('');
+    </li>`;
+  }).join('');
+  updatePlayerSelection();
+}
+
+// Seçili oyuncu kutucuklarını oku, sayaç + buton durumunu güncelle
+function updatePlayerSelection() {
+  const checks = [...document.querySelectorAll('.player-check')];
+  const selected = checks.filter(c => c.checked);
+  const countEl = document.getElementById('player-selected-count');
+  const delBtn = document.getElementById('player-bulk-del');
+  const selectAll = document.getElementById('player-select-all');
+  if (countEl) countEl.textContent = `${selected.length} seçili`;
+  if (delBtn) delBtn.disabled = selected.length === 0;
+  if (selectAll) selectAll.checked = checks.length > 0 && selected.length === checks.length;
+}
+
+function toggleSelectAllPlayers(checked) {
+  document.querySelectorAll('.player-check').forEach(c => { c.checked = checked; });
+  updatePlayerSelection();
+}
+
+async function deleteSelectedPlayers() {
+  const ids = [...document.querySelectorAll('.player-check')].filter(c => c.checked).map(c => +c.value);
+  if (!ids.length) return;
+  if (!await showOrgConfirm(`${ids.length} oyuncu silinsin mi?`, 'Sil', 'İptal')) return;
+  let deleted = 0, failed = 0;
+  for (const id of ids) {
+    try {
+      const res = await api.del('/api/players/' + id);
+      if (res && res.error) {
+        playerDeleteWarnings[id] = res.error;
+        failed++;
+      } else {
+        delete playerDeleteWarnings[id];
+        deleted++;
+      }
+    } catch (e) { failed++; }
+  }
+  renderPlayers();
+  if (failed) toast(`${deleted} silindi, ${failed} silinemedi (aktif turnuvada)`);
+  else toast(`${deleted} oyuncu silindi`);
 }
 
 function renderBoards() {

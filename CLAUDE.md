@@ -686,6 +686,57 @@ ayrı renderer kullanıyor; istenirse oralara da benzer vurgu taşınabilir.
 
 ---
 
+## Turnuva Kayıt Sistemi — Tasarım (Haziran 2026, beyin fırtınası tamam, KOD BEKLİYOR)
+
+Ayrıntılı tasarım belgesi: `turnuva-kayit-sistemi-tasarim.docx` (klasör kökünde). Aşağısı özet.
+
+**Amaç:** Organizatör ileri tarihli turnuvayı "event" olarak açar; katılımcı kendi hesabıyla online kayıt olur; turnuva günü yüz yüze check-in ile gerçek liste netleşir; "Confirm" anında mevcut turnuva motoruna (players/entries) aktarılır. Kariyer istatistikleri opsiyonel olarak katılımcı profilinde tutulur.
+
+**Temel ilkeler:** (1) Korumalı modüllere (`tournament.js`, `scheduler.js`, `match-engine.js`, `board.js`, `scorer.html`) DOKUNMADAN, additive. Yeni katman "Confirm" anına kadar bağımsız yaşar. (2) Tüm yeni özellikler turnuva bazında OPSİYONEL (3 kutucuk).
+
+### Roller (tek hesap, çoklu yetki)
+- **Katılımcı (player):** herkeste var, kayıt anında otomatik default. Kayıt ekranı sade kalır (rol seçimi YOK).
+- **Organizatör:** kayıtta değil, giriş sonrası "Organizatör Ol" başvurusuyla istenir; admin onayıyla aktif. Durum: `none → pending → approved/rejected` (rejected tekrar başvurabilir). Başvuruda admin'e e-posta gider.
+- **Admin:** DB'deki `role` alanından okunur (koda gömülü e-posta DEĞİL — ileride çoklu admin için). İlk admin `scripts/seed-admin.js` ile tohumlanır. "Son admin koruması": sıfır-admin kilitlenmesi engellenir.
+
+### Admin paneli (`admin.html`, ayrı sayfa, sadece role='admin')
+Bekleyen başvurular onay/red · onaylı organizatörler (yetki geri al) · tüm turnuvalar (yayında + geçmiş) sonlandır/sil/geçmişle sil · (gelecek) başka admin atama.
+
+### Turnuva oluşturmada 3 opsiyonel kutucuk
+- **Online kayıt** açık → "Gelecek Turnuvalar"da görünür, kayıt + yedek liste işler. Kapalı → eski usul elle ekleme.
+- **Check-in** açık → gün-içi yüz yüze check-in aşaması.
+- **İstatistik tutulsun** açık → maç istatistikleri katılımcı profiline işlenir.
+- Bağımlılık: istatistiğin katılımcı PROFİLİNDE birikmesi için online kayıt + `players.account_user_id` bağı gerekir. "İstatistik tutulmasın" = (a) maç anında her şey normal hesaplanır (motor zorunlu), sadece turnuva sonu kariyer AKTARIMI atlanır. Korumalı modüle dokunulmaz.
+
+### Online kayıt akışı + durum makinesi
+Kayıt → (kontenjan doluysa) yedek liste → iptal her zaman serbest, iptalde yedek başı otomatik asıl listeye akar (kayıt sırasına göre) → gün-içi organizatör check-in'i manuel açar, geleni yüz yüze işaretler, gelmeyen yerine yedek alınır → "Katılımcıları Onayla" (Confirm) = mevcut motora transfer.
+Registration durumları: `registered | waitlisted | checked_in | confirmed | withdrawn | no_show`.
+
+### Bildirim
+Otomatik bildirim YOK (her iki taraf panelden görür). Tek e-posta: organizatör başvurusu → admin.
+
+### Katılımcı profili: MVP orta seviye (katıldığı turnuvalar + sonuç, maç G/M, kariyer 3DA, en iyi checkout, toplam 180). Sadece online-kayıt+istatistik-açık turnuvalar görünür.
+
+### Önerilen veri modeli (additive, geriye dönük uyumlu)
+- `users`: `role TEXT DEFAULT 'player'`, `organizer_status TEXT`, `organizer_note TEXT`
+- `players`: `account_user_id INTEGER` (elle girilende NULL)
+- `tournaments`: `reg_enabled`, `checkin_enabled`, `stats_to_profile` (INTEGER DEFAULT 0), `category`, `capacity`, `reg_deadline`, `checkin_time`, `event_date`, `description`
+- Yeni tablo `registrations`: id, tournament_id, user_id, status, reg_order, player_id (Confirm'de bağlanır), created_at/updated_at
+
+### Dilim planı (sıra A→G, her dilim öncesi kısa plan + onay)
+- **A** Rol altyapısı (users kolonları + `seed-admin.js` [HAZIR] + requireAdmin)
+- **B** Organizatör başvuru akışı (+ mailer `sendOrganizerRequestEmail`)
+- **C** Admin paneli (`admin.html`)
+- **D** Event oluşturma opsiyonları (3 kutucuk + ek alanlar)
+- **E** Online kayıt + yedek liste + "Gelecek Turnuvalar" + "Turnuvalarım"
+- **F** Check-in + Confirm (→ players/entries transfer)
+- **G** Katılımcı profili + koşullu kariyer aktarımı
+
+### E-posta durumu (kontrol gerekiyor)
+`src/mailer.js` Resend ile hazır ama: (1) `RESEND_API_KEY` `render.yaml`'da YOK — Render panelinden manuel set edilmediyse production'da da mail gitmiyor (no-op). (2) FROM hâlâ test adresi `onboarding@resend.dev`; gerçek `noreply@dartcorepro.com` için Resend'de domain doğrulama (DNS) + `EMAIL_FROM` env gerekir. Yerelde `.env` yok → yerel testte mail gitmez (beklenen).
+
+---
+
 ## Bekleyen yol haritası — production launch
 
 ### Faz 1: Render deploy ✅ TAMAMLANDI (26 Mayıs 2026)

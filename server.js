@@ -229,6 +229,13 @@ app.delete('/api/players/:id', auth.requireAuth, (req, res) => {
   if (p && p.user_id && p.user_id !== req.user.id) {
     return res.status(403).json({ error: 'Yetkiniz yok' });
   }
+  const active = db.playerActiveTournament(+req.params.id);
+  if (active) {
+    return res.status(409).json({
+      error: `Aktif turnuvada (${active.tournament_name}) yer alıyor`,
+      active: true,
+    });
+  }
   db.deletePlayer(+req.params.id);
   scheduleBroadcast();
   res.json({ ok: true });
