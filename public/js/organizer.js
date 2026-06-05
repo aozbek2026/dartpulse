@@ -1460,9 +1460,19 @@ function _renderMatchEditModal() {
 
   const n = _editEntries.length;
   const bracketSize = _nextPow2(n);
+  // Gerçek bracket motoruyla (src/tournament.js → seedWithByes) BİREBİR aynı düzen:
+  // _editEntries sırası "seed 1, seed 2, ..." kabul edilir, seed sırasına göre
+  // bracket'e yerleştirilir, BYE'lar dağıtılır. Böylece önizleme gerçeği yansıtır
+  // ve iki BYE asla yan yana gelmez.
+  const seedOrder = _buildSeedOrder(bracketSize); // [1, N, N/2+1, ...]
+  const placed = new Array(bracketSize).fill(null);
+  for (let s = 0; s < bracketSize; s++) {
+    const idx = seedOrder[s] - 1; // 0-tabanlı
+    placed[s] = idx < n ? _editEntries[idx] : null;
+  }
   const pairs = [];
   for (let i = 0; i < bracketSize; i += 2) {
-    pairs.push([_editEntries[i] ?? null, _editEntries[i + 1] ?? null]);
+    pairs.push([placed[i] ?? null, placed[i + 1] ?? null]);
   }
 
   const pairsHtml = pairs.map((pair, mi) => {
@@ -1542,16 +1552,13 @@ function _editSortSeq() {
 }
 
 function _editSortSeeded() {
-  // Standart 1-vs-N seri başı dağılımı
-  const n = _editEntries.length;
-  const bracketSize = _nextPow2(n);
-  const seedOrder = _buildSeedOrder(bracketSize); // [1, N, N/2+1, N/2, ...]
-  const original = [..._editEntries]; // mevcut sıra = "seed 1, seed 2, ..." kabul edilir
-  const result = [];
-  for (const seed of seedOrder) {
-    if (seed <= n) result.push(original[seed - 1]);
-  }
-  _editEntries = result;
+  // Seri başlarını öne al: seed değeri olanlar küçükten büyüğe (seed 1, 2, ...),
+  // ardından seed'siz oyuncular mevcut sıralarında.
+  // Dağıtım (1-vs-N, BYE serpiştirme) artık _renderMatchEditModal'daki seedOrder
+  // ile otomatik yapıldığı için burada SADECE sıralama listesi hazırlanır.
+  const seeded = _editEntries.filter(e => e && e.seed).slice().sort((a, b) => a.seed - b.seed);
+  const unseeded = _editEntries.filter(e => !e || !e.seed);
+  _editEntries = [...seeded, ...unseeded];
   _editSelected = null;
   _renderMatchEditModal();
 }
