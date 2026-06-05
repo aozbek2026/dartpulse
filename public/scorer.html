@@ -664,7 +664,7 @@ function renderX01Match(m) {
       <button class="btn secondary" onclick="resetGame()">Yeniden</button>
     </div>
     <div class="dp">
-      <div class="dp-names">
+      <div class="dp-names ${isTurn1 ? 'p1-active' : 'p2-active'}">
         <div class="dp-name-col${isTurn1 ? ' active' : ''}">
           <div class="dp-leg-big">${G.legs[1]}</div>
           <div class="dp-name-center">
@@ -672,6 +672,7 @@ function renderX01Match(m) {
             <div class="dp-meta"><span>Ort <strong>${avg1}</strong></span></div>
           </div>
         </div>
+        <div class="dp-names-mid"></div>
         <div class="dp-name-col${!isTurn1 ? ' active' : ''}" style="flex-direction:row-reverse;">
           <div class="dp-leg-big">${G.legs[2]}</div>
           <div class="dp-name-center">

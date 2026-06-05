@@ -632,15 +632,28 @@ Eskiden aktif oyuncu sadece ince kırmızı yazı + 3px üst çizgi + neredeyse 
 ton (`#140a10`) ile işaretliydi; uzaktan/hızlı bakışta okunmuyordu. Artık aktif yarı:
 - Belirgin koyu kırmızı zemin (`#2a0e16`) — pasif yarı koyu lacivert kalır
 - İsim **dolu kırmızı banda** (`#ff3860` zemin, beyaz yazı) alındı (eski: sadece kırmızı yazı)
-- Yarı baştan aşağı kırmızı çerçeveyle sarıldı (isim kolonu `border`, skor hücreleri
-  `box-shadow: inset` ile — **border yerine inset shadow**: grid hizalaması kaymasın diye)
+- Yarı dört taraftan kırmızı çerçeveyle sarıldı: üst (isim kutusu `border-top`),
+  sol/sağ/orta (gradient), alt (`.dp-scores::after`)
 - Eşli (doubles) maçta kırmızı zeminde aktif alt-oyuncu adı + Ort/Set yazıları beyaza/açığa
   çekildi (kırmızı-üstü-kırmızı kontrast sorunu)
 
-Tümü `public/css/style.css`: `.dp-name-col.active`, `.dp-name-col.active .dp-pname`,
-`.dp-scores.p1-active/.p2-active` (rem-row + visit-row), `.dp-pname-sub`, `.dp-meta` active
-override'ları. **`board.js` JS'ine dokunulmadı** — vurgu zaten `current_turn`'e bağlı
-`.active` / `.p1-active|.p2-active` class'larıyla geliyordu, sadece görünümleri güçlendirildi.
+**ÖNEMLİ — çerçeve tek sürekli gradient'ten gelir (parça parça DEĞİL):** İlk denemede
+çerçeve parça parça çiziliyordu (isim kutusu `border` + skor hücrelerinde `box-shadow:inset`).
+İki sorun çıktı: (a) kalan-skor kutusu ile boş orta bölge arasında çentik, (b) isim satırı
+`1fr` grid kolonundan, skor alanı gradient `%50`'den çizdiği için orta dikey çizgiler **1px
+kayıyordu** (grid track yuvarlaması ≠ %50). Çözüm: aktif yarının **tüm zemini + sol/sağ/orta
+dikey pembe çizgileri tek bir `linear-gradient`** ile çiziliyor ve bu **aynı gradient hem
+`.dp-names` hem `.dp-scores`'a** uygulanıyor (ikisi de `.dp` içinde aynı genişlikte → `%50`
+birebir aynı piksel). Orta sütun genişliği `clamp(18px,7.4vw,36px)`, gradient'te yarısı
+`clamp(9px,3.7vw,18px)` olarak `calc(50% ∓ ...)` ile kullanılır. Atış satırları/rem satırı
+artık **kendi zemin/kenarlarını çizmez** (şeffaf), tek katmanın üstüne oturur → hiç ek yeri yok.
+
+İlgili kurallar `public/css/style.css`: `.dp-scores.p1-active, .dp-names.p1-active` (+ p2)
+gradient'leri, `.dp-scores::after` (alt kenar), `.dp-name-col(.active)` (sadece üst kenar +
+metin renkleri, zemin/yan kenar YOK), `.dp-names-mid` (şeffaf orta hücre), `.dp-pname-sub`,
+`.dp-meta` active override'ları. Markup tarafı (`board.js` + `scorer.html`): `.dp-names`'e
+`p1-active|p2-active` class'ı + araya boş `<div class="dp-names-mid">` eklendi (isim satırı da
+skor alanı gibi 3 kolonlu olsun diye). Vurgunun yön bilgisi zaten `current_turn`'den geliyor.
 
 ### 2. Atış flash modalı
 Kısa leg'lerde atış çok hızlı kaydedildiği için katılımcılar "sayı girdi mi?" diye emin
@@ -652,10 +665,13 @@ olamıyordu. Artık Enter/Gönder ile atış kaydedilince ekran ortasında büy�
 - `style.css`: `.score-flash-modal` (+ `.show`, `.bust`, `.score-flash-num`). `position:fixed`
   + opacity/scale geçişi. Mevcut `.score-flash` (keypad parıltısı) ile karıştırma — bu ayrı.
 
-### Not: bu değişiklikler scorer.html'e (Hızlı Skor) henüz taşınmadı
-Cricket duplikasyon kuralı (Kod konvansiyonu #0) gibi, board görsel iyileştirmeleri de
-ileride `scorer.html`'e elle kopyalanacak. Kullanıcı "her şey bitince Hızlı Skor'u da
-güncelleriz" dedi — bekleyen iş.
+### Hızlı Skor (scorer.html) — uygulandı
+İkisi de `scorer.html`'e taşındı. CSS ortak (`/css/style.css`) olduğu için aktif yarı
+gradient'i + flash stilleri otomatik geçti; tek gereken markup'tı: `.dp-names`'e
+`p1-active|p2-active` class'ı + `.dp-names-mid` boş hücresi eklendi. Atış flash'ı (`showScoreFlash`
++ `submitVisit` içindeki çağrı) zaten `scorer.html`'de mevcuttu. Cricket duplikasyon kuralı
+(Kod konvansiyonu #0) board.js ↔ scorer.html eşitliği için hâlâ geçerli — gelecekte board
+görselini değiştirirsen scorer'ı da güncelle.
 
 ### Bekleyen: viewer/TV'ye taşıma
 Aktif yarı vurgusu şimdilik sadece tablet board'unda. İzleyici (`viewer.js`) ve TV (`tv.js`)
