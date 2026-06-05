@@ -621,6 +621,46 @@ Final kutusu solda çıkıyor ve ilk tur (R1) kutularının sol tarafında sarka
 Not: `organizer.js` korumalı modül listesinde DEĞİL; bu yüzden bug-fix doğrudan yapıldı.
 `board.js`/`scorer.html` braket göstermiyor, etkilenmedi.
 
+## Skor board görsel iyileştirmeleri — aktif yarı + atış flash (Haziran 2026)
+
+Canlı turnuvada katılımcılardan iki görsel geri bildirim geldi, ikisi de skor mantığına
+dokunulmadan (saf CSS + küçük JS) kapatıldı. `match-engine.js` ve `_createMatch`
+akışına el sürülmedi.
+
+### 1. Sıradaki oyuncunun yarısı belirginleştirildi
+Eskiden aktif oyuncu sadece ince kırmızı yazı + 3px üst çizgi + neredeyse görünmez koyu
+ton (`#140a10`) ile işaretliydi; uzaktan/hızlı bakışta okunmuyordu. Artık aktif yarı:
+- Belirgin koyu kırmızı zemin (`#2a0e16`) — pasif yarı koyu lacivert kalır
+- İsim **dolu kırmızı banda** (`#ff3860` zemin, beyaz yazı) alındı (eski: sadece kırmızı yazı)
+- Yarı baştan aşağı kırmızı çerçeveyle sarıldı (isim kolonu `border`, skor hücreleri
+  `box-shadow: inset` ile — **border yerine inset shadow**: grid hizalaması kaymasın diye)
+- Eşli (doubles) maçta kırmızı zeminde aktif alt-oyuncu adı + Ort/Set yazıları beyaza/açığa
+  çekildi (kırmızı-üstü-kırmızı kontrast sorunu)
+
+Tümü `public/css/style.css`: `.dp-name-col.active`, `.dp-name-col.active .dp-pname`,
+`.dp-scores.p1-active/.p2-active` (rem-row + visit-row), `.dp-pname-sub`, `.dp-meta` active
+override'ları. **`board.js` JS'ine dokunulmadı** — vurgu zaten `current_turn`'e bağlı
+`.active` / `.p1-active|.p2-active` class'larıyla geliyordu, sadece görünümleri güçlendirildi.
+
+### 2. Atış flash modalı
+Kısa leg'lerde atış çok hızlı kaydedildiği için katılımcılar "sayı girdi mi?" diye emin
+olamıyordu. Artık Enter/Gönder ile atış kaydedilince ekran ortasında büyük rakam (~3-4cm,
+`clamp(72px,16vmin,150px)` yükseklik) **~1 sn** belirip soluyor; bust'ta kırmızı "Bust".
+- `board.js`: `submitScore` içinde başarılı POST sonrası `showScoreFlash(text, isBust)`
+  çağrısı (yeni helper). **Tıklamayı engellemez** (`pointer-events: none`) — input açık kalır.
+  Leg bittiyse zaten `showLegSummary` açıldığı için flash **gösterilmez** (çakışma önleme).
+- `style.css`: `.score-flash-modal` (+ `.show`, `.bust`, `.score-flash-num`). `position:fixed`
+  + opacity/scale geçişi. Mevcut `.score-flash` (keypad parıltısı) ile karıştırma — bu ayrı.
+
+### Not: bu değişiklikler scorer.html'e (Hızlı Skor) henüz taşınmadı
+Cricket duplikasyon kuralı (Kod konvansiyonu #0) gibi, board görsel iyileştirmeleri de
+ileride `scorer.html`'e elle kopyalanacak. Kullanıcı "her şey bitince Hızlı Skor'u da
+güncelleriz" dedi — bekleyen iş.
+
+### Bekleyen: viewer/TV'ye taşıma
+Aktif yarı vurgusu şimdilik sadece tablet board'unda. İzleyici (`viewer.js`) ve TV (`tv.js`)
+ayrı renderer kullanıyor; istenirse oralara da benzer vurgu taşınabilir.
+
 ## Takım Maçı — Yarın Yapılacaklar (öncelik sırası)
 
 1. **Tablet entegrasyonu**: Phase maçlarını board'lara gönder. Tablet üzerinden oyna, maç bitince sonuç otomatik team_phase_match'e yazılsın ve sıradaki maça geçilsin.

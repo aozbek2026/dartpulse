@@ -1532,6 +1532,9 @@ async function submitScore() {
   const inputEl = document.getElementById('keypad-input');
   if (inputEl) { inputEl.classList.remove('score-flash'); void inputEl.offsetWidth; inputEl.classList.add('score-flash'); }
   if (res.bust) toast('Bust!');
+  // Atış flash'ı — kaydedilen sayı ekran ortasında ~1 sn belirip soluyor (tıklamayı engellemez).
+  // Leg bittiyse zaten leg-özeti açılıyor, çakışmasın diye flash gösterme.
+  if (!res.legFinished) showScoreFlash(res.bust ? 'Bust' : String(score), res.bust);
   // Leg bitti ama maç bitmediyse → mini özet modalı göster ve onay bekle.
   // (Maç tamamlandıysa zaten post-match ekranı açılıyor; ayrıca özet vermiyoruz.)
   if (res.legFinished && !res.matchFinished && res.legSummary) {
@@ -1546,6 +1549,24 @@ async function submitScore() {
     }
   }
   if (res.matchFinished) toast('Maç tamamlandı!');
+}
+
+// Atış flash modalı — kaydedilen sayıyı ekran ortasında kısa süre gösterir.
+// Tıklamayı engellemez (pointer-events: none), kendiliğinden silinir.
+let _scoreFlashEl = null;
+function showScoreFlash(text, isBust) {
+  if (_scoreFlashEl) { _scoreFlashEl.remove(); _scoreFlashEl = null; }
+  const el = document.createElement('div');
+  el.className = 'score-flash-modal' + (isBust ? ' bust' : '');
+  el.innerHTML = `<div class="score-flash-num">${text}</div>`;
+  document.body.appendChild(el);
+  _scoreFlashEl = el;
+  void el.offsetWidth; // reflow → giriş animasyonu
+  el.classList.add('show');
+  setTimeout(() => {
+    el.classList.remove('show');
+    setTimeout(() => { if (el === _scoreFlashEl) _scoreFlashEl = null; el.remove(); }, 250);
+  }, 800);
 }
 
 // Checkout anında "Bitiren çift kaçıncı oktu?" promptu.

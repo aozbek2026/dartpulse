@@ -830,6 +830,43 @@ body.board-page #root.board-screen {
   display: inline-block;
 }
 
+/* Atış flash modalı — kaydedilen sayı ekran ortasında belirip soluyor */
+.score-flash-modal {
+  position: fixed;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  pointer-events: none;
+  z-index: 9000;
+  opacity: 0;
+  transition: opacity 0.18s ease-out;
+}
+.score-flash-modal.show { opacity: 1; }
+.score-flash-modal .score-flash-num {
+  background: rgba(20, 10, 16, 0.92);
+  border: 3px solid #ff3860;
+  border-radius: 16px;
+  color: #fff;
+  font-weight: 900;
+  line-height: 1;
+  height: clamp(72px, 16vmin, 150px);
+  min-width: clamp(110px, 26vmin, 240px);
+  padding: 0 clamp(20px, 5vmin, 48px);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: clamp(40px, 11vmin, 96px);
+  font-variant-numeric: tabular-nums;
+  transform: scale(0.85);
+  transition: transform 0.18s ease-out;
+}
+.score-flash-modal.show .score-flash-num { transform: scale(1); }
+.score-flash-modal.bust .score-flash-num {
+  background: rgba(40, 12, 12, 0.92);
+  color: #ff5b5b;
+}
+
 /* Viewer: atılan skor badge — kısa görünür, yukarı kayarak solar */
 @keyframes throwFade {
   0%   { opacity: 1; transform: translateY(0)   scale(1.3); }
@@ -888,7 +925,12 @@ body.board-page #root.board-screen {
   background: #0f1220;
 }
 
-.dp-name-col.active { border-top-color: #ff3860; background: #140a10; }
+.dp-name-col.active {
+  border-top: 4px solid #ff3860;
+  border-left: 3px solid #ff3860;
+  border-right: 3px solid #ff3860;
+  background: #2a0e16;
+}
 
 .dp-leg-big {
   font-size: clamp(22px, 7.4vw, 60px);
@@ -913,7 +955,13 @@ body.board-page #root.board-screen {
   text-overflow: ellipsis;
 }
 
-.dp-name-col.active .dp-pname { color: #ff3860; }
+.dp-name-col.active .dp-pname {
+  display: inline-block;
+  background: #ff3860;
+  color: #fff;
+  padding: 0.4vw 2.4vw;
+  border-radius: 0.8vw;
+}
 
 /* Doubles: iki oyuncu satırı */
 .dp-pname-sub {
@@ -925,9 +973,11 @@ body.board-page #root.board-screen {
   color: #e2e8f0; /* pasif takım normal rengi */
   font-weight: 700;
 }
-.dp-name-col.active .dp-pname-sub { color: #4a5568; }
-.dp-name-col.active .dp-pname-sub.dp-sub-active { color: #ff3860; font-weight: 700; }
+.dp-name-col.active .dp-pname-sub { color: #c98a98; }
+.dp-name-col.active .dp-pname-sub.dp-sub-active { color: #fff; font-weight: 700; }
 
+.dp-name-col.active .dp-meta span   { color: #c98a98; }
+.dp-name-col.active .dp-meta strong { color: #fff; }
 .dp-meta { display: flex; justify-content: center; gap: 2.6vw; }
 .dp-meta span   { font-size: clamp(9px,  2.6vw, 20px); color: #4a5568; }
 .dp-meta strong { font-size: clamp(10px, 2.9vw, 22px); color: #8892b0; }
@@ -949,10 +999,10 @@ body.board-page #root.board-screen {
 }
 .dp-rem-row > :first-child { padding: 2.1vw 2.6vw; text-align: center; }
 .dp-rem-row > :last-child  { padding: 2.1vw 2.6vw; text-align: center; }
-.dp-scores.p1-active .dp-rem-row > :first-child { background: #140a10; }
+.dp-scores.p1-active .dp-rem-row > :first-child { background: #2a0e16; box-shadow: inset 3px 0 0 #ff3860, inset -3px 0 0 #ff3860; }
 .dp-scores.p1-active .dp-rem-row > :last-child  { background: #0f1220; }
 .dp-scores.p2-active .dp-rem-row > :first-child { background: #0f1220; }
-.dp-scores.p2-active .dp-rem-row > :last-child  { background: #140a10; }
+.dp-scores.p2-active .dp-rem-row > :last-child  { background: #2a0e16; box-shadow: inset 3px 0 0 #ff3860, inset -3px 0 0 #ff3860; }
 .dp-rem-row > :nth-child(2) { background: #0d0f1c; border-left: 1px solid #1e2336; border-right: 1px solid #1e2336; }
 
 /* Atış tablosu: tüm boşluğu doldurur, eskiler üstten kırpılır */
@@ -971,10 +1021,10 @@ body.board-page #root.board-screen {
   grid-template-columns: 1fr clamp(18px, 7.4vw, 36px) 1fr;
   flex-shrink: 0;
 }
-.dp-scores.p1-active .dp-visit-row > :first-child { background: #140a10; }
+.dp-scores.p1-active .dp-visit-row > :first-child { background: #2a0e16; box-shadow: inset 3px 0 0 #ff3860, inset -3px 0 0 #ff3860; }
 .dp-scores.p1-active .dp-visit-row > :last-child  { background: #0f1220; }
 .dp-scores.p2-active .dp-visit-row > :first-child { background: #0f1220; }
-.dp-scores.p2-active .dp-visit-row > :last-child  { background: #140a10; }
+.dp-scores.p2-active .dp-visit-row > :last-child  { background: #2a0e16; box-shadow: inset 3px 0 0 #ff3860, inset -3px 0 0 #ff3860; }
 .dp-visit-row > :nth-child(2) { background: #0d0f1c; border-left: 1px solid #1e2336; border-right: 1px solid #1e2336; }
 
 .dp-visit-num {
