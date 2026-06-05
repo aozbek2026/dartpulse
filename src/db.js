@@ -704,7 +704,12 @@ function publicRunningTournaments() {
     ORDER BY status DESC, id DESC
   `).all();
   const countStmt = db.prepare('SELECT COUNT(*) AS c FROM entries WHERE tournament_id = ?');
-  return rows.map(t => ({ ...t, player_count: (countStmt.get(t.id) || {c:0}).c }));
+  const liveStmt  = db.prepare("SELECT COUNT(*) AS c FROM matches WHERE tournament_id = ? AND status = 'live'");
+  return rows.map(t => ({
+    ...t,
+    player_count: (countStmt.get(t.id) || {c:0}).c,
+    live_match_count: (liveStmt.get(t.id) || {c:0}).c,
+  }));
 }
 
 function setTournamentHiddenFromPublic(id, userId) {

@@ -76,6 +76,12 @@
     font-size: 0.75rem; font-weight: 700;
     margin-bottom: 0.75rem;
   }
+  .tp-card-badge.tp-badge-idle {
+    background: rgba(148,163,184,0.14); color: var(--text-dim);
+  }
+  .tp-card-badge.tp-badge-done {
+    background: rgba(34,197,94,0.14); color: #22c55e;
+  }
   .tp-empty {
     text-align: center; color: var(--text-dim);
     padding: 4rem 1rem;
@@ -258,12 +264,41 @@
       const sets = t.sets_to_win > 1 ? ` · ${t.sets_to_win} set` : '';
       const cnt  = t.player_count ? t.player_count + ' oyuncu' : '';
       const info = [fmt, mode, legs + sets, cnt].filter(Boolean).join(' · ');
+      const isFinished = t.status === 'finished';
+      const live = t.live_match_count || 0;
+      let badge;
+      if (isFinished) {
+        badge = `<div class="tp-card-badge tp-badge-done">✅ Bitti</div>`;
+      } else if (live > 0) {
+        badge = `<div class="tp-card-badge">🔴 ${live} maç oynanıyor</div>`;
+      } else {
+        badge = `<div class="tp-card-badge tp-badge-idle">⏸️ Maç bekleniyor</div>`;
+      }
       return `<a class="tp-card" href="/viewer.html?t=${t.id}">
-        <div class="tp-card-badge">🔴 Canlı</div>
+        ${badge}
         <div class="tp-card-name">${esc(t.name)}</div>
         <div class="tp-card-meta">${esc(info)}</div>
       </a>`;
     }).join('');
+  }
+
+  let pickerTimer = null;
+  function refreshPicker() {
+    return fetch('/api/tournaments/public')
+      .then(r => r.ok ? r.json() : [])
+      .then(list => showPicker(list))
+      .catch(() => {});
+  }
+  function startAutoRefresh() {
+    if (pickerTimer) return;
+    // Sekme görünürken her 15 sn'de bir tazele
+    pickerTimer = setInterval(() => {
+      if (document.visibilityState === 'visible') refreshPicker();
+    }, 15000);
+    // Sekmeye geri dönüldüğünde anında tazele
+    document.addEventListener('visibilitychange', () => {
+      if (document.visibilityState === 'visible') refreshPicker();
+    });
   }
 
   // ?t= parametresi varsa giriş şartı yok, direkt viewer
@@ -275,16 +310,11 @@
     .then(r => r.json())
     .then(d => {
       if (d && d.user) return; // giriş var → normal viewer
-      // Giriş yok → public turnuva listesini çek
-      return fetch('/api/tournaments/public')
-        .then(r => r.ok ? r.json() : [])
-        .then(list => showPicker(list));
+      // Giriş yok → public turnuva listesini çek + otomatik yenilemeyi başlat
+      return refreshPicker().then(startAutoRefresh);
     })
     .catch(() => {
-      fetch('/api/tournaments/public')
-        .then(r => r.ok ? r.json() : [])
-        .then(list => showPicker(list))
-        .catch(() => showPicker([]));
+      refreshPicker().then(startAutoRefresh).catch(() => showPicker([]));
     });
 })();
 </script>
