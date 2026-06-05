@@ -120,8 +120,8 @@
 <script>
 // =====================================================================
 // HIZLI SKOR — local-only scoring app
-// NOT: Cricket/FB/Karambol render kodu board.js'ten kopyalanmıştır.
-// Cricket UI değişikliği yapılırsa BURASI da güncellenmelidir.
+// NOT: Cricket/FB/Karambol render kodu ve X01 atış flash modalı (showScoreFlash)
+// board.js'ten kopyalanmıştır. Board UI/mantığı değişirse BURASI da güncellenmelidir.
 // =====================================================================
 
 // ---- Mode selector ----
@@ -1047,10 +1047,41 @@ async function x01Submit() {
     }
   }
 
+  const slot = G.currentTurn;
+  // Bust tespiti (recordX01Throw ile aynı kural) — flash etiketi için
+  const remBefore = G.remaining[slot];
+  const nr = remBefore - score;
+  const bust = (nr < 0 || nr === 1);
+  const legBefore = G.currentLeg;
+
   saveUndoSnapshot();
-  recordX01Throw(G.currentTurn, score, finishDarts);
+  recordX01Throw(slot, score, finishDarts);
+
+  // Atış flash'ı — kaydedilen sayı ekran ortasında ~1 sn belirip soluyor (tıklamayı engellemez).
+  // board.js ile birebir: leg/maç bittiyse zaten özet/sonuç açılıyor, çakışmasın diye flash gösterme.
+  const legFinished = G.finished || G.currentLeg !== legBefore;
+  if (!legFinished) showScoreFlash(bust ? 'Bust' : String(score), bust);
+
   refresh();
   if (G.finished) showResult();
+}
+
+// Atış flash modalı — board.js'ten birebir kopya (style.css .score-flash-modal kullanır).
+// Tıklamayı engellemez (pointer-events: none), kendiliğinden silinir.
+let _scoreFlashEl = null;
+function showScoreFlash(text, isBust) {
+  if (_scoreFlashEl) { _scoreFlashEl.remove(); _scoreFlashEl = null; }
+  const el = document.createElement('div');
+  el.className = 'score-flash-modal' + (isBust ? ' bust' : '');
+  el.innerHTML = `<div class="score-flash-num">${text}</div>`;
+  document.body.appendChild(el);
+  _scoreFlashEl = el;
+  void el.offsetWidth; // reflow → giriş animasyonu
+  el.classList.add('show');
+  setTimeout(() => {
+    el.classList.remove('show');
+    setTimeout(() => { if (el === _scoreFlashEl) _scoreFlashEl = null; el.remove(); }, 250);
+  }, 800);
 }
 function askFinishDarts(score) {
   return new Promise((resolve) => {
