@@ -549,6 +549,7 @@ function renderMatch() {
             <div class="dp-meta"><span>Ort <strong>${avg1}</strong>${showSets ? ` · Set <strong>${m.p1_sets || 0}</strong>` : ''}</span></div>
           </div>
         </div>
+        <div class="dp-names-mid"></div>
         <div class="dp-name-col${!isTurn1 ? ' active' : ''}" style="flex-direction:row-reverse;">
           <div class="dp-leg-big">${legs2}</div>
           <div class="dp-name-center">

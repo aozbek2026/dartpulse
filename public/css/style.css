@@ -910,8 +910,13 @@ body.board-page #root.board-screen {
 
 .dp-names {
   display: grid;
-  grid-template-columns: 1fr 1fr;
+  grid-template-columns: 1fr clamp(18px, 7.4vw, 36px) 1fr;
   flex: 0 0 auto;
+}
+.dp-names-mid {
+  background: #0d0f1c;
+  border-left: 1px solid #1e2336;
+  border-right: 1px solid #1e2336;
 }
 
 .dp-name-col {
