@@ -261,13 +261,17 @@
           </div>
           <div id="ns-format-row">
             <label style="display:block;font-size:0.82rem;color:var(--text-dim);margin-bottom:0.25rem">Bracket formatı</label>
-            <select id="ns-format" style="width:100%">
+            <select id="ns-format" style="width:100%" onchange="onNsFormatChange()">
               <option value="single_elim">Tek eleme</option>
               <option value="double_elim">Çift eleme</option>
               <option value="round_robin">Round-robin (herkes herkesle)</option>
             </select>
           </div>
           <div id="ns-format-row-spacer"></div>
+          <div id="ns-lb-legs-row" style="display:none">
+            <label style="display:block;font-size:0.82rem;color:var(--text-dim);margin-bottom:0.25rem">Loser braket leg sayısı <span style="opacity:0.6">(boş = winners ile aynı)</span></label>
+            <input id="ns-lb-legs" type="number" min="1" max="11" placeholder="örn. 2" style="width:100%" />
+          </div>
         </div>
 
         <div id="ns-participants-section" style="margin-top:0.8rem;">

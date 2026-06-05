@@ -758,6 +758,9 @@ function toggleNewSessionForm() {
       if (partSec) partSec.style.display = '';
       if (masterSec) masterSec.style.display = '';
       document.getElementById('ns-format').value = 'single_elim';
+      const lbInput = document.getElementById('ns-lb-legs');
+      if (lbInput) lbInput.value = '';
+      onNsFormatChange();
       renderParticipantPicker();
       // Ustalar bölümünü sıfırla (kapalı başlasın)
       const cb = document.getElementById('ns-is-masters');
@@ -772,6 +775,15 @@ function toggleNewSessionForm() {
   }
 }
 window.toggleNewSessionForm = toggleNewSessionForm;
+
+// Çift eleme seçilince loser braket leg sayısı alanını göster/gizle
+function onNsFormatChange() {
+  const fmt = document.getElementById('ns-format');
+  const row = document.getElementById('ns-lb-legs-row');
+  if (!fmt || !row) return;
+  row.style.display = (fmt.value === 'double_elim') ? '' : 'none';
+}
+window.onNsFormatChange = onNsFormatChange;
 
 // ── Ustalar (Masters) puan tablosu ────────────────────────────────
 // Ulaşılan tur için input grid'i render eder. Varsayılan değerler
@@ -1144,6 +1156,12 @@ async function submitNewSession() {
       return;
     }
     body = { name: name || null, session_date, format, participant_player_ids: ids };
+
+    // Çift elemede loser braket leg sayısı (boşsa winners ile aynı)
+    if (format === 'double_elim') {
+      const lbVal = +(document.getElementById('ns-lb-legs')?.value);
+      if (Number.isInteger(lbVal) && lbVal >= 1) body.lb_legs = lbVal;
+    }
 
     // Kura & Seri Başı taslağı varsa ve seçili oyuncularla birebir eşleşiyorsa,
     // sıralı + seed'li entries gönder (server bunu participant_player_ids yerine kullanır).

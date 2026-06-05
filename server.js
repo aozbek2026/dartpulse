@@ -1374,8 +1374,23 @@ app.get('/api/competitions/:id/sessions', auth.requireAuth, (req, res) => {
   }
 });
 
+// Sezon oturumu için stage config'i kurar. Çift elemede body.lb_legs varsa
+// loser braket maçları için round_overrides (losers-*) üretir; yoksa boş config.
+function buildSessionStageConfig(format, body) {
+  const config = {};
+  if (format === 'double_elim') {
+    const lb = +(body && body.lb_legs);
+    if (Number.isInteger(lb) && lb >= 1) {
+      const ovs = {};
+      for (let r = 1; r <= 40; r++) ovs[`losers-${r}`] = { legs: lb };
+      config.round_overrides = ovs;
+    }
+  }
+  return config;
+}
+
 // Olustur
-// body: { name?, session_date?, format, participant_player_ids: number[] }
+// body: { name?, session_date?, format, participant_player_ids: number[], lb_legs? }
 app.post('/api/competitions/:id/sessions', auth.requireAuth, (req, res) => {
   try {
     const userId = req.session.userId;
@@ -1471,7 +1486,7 @@ app.post('/api/competitions/:id/sessions', auth.requireAuth, (req, res) => {
       legs_to_win: comp.legs_to_win || 2,
       sets_to_win: comp.sets_to_win || 1,
       entries,
-      stages: [{ format, qualifier_count: null, config: {} }],
+      stages: [{ format, qualifier_count: null, config: buildSessionStageConfig(format, req.body) }],
     });
 
     const sessionRow = db.createSession({

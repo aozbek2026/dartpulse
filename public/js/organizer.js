@@ -185,6 +185,12 @@ function renderStagesWizard() {
   const qcount = s0.qualifier_count || '';
   const groupSize = s0.config?.group_size || '';
 
+  // Çift eleme aşamasını bul (loser braket leg sayısı için)
+  const dblStage = (primary === 'double_elim') ? s0
+                 : (primary === 'round_robin' && secondary === 'double_elim') ? s1
+                 : null;
+  const lbLegs = dblStage?.config?.lb_legs || '';
+
   // Önizleme hesapla
   let groupPreview = '';
   let qualifierPreview = '';
@@ -245,7 +251,33 @@ function renderStagesWizard() {
         </div>
       </div>
     ` : ''}
+
+    ${dblStage ? `
+      <div class="grid cols-2" style="gap: 0.75rem; margin-top: 0.75rem;">
+        <div>
+          <label>Loser braket leg sayısı (kazanılan)</label>
+          <input type="number" id="wiz-lb-legs" min="1" max="11" value="${lbLegs}"
+            placeholder="boş = winners ile aynı (${document.getElementById('t-legs')?.value || ''})"
+            oninput="wizSetLbLegs(this.value)" style="width: 100%;" />
+          <div style="font-size:0.82rem;color:var(--text-dim);margin-top:0.3rem;">
+            Çift elemede loser braket maçları winners'tan farklı leg sayısında oynanabilir. Boş bırakılırsa winners ile aynı olur.
+          </div>
+        </div>
+        <div></div>
+      </div>
+    ` : ''}
   `;
+}
+
+function wizSetLbLegs(val) {
+  const n = val ? +val : null;
+  const primary = stagesDraft[0]?.format;
+  const stage = (primary === 'double_elim') ? stagesDraft[0]
+              : (primary === 'round_robin' && stagesDraft[1]?.format === 'double_elim') ? stagesDraft[1]
+              : null;
+  if (!stage) return;
+  if (!stage.config) stage.config = {};
+  stage.config.lb_legs = (n && n >= 1) ? n : null;
 }
 
 function wizSetPrimary(val) {
@@ -661,6 +693,24 @@ function modeLabel(mode) {
   return { '501': '501', '701': '701', '1001': '1001', cricket: 'Cricket', cricket_fb_cezali: 'Full Board Cezalı', cricket_fb_karambol: 'Full Board Karambol' }[mode] || mode;
 }
 
+// Çift eleme aşamasındaki config.lb_legs'i losers-* round_overrides'a çevirir.
+// Elle girilmiş anahtarları ezmez; sadece eksikleri doldurur. config.lb_legs payload'dan temizlenir.
+function applyLbLegs(stage) {
+  if (!stage || stage.format !== 'double_elim') return stage;
+  const lb = stage.config && stage.config.lb_legs;
+  const out = { ...stage, config: { ...(stage.config || {}) } };
+  delete out.config.lb_legs;
+  if (!lb || lb < 1) return out;
+  if (!out.config.round_overrides) out.config.round_overrides = {};
+  const ovs = out.config.round_overrides;
+  for (let r = 1; r <= 40; r++) {
+    const key = `losers-${r}`;
+    if (!ovs[key]) ovs[key] = { legs: +lb };
+    else if (ovs[key].legs == null) ovs[key].legs = +lb;
+  }
+  return out;
+}
+
 // ---- Create tournament ----
 async function createTournament() {
   const name = document.getElementById('t-name').value.trim();
@@ -680,11 +730,15 @@ async function createTournament() {
     game_config_json = JSON.stringify({ include_low: includeLow });
   }
 
+  // Loser braket leg sayısını round_overrides'a yedir (losers-* turlarına).
+  // Granular panelde elle girilmiş losers-* anahtarları korunur, kalanlar doldurulur.
+  const stagesPayload = stagesDraft.map(s => applyLbLegs(s));
+
   const body = {
     name, game_mode, team_mode, legs_to_win, sets_to_win,
     config_json: game_config_json,
     entries: validEntries,
-    stages: stagesDraft,
+    stages: stagesPayload,
   };
 
   const res = await api.post('/api/tournaments', body);

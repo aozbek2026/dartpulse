@@ -590,6 +590,37 @@ Anasayfaya (`public/index.html`) gömülü, kendi başına çalışan animasyonl
 ### Yan deliverable'lar (repoya dahil DEĞİL, `promo/` klasöründe)
 `dartcorepro-senaryo-storyboard.docx` (sahne planı + seslendirme metni), `dartcorepro-sosyal-medya.md` (Instagram/TikTok/YouTube metinleri). `public/tanitim.html` bunların güncel sürümüyle eşit.
 
+## Braket görünümü düzeltmeleri — izleyici/TV/organizatör (Haziran 2026)
+
+İzleyici (`viewer.js`) braketi kutuya sığmıyor, yatay scroll ile görünüyordu; ayrıca
+Final kutusu solda çıkıyor ve ilk tur (R1) kutularının sol tarafında sarkan bağlantı
+çizgileri kalıyordu. Üç ayrı sorun düzeltildi:
+
+1. **Kutuya sığdırma (`fitBrackets`)** — `viewer.js` `renderElimBracketSVG` çıktısı artık
+   sabit px'li bir iç katman (`.bracket-fit-inner`) içinde; `renderBracket()` sonrası ve
+   `window.resize`'da çağrılan `fitBrackets()` her braketi kutu genişliğine göre
+   `transform: scale(...)` ile küçültür (asla büyütmez). Ölçeklenince boş alan kalmasın
+   diye kutu yüksekliği de düşürülür. Yatay scroll kalktı.
+
+2. **ASIL BUG — `|| 99` → `?? 99`** — braket sütunlarını sıralayan `sortKeys`'te
+   `order = { winners: 0, losers: 1, final: 2 }` map'i `order[ba] || 99` ile okunuyordu.
+   `winners` değeri `0` (falsy) olduğu için `0 || 99 = 99` oluyor, tüm winners turları en
+   sağa, `final` (2) ise sola kaçıyordu → **Final solda, R1 sağda, R1 kutularında soldan
+   sarkan çizgiler**. `?? 99` (nullish) ile düzeltildi: `0` korunuyor, sıra artık
+   `winners-1 → winners-2 → … → final` yani R1 solda, Final en sağda.
+   - **Aynı bug üç dosyadaydı, üçü de düzeltildi:** `public/js/viewer.js`,
+     `public/js/tv.js`, `public/js/organizer.js`. Gelecekte yeni bir braket renderer
+     yazarken bu pattern'i (`order[x] || N`) kullanma; `??` kullan.
+
+3. **Sarkan bağlantı çizgileri koruması** — `renderElimBracketSVG` connector döngüsü artık
+   her çocuk maçın iki ebeveynini (`2i`, `2i+1`) bounds-check ediyor; sadece gerçekten var
+   olan ebeveynler için çizgi çiziyor (BYE'lı / tek sayılı braketlerde boşluğa giden
+   çizgileri engeller). Boş sütunlar da render öncesi filtreleniyor (hayalet sütun → Final
+   yanlış konuma kaymasın).
+
+Not: `organizer.js` korumalı modül listesinde DEĞİL; bu yüzden bug-fix doğrudan yapıldı.
+`board.js`/`scorer.html` braket göstermiyor, etkilenmedi.
+
 ## Takım Maçı — Yarın Yapılacaklar (öncelik sırası)
 
 1. **Tablet entegrasyonu**: Phase maçlarını board'lara gönder. Tablet üzerinden oyna, maç bitince sonuç otomatik team_phase_match'e yazılsın ve sıradaki maça geçilsin.
