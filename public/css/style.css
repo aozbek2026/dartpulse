@@ -996,6 +996,26 @@ body.board-page #root.board-screen {
   min-height: 0;
   border-bottom: 1px solid #1e2336;
 }
+/* Aktif yarının TÜM zemini + pembe kenarları tek sürekli katmanda (ek yeri yok).
+   var = orta sütunun yarısı = clamp(9px,3.7vw,18px) */
+.dp-scores.p1-active {
+  background: linear-gradient(to right,
+    #ff3860 0, #ff3860 3px,
+    #2a0e16 3px, #2a0e16 calc(50% - clamp(9px,3.7vw,18px) - 3px),
+    #ff3860 calc(50% - clamp(9px,3.7vw,18px) - 3px), #ff3860 calc(50% - clamp(9px,3.7vw,18px)),
+    #0d0f1c calc(50% - clamp(9px,3.7vw,18px)), #0d0f1c calc(50% + clamp(9px,3.7vw,18px) - 1px),
+    #1e2336 calc(50% + clamp(9px,3.7vw,18px) - 1px), #1e2336 calc(50% + clamp(9px,3.7vw,18px)),
+    #0f1220 calc(50% + clamp(9px,3.7vw,18px)), #0f1220 100%);
+}
+.dp-scores.p2-active {
+  background: linear-gradient(to right,
+    #0f1220 0, #0f1220 calc(50% - clamp(9px,3.7vw,18px)),
+    #1e2336 calc(50% - clamp(9px,3.7vw,18px)), #1e2336 calc(50% - clamp(9px,3.7vw,18px) + 1px),
+    #0d0f1c calc(50% - clamp(9px,3.7vw,18px) + 1px), #0d0f1c calc(50% + clamp(9px,3.7vw,18px)),
+    #ff3860 calc(50% + clamp(9px,3.7vw,18px)), #ff3860 calc(50% + clamp(9px,3.7vw,18px) + 3px),
+    #2a0e16 calc(50% + clamp(9px,3.7vw,18px) + 3px), #2a0e16 calc(100% - 3px),
+    #ff3860 calc(100% - 3px), #ff3860 100%);
+}
 
 /* Kalan skor satırı: sol | orta boşluk | sağ */
 .dp-rem-row {
@@ -1005,11 +1025,6 @@ body.board-page #root.board-screen {
 }
 .dp-rem-row > :first-child { padding: 2.1vw 2.6vw; text-align: center; }
 .dp-rem-row > :last-child  { padding: 2.1vw 2.6vw; text-align: center; }
-.dp-scores.p1-active .dp-rem-row > :first-child { background: #2a0e16; box-shadow: inset 3px 0 0 #ff3860, inset -3px 0 0 #ff3860; }
-.dp-scores.p1-active .dp-rem-row > :last-child  { background: #0f1220; }
-.dp-scores.p2-active .dp-rem-row > :first-child { background: #0f1220; }
-.dp-scores.p2-active .dp-rem-row > :last-child  { background: #2a0e16; box-shadow: inset 3px 0 0 #ff3860, inset -3px 0 0 #ff3860; }
-.dp-rem-row > :nth-child(2) { background: #0d0f1c; border-left: 1px solid #1e2336; border-right: 1px solid #1e2336; }
 
 /* Atış tablosu: tüm boşluğu doldurur, eskiler üstten kırpılır */
 .dp-visit-table {
@@ -1020,24 +1035,6 @@ body.board-page #root.board-screen {
   flex-direction: column;
   justify-content: flex-end;
 }
-/* Üstteki boş bölgenin de aktif yarı zemini + pembe kenarlarıyla dolması için
-   (atış satırları aynı renklerle bunun üzerine oturur → kesintisiz çerçeve) */
-.dp-scores.p1-active .dp-visit-table {
-  background: linear-gradient(to right,
-    #ff3860 0, #ff3860 3px,
-    #2a0e16 3px, #2a0e16 calc(50% - clamp(9px,3.7vw,18px) - 3px),
-    #ff3860 calc(50% - clamp(9px,3.7vw,18px) - 3px), #ff3860 calc(50% - clamp(9px,3.7vw,18px)),
-    #0d0f1c calc(50% - clamp(9px,3.7vw,18px)), #0d0f1c calc(50% + clamp(9px,3.7vw,18px)),
-    #0f1220 calc(50% + clamp(9px,3.7vw,18px)), #0f1220 100%);
-}
-.dp-scores.p2-active .dp-visit-table {
-  background: linear-gradient(to right,
-    #0f1220 0, #0f1220 calc(50% - clamp(9px,3.7vw,18px)),
-    #0d0f1c calc(50% - clamp(9px,3.7vw,18px)), #0d0f1c calc(50% + clamp(9px,3.7vw,18px)),
-    #ff3860 calc(50% + clamp(9px,3.7vw,18px)), #ff3860 calc(50% + clamp(9px,3.7vw,18px) + 3px),
-    #2a0e16 calc(50% + clamp(9px,3.7vw,18px) + 3px), #2a0e16 calc(100% - 3px),
-    #ff3860 calc(100% - 3px), #ff3860 100%);
-}
 
 /* Her visit = tek satır → hizalama otomatik */
 .dp-visit-row {
@@ -1045,11 +1042,6 @@ body.board-page #root.board-screen {
   grid-template-columns: 1fr clamp(18px, 7.4vw, 36px) 1fr;
   flex-shrink: 0;
 }
-.dp-scores.p1-active .dp-visit-row > :first-child { background: #2a0e16; box-shadow: inset 3px 0 0 #ff3860, inset -3px 0 0 #ff3860; }
-.dp-scores.p1-active .dp-visit-row > :last-child  { background: #0f1220; }
-.dp-scores.p2-active .dp-visit-row > :first-child { background: #0f1220; }
-.dp-scores.p2-active .dp-visit-row > :last-child  { background: #2a0e16; box-shadow: inset 3px 0 0 #ff3860, inset -3px 0 0 #ff3860; }
-.dp-visit-row > :nth-child(2) { background: #0d0f1c; border-left: 1px solid #1e2336; border-right: 1px solid #1e2336; }
 
 .dp-visit-num {
   font-size: clamp(13px, 3.8vw, 28px);
