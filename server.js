@@ -700,11 +700,14 @@ app.post('/api/matches/:id/throw', (req, res) => {
         } else {
           const t = m ? db.tournamentById(m.tournament_id) : null;
           if (t && t.status === 'finished') {
-            const boards = db.allBoards(t.user_id);
-            db.clearUserBoards(t.user_id);
+            // SADECE biten turnuvanın board'larını serbest bırak — aynı
+            // kullanıcının paralel oynayan başka turnuvalarına dokunma.
+            const boards = db.clearTournamentBoards(t.user_id, t.id);
             for (const b of boards) {
               io.to(`board:${b.id}`).emit('board:state', { board: { ...b, current_match_id: null, status: 'idle' }, match: null });
             }
+            // Boşalan board'lar bekleyen başka turnuvaya yarayabilir.
+            scheduler.assignPendingMatches(io, t.user_id || null);
           } else {
             scheduler.assignPendingMatches(io, t?.user_id || null);
           }
@@ -745,11 +748,13 @@ app.post('/api/matches/:id/walkover', (req, res) => {
       } else {
         const t = updated ? db.tournamentById(updated.tournament_id) : null;
         if (t && t.status === 'finished') {
-          const boards = db.allBoards(t.user_id);
-          db.clearUserBoards(t.user_id);
+          // SADECE biten turnuvanın board'larını serbest bırak — paralel
+          // oynayan başka turnuvaların board'larına dokunma.
+          const boards = db.clearTournamentBoards(t.user_id, t.id);
           for (const b of boards) {
             io.to(`board:${b.id}`).emit('board:state', { board: { ...b, current_match_id: null, status: 'idle' }, match: null });
           }
+          scheduler.assignPendingMatches(io, t.user_id || null);
         } else {
           scheduler.assignPendingMatches(io, t?.user_id || null);
         }

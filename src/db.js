@@ -1258,6 +1258,22 @@ function clearUserBoards(userId) {
   ).run(userId);
 }
 
+// Sadece BELİRLİ bir turnuvaya atanmış board'ları serbest bırakır.
+// clearUserBoards'ın aksine, aynı kullanıcının paralel oynayan başka
+// turnuvalarının board'larına dokunmaz (federasyon / çok-turnuvalı senaryo).
+// Sıfırlanan board'ların listesini döndürür (caller event yayınlasın diye).
+function clearTournamentBoards(userId, tournamentId) {
+  if (!userId || !tournamentId) return [];
+  const boards = db.prepare(
+    `SELECT * FROM boards WHERE user_id = ? AND tournament_id = ?`
+  ).all(userId, tournamentId);
+  db.prepare(
+    `UPDATE boards SET current_match_id = NULL, status = 'idle'
+       WHERE user_id = ? AND tournament_id = ?`
+  ).run(userId, tournamentId);
+  return boards;
+}
+
 // =========================================================
 //  LIG & SEZON helper fonksiyonlari
 //  Hepsi multi-tenant: user_id ile scope edilir.
@@ -1856,7 +1872,7 @@ module.exports = {
   setResetToken, getUserByResetToken, clearResetToken,
   updatePassword, deleteUser,
   createPlayer, allPlayers, playerById, deletePlayer, playerActiveTournament,
-  createBoard, allBoards, boardById, deleteBoard, setBoardMatch, clearUserBoards, setBoardTournament,
+  createBoard, allBoards, boardById, deleteBoard, setBoardMatch, clearUserBoards, clearTournamentBoards, setBoardTournament,
   createTournament, allTournaments, publicRunningTournaments, setTournamentHiddenFromPublic, tournamentById, updateTournamentStatus, updateTournament, deleteTournament,
   addEntry, entriesForTournament, entryById, updateEntrySlots,
   createStage, stagesForTournament, stageById, updateStageStatus,
