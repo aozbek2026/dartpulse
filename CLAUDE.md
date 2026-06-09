@@ -695,6 +695,59 @@ görselini değiştirirsen scorer'ı da güncelle.
 Aktif yarı vurgusu şimdilik sadece tablet board'unda. İzleyici (`viewer.js`) ve TV (`tv.js`)
 ayrı renderer kullanıyor; istenirse oralara da benzer vurgu taşınabilir.
 
+## X01 skor girişi — kalan-dokun, gerçek BUST, leg skoru flash (Haziran 2026)
+
+Canlı turnuva geri bildirimleriyle X01 skor giriş ekranına üç ekleme yapıldı. Skor motoru
+mantığına (leg/set akışı) dokunulmadı; eklemeler additive. Kod konvansiyonu #0 gereği
+**board.js ↔ scorer.html eşitliği korundu** — üçü de iki yerde birebir uygulandı.
+
+### 1. Kalan-dokun (checkout kolaylığı)
+Checkout'a yakınken atılan skoru hesaplamak yerine, keypad'e **yeni kalanı** yazıp sırası
+gelen oyuncunun ismi altındaki kalan sayısına (`.dp-rem`) dokununca sistem
+`atılan skor = mevcut kalan − yazılan kalan` diye hesaplar ve normal gönderim akışına verir.
+- `board.js` `submitRemaining()` + `scorer.html` `x01SubmitRemaining()`. İkisi de
+  hesapladığı skoru `currentInput`'a yazıp mevcut `submitScore()` / `x01Submit()`'i çağırır
+  → checkout/bust/flash/leg-özeti kuralları **otomatik aynen** geçerli (kod tekrarı yok).
+- Yeni kalan 0 → checkout → mevcut "kaçıncı ok" promptu çıkar. Yeni kalan > mevcut kalan
+  veya hesaplanan visit > 180 → uyarı, işlem yok.
+- Sadece **aktif** oyuncunun `.dp-rem`'ine `onclick` eklendi (readonly/izleme modunda yok).
+- Görsel ipucu **bilinçli olarak eklenmedi** (kullanıcı istemedi) — CSS değişmedi.
+- Atış flash'ı atılan (hesaplanan) skoru gösterir, yazılan kalanı değil.
+
+### 2. BUST tuşu artık gerçek bust kaydeder
+**Eski bug:** BUST tuşu `setScore(0)` ile skor 0 gönderiyordu; motor bunu bust değil sıradan
+bir 0 visit olarak kaydediyordu (tabloda "0" görünüyordu). Gerçek over-throw (kalan eksiye
+düşmek) zaten otomatik bust olarak yakalanıyordu; sorun yalnızca tuşun kendisindeydi.
+- `match-engine.js` `recordThrow(..., forceBust)` parametresi eklendi. `forceBust` true ise
+  `bust=true, isFinish=false` zorlanır; kalan değişmez. **İstatistik:** mevcut bust path'i
+  zaten 3 ok + 0 puan sayıyor (kullanıcı kararı: "bust ve 0, ikisi de 3 ok atıldı 0 puan
+  demek, ortalamaya 0 katkı"). Bu yüzden istatistik tarafı değişmedi.
+- `server.js` `/api/matches/:id/throw` body'den `bust` alıp `recordThrow`'a `!!bust` geçirir.
+- `board.js` `submitBust()` → `{score:0, bust:true}` POST eder, "Bust" flash'ı gösterir.
+- `scorer.html` (local engine, server yok) → `x01Bust()` + `recordX01ForceBust(slot)`:
+  history'ye `bust:true` push, `darts+=3`, `totalScore+=0`, kalan sabit, sıra rakibe.
+
+### 3. Leg skoru flash modalı
+Leg bitince (checkout sonrası leg özeti kapanınca / Hızlı Skor'da yeni leg'e geçerken)
+maçın leg skoru — örn. `0-1`, `3-2` — ekran ortasında ~1.2 sn büyük flash'ta belirir.
+Maç biten leg'de gösterilmez (zaten sonuç ekranı açılıyor).
+- `board.js` `showLegScoreFlash(p1,p2)` — dört oyun modunun leg-bitiş noktasında
+  (`await showLegSummary(...)` sonrası, `!matchFinished` ise) çağrılır. Veri:
+  `res.legSummary.p1_legs/p2_legs`.
+- `scorer.html` `showLegScoreFlash(p1,p2)` — `x01Submit`'te leg bittiyse (`legFinished &&
+  !G.finished`) `G.legs[1]`/`G.legs[2]` ile çağrılır.
+- Nötr renkli (`.score-flash-modal.leg-flash`); `.bust` kırmızısından ayrı. `.leg-flash`
+  için ayrı CSS kuralı yok, base `.score-flash-modal` stilini kullanır.
+
+### Flash modal boyutu büyütüldü
+`style.css` `.score-flash-num`: yükseklik `clamp(96px,20vmin,200px)`, min-genişlik
+`clamp(140px,32vmin,300px)`, yazı `clamp(56px,14vmin,130px)` (eski tavan 96px → 130px).
+Hem atış hem leg skoru flash'ını etkiler (ortak kural).
+
+### Etkilenen dosyalar
+`src/match-engine.js` (forceBust), `server.js` (throw bust flag), `public/js/board.js`,
+`public/scorer.html`, `public/css/style.css`. Commit `70e0f3b` (Haziran 2026), `main`'e push'landı.
+
 ## Klasman/Braket PDF + 32'lik braket dilimleri (Haziran 2026)
 
 Klasman ve braketler tarayıcının "PDF olarak kaydet" özelliğiyle yazdırılabiliyor; ayrıca

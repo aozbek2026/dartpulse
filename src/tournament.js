@@ -525,11 +525,13 @@ function computeRRStandings(matches) {
     for (const slot of [1, 2]) {
       const eid = slot === 1 ? m.entry1_id : m.entry2_id;
       if (!eid) continue;
-      if (!table[eid]) table[eid] = { entryId: eid, W: 0, L: 0, legsFor: 0, legsAgainst: 0, points: 0 };
+      if (!table[eid]) table[eid] = { entryId: eid, W: 0, L: 0, legsFor: 0, legsAgainst: 0, points: 0, playedReal: 0 };
       const legsFor = slot === 1 ? m.p1_legs : m.p2_legs;
       const legsAgainst = slot === 1 ? m.p2_legs : m.p1_legs;
       table[eid].legsFor += legsFor;
       table[eid].legsAgainst += legsAgainst;
+      // Gerçekten oynanmış (hükmen olmayan) maç sayısı — "maça çıktı mı" göstergesi
+      if (!m.is_walkover) table[eid].playedReal++;
       if (m.winner_entry_id === eid) {
         table[eid].W++;
         table[eid].points += 3;
@@ -538,7 +540,12 @@ function computeRRStandings(matches) {
       }
     }
   }
+  // "Maça çıkmayan" tanımı: hiç gerçek maç oynamamış + galibiyetsiz + leg kazanmamış.
+  // Bunlar (ör. yerine kimse gelmeyen "???" gibi placeholder'lar) daima en sona düşer,
+  // gerçekten oynayıp tüm maçlarını kaybedenlerin bile altında.
+  const isNoShow = (r) => r.playedReal === 0 && r.W === 0 && r.legsFor === 0;
   return Object.values(table).sort((a, b) =>
+    (isNoShow(a) - isNoShow(b)) ||
     b.points - a.points ||
     (b.legsFor - b.legsAgainst) - (a.legsFor - a.legsAgainst) ||
     b.legsFor - a.legsFor

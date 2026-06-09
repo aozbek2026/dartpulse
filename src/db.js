@@ -1077,14 +1077,29 @@ function walkoverMatch(matchId, winnerSlot) {
   const m = db.prepare('SELECT * FROM matches WHERE id = ?').get(matchId);
   if (!m) return null;
   const winnerEntryId = winnerSlot === 1 ? m.entry1_id : m.entry2_id;
+
+  // Hükmen sonucu leg skoru olarak da yaz: kazanan legs_to_win, gelmeyen 0.
+  // Böylece round-robin klasmanındaki leg-farkı sıralaması gerçeği yansıtır
+  // (gelmeyen oyuncu en sona düşer). is_walkover=1 olduğu için 3DA/atış
+  // istatistikleri ETKİLENMEZ — tournamentPlayerReport walkover maçlarını dışlar.
+  let legsToWin = m.legs_to_win;
+  if (!legsToWin) {
+    const t = db.prepare('SELECT legs_to_win FROM tournaments WHERE id = ?').get(m.tournament_id);
+    legsToWin = (t && t.legs_to_win) || 1;
+  }
+  const p1Legs = winnerSlot === 1 ? legsToWin : 0;
+  const p2Legs = winnerSlot === 2 ? legsToWin : 0;
+
   db.prepare(`
     UPDATE matches SET
       status = 'finished',
       winner_entry_id = ?,
+      p1_legs = ?,
+      p2_legs = ?,
       is_walkover = 1,
       finished_at = CURRENT_TIMESTAMP
     WHERE id = ?
-  `).run(winnerEntryId, matchId);
+  `).run(winnerEntryId, p1Legs, p2Legs, matchId);
   return db.prepare('SELECT * FROM matches WHERE id = ?').get(matchId);
 }
 

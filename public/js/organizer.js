@@ -1222,6 +1222,7 @@ function renderTournaments() {
     return;
   }
   host.innerHTML = active.map(t => renderTournament(t)).join('');
+  fitBrackets();
 }
 
 function renderPastTournaments() {
@@ -1233,6 +1234,7 @@ function renderPastTournaments() {
     return;
   }
   host.innerHTML = finished.map(t => renderTournament(t)).join('');
+  fitBrackets();
 }
 
 function renderTournament(t) {
@@ -1308,8 +1310,35 @@ function renderStage(t, stage, index) {
   return renderElimStage(stage, stageMatches);
 }
 
+// Her braketi, içinde bulunduğu kutuya yatayda sığacak şekilde ölçekler.
+// Sabit px'li iç katman (.bracket-fit-inner) kutudan genişse küçültülür; asla büyütülmez.
+function fitBrackets() {
+  document.querySelectorAll('#tournament-list .bracket-fit, #past-tournament-list .bracket-fit').forEach(wrap => {
+    const inner = wrap.querySelector('.bracket-fit-inner');
+    if (!inner) return;
+    inner.style.transform = 'none';
+    wrap.style.height = '';
+    const avail = wrap.clientWidth;
+    const contentW = inner.scrollWidth;
+    if (!avail || !contentW) return;
+    const scale = Math.min(1, avail / contentW);
+    inner.style.transform = `scale(${scale})`;
+    // Ölçeklenince yükseklik de küçülür; boş alan kalmasın diye kutuyu daralt.
+    wrap.style.height = (inner.scrollHeight * scale) + 'px';
+  });
+}
+
+// Pencere yeniden boyutlanınca yeniden sığdır.
+window.addEventListener('resize', () => {
+  clearTimeout(window.__fitBracketsTO);
+  window.__fitBracketsTO = setTimeout(fitBrackets, 150);
+});
+
 // Tek eleme ve WB bölümleri için SVG çizgili, hizalamalı bracket görünümü
 function renderElimBracketSVG(columns, matchFn) {
+  if (!columns.length) return '';
+  // Boş sütunları ele — son maç (Final) gerçekten en sağda kalsın, hayalet sütun olmasın.
+  columns = columns.filter(c => c.matches && c.matches.length);
   if (!columns.length) return '';
   const MW = 180, MH = 64, CS = 225, LH = 24, UH = 72;
   const firstCount = columns[0].matches.length;
@@ -1319,14 +1348,22 @@ function renderElimBracketSVG(columns, matchFn) {
 
   let svgLines = '';
   for (let r = 0; r < columns.length - 1; r++) {
+    const prevCount = columns[r].matches.length;
     const nextCount = columns[r + 1].matches.length;
     const xR = r * CS + MW, xN = (r + 1) * CS, xM = (xR + xN) / 2;
     for (let i = 0; i < nextCount; i++) {
-      const c1 = cy(r, i * 2), c2 = cy(r, i * 2 + 1), cm = (c1 + c2) / 2;
-      svgLines += `<line x1="${xR}" y1="${c1}" x2="${xM}" y2="${c1}" stroke="var(--border)" stroke-width="1.5"/>`;
-      svgLines += `<line x1="${xR}" y1="${c2}" x2="${xM}" y2="${c2}" stroke="var(--border)" stroke-width="1.5"/>`;
-      svgLines += `<line x1="${xM}" y1="${c1}" x2="${xM}" y2="${c2}" stroke="var(--border)" stroke-width="1.5"/>`;
-      svgLines += `<line x1="${xM}" y1="${cm}" x2="${xN}" y2="${cm}" stroke="var(--border)" stroke-width="1.5"/>`;
+      // Bu çocuk maçın iki ebeveyni: 2i ve 2i+1. Sadece GERÇEKTEN var olan
+      // ebeveynler için çizgi çiz — yoksa boşluğa sarkan çizgiler kalıyor.
+      const p1 = i * 2, p2 = i * 2 + 1;
+      const has1 = p1 < prevCount, has2 = p2 < prevCount;
+      if (!has1 && !has2) continue;
+      const c1 = cy(r, p1), c2 = cy(r, p2), cm = (c1 + c2) / 2;
+      if (has1) svgLines += `<line x1="${xR}" y1="${c1}" x2="${xM}" y2="${c1}" stroke="var(--border)" stroke-width="1.5"/>`;
+      if (has2) svgLines += `<line x1="${xR}" y1="${c2}" x2="${xM}" y2="${c2}" stroke="var(--border)" stroke-width="1.5"/>`;
+      if (has1 && has2) svgLines += `<line x1="${xM}" y1="${c1}" x2="${xM}" y2="${c2}" stroke="var(--border)" stroke-width="1.5"/>`;
+      // Çocuğa giden yatay çizgi: tek ebeveyn varsa onun hizasından gitsin.
+      const yChild = (has1 && has2) ? cm : (has1 ? c1 : c2);
+      svgLines += `<line x1="${xM}" y1="${yChild}" x2="${xN}" y2="${yChild}" stroke="var(--border)" stroke-width="1.5"/>`;
     }
   }
 
@@ -1339,13 +1376,48 @@ function renderElimBracketSVG(columns, matchFn) {
     });
   });
 
-  return `<div style="overflow-x:auto;padding-bottom:0.5rem;">
-    <div style="position:relative;width:${totalW}px;height:${totalH}px;">
+  // Braket kutuya sığsın diye: sabit px'li iç katman, dışarıda ölçeklenir (fitBrackets).
+  return `<div class="bracket-fit" style="padding-bottom:0.5rem;overflow:hidden;">
+    <div class="bracket-fit-inner" style="position:relative;width:${totalW}px;height:${totalH}px;transform-origin:top left;">
       <svg style="position:absolute;top:${LH}px;left:0;width:${totalW}px;height:${totalH - LH}px;pointer-events:none;overflow:visible;">${svgLines}</svg>
       ${html}
     </div>
   </div>`;
 }
+
+// Büyük braketi (>32 oyuncu) ekranda 32'lik dilim sekmelerine böler.
+// ≤32 oyuncu ise normal tek görünüm döner. Bölme mantığı pdf-print.js ile ortak.
+let _btSeq = 0;
+function btBtnStyle(active) {
+  return 'font-size:0.8rem;padding:0.3rem 0.7rem;border-radius:6px;cursor:pointer;border:1px solid var(--border);'
+    + (active ? 'background:var(--accent);color:#000;font-weight:700;'
+              : 'background:var(--bg-2);color:var(--text-dim);font-weight:400;');
+}
+function renderBracketWithTabs(columns, prefix) {
+  const split = window.splitBracketColumns
+    ? window.splitBracketColumns(columns, prefix || '')
+    : [{ label: '', cols: columns }];
+  if (split.length <= 1) return renderElimBracketSVG(columns, renderBracketMatch);
+  const id = 'bt' + (++_btSeq);
+  const bar = split.map((p, i) =>
+    `<button class="bt-btn" data-bt="${id}" data-i="${i}" onclick="selectBracketTab('${id}',${i})" style="${btBtnStyle(i === 0)}">${p.label}</button>`
+  ).join('');
+  const panes = split.map((p, i) =>
+    `<div class="bt-pane" data-bt="${id}" data-i="${i}" ${i ? 'hidden' : ''}>${renderElimBracketSVG(p.cols, renderBracketMatch)}</div>`
+  ).join('');
+  return `<div class="bracket-tabs" data-bt="${id}">
+    <div style="display:flex;flex-wrap:wrap;gap:0.4rem;margin-bottom:0.6rem;">${bar}</div>
+    ${panes}</div>`;
+}
+window.selectBracketTab = function (id, idx) {
+  document.querySelectorAll('.bt-btn[data-bt="' + id + '"]').forEach(b => {
+    b.style.cssText = btBtnStyle(+b.dataset.i === idx);
+  });
+  document.querySelectorAll('.bt-pane[data-bt="' + id + '"]').forEach(p => {
+    p.hidden = +p.dataset.i !== idx;
+  });
+  fitBrackets();
+};
 
 function renderElimStage(stage, matches) {
   const rounds = {};
@@ -1380,7 +1452,7 @@ function renderElimStage(stage, matches) {
           const label = cnt === 1 ? 'WB Final' : cnt === 2 ? 'WB Yarı Final' : `WB R${round}`;
           return { label, matches: rounds[k] };
         });
-        bracketHTML = renderElimBracketSVG(cols, renderBracketMatch);
+        bracketHTML = renderBracketWithTabs(cols, 'Üst Taraf');
       } else {
         bracketHTML = `<div class="bracket">
           ${keys.map(k => {
@@ -1426,7 +1498,7 @@ function renderElimStage(stage, matches) {
       <h4 style="color: var(--text-dim); font-size: 0.8rem; text-transform: uppercase; letter-spacing: 0.05em; margin-bottom: 0.5rem;">
         ${formatLabel(stage.format)} — Aşama ${stage.stage_index + 1}
       </h4>
-      ${renderElimBracketSVG(columns, renderBracketMatch)}
+      ${renderBracketWithTabs(columns, '')}
     </div>
   `;
 }
