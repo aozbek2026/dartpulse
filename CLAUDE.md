@@ -373,6 +373,15 @@ Detay: Kod konvansiyonu #8'e bak.
 - Lig (league_day) tarafına dokunulmadı — orası Berger planlamasıyla ayrı.
 - Ustalar (Masters) roster akışı da değişmedi; kura bölümü sadece normal sezon oturumunda görünür.
 
+**✅ Sezon + Ustalar oturumu — Tur bazında özel leg/set (Haziran 2026, tamam):**
+- organizer.js'deki round-override panelinin (round başına kazanılacak leg/set sayısı) sezon oturum formuna uyarlaması. Çeyrek/Yarı/Final gibi ileri turlarda farklı leg sayısı, oturum **oluşturulurken** belirlenir.
+- **Korumalı modüle dokunulmadı:** Altyapı `src/tournament.js` `_createMatch` wrapper + `stages.config_json.round_overrides`'ta zaten vardı (Kod konvansiyonu #2). Sadece sezon formuna açıldı.
+- Backend: `server.js` `buildSessionStageConfig(format, body)` artık `body.round_overrides`'ı da kabul ediyor. Anahtar formatı tournament.js ile aynı (`winners-1`, `final-3`, `losers-2`, `rr`). Sanitize: leg/set tamsayı ≥1, geçersiz anahtarlar (regex `^(winners|losers|final)-\d+$` veya `rr`) süzülür. Çift elemede mevcut `lb_legs` (toplu loser-* override) ile **birleşir** — tur bazında verilen değer aynı anahtarı ezer. Geriye dönük uyumlu (yoksa boş config).
+- Frontend: `competition.html` `#ns-round-ov-section` (checkbox `#ns-round-ov-toggle` + panel `#ns-round-ov-panel`). `competition.js`: `STATE.roundOv` + `_nextPow2Ns`, `_roundLabelNs` (Final/Yarı Final/Çeyrek Final/Son 16…), `_roundsForStageNs(format, count)` (seçili katılımcı sayısına göre tur listesi), `renderRoundOvPanel`, `updateRoundOvNs`, `toggleRoundOverridesNs`. Boş bırakılan turlar competition'ın varsayılan `legs_to_win`/`sets_to_win`'ine düşer.
+- **Katılımcı sayısı kaynağı:** Normal sezonda checkbox listesinden (`checkedParticipantIds().length`), Ustalar modunda `STATE.mastersRoster.length`'ten. Panel; katılımcı checkbox değişiminde (`updateParticipantCount`), format değişiminde (`onNsFormatChange`), Ustalar roster değişiminde (`renderMastersRoster`) ve Ustalar moduna girişte (`toggleMastersMode`) yeniden render edilir.
+- `submitNewSession`: panel açık + dolu + format ≠ round_robin ise `body.round_overrides = STATE.roundOv`. Ustalar oturumuyla birlikte de gönderilir (puan override'ından bağımsız). Round-robin'de panel "çeyrek/yarı/final yok" notu gösterir, gönderilmez.
+- Lig (league_day) tarafına dokunulmadı — round'lar RR olduğu için çeyrek/yarı/final kavramı yok.
+
 **Bekleyen — Dilim 5c, 5d:**
 
 5c. **Ustalar (Masters) + Playoff** — iki ayrı kavram, ayrı uygulama. Tasarım kararları (26 Mayıs 2026, kullanıcıyla netleşti):
@@ -575,6 +584,7 @@ Görev numaralarıyla birlikte (TaskList sisteminde): #1-#46. Önemli olanlar:
 - Lig akışı tamamlama (Mayıs 2026): otomatik 1. Gün, round-bazlı finalize, scheduler tetikleme noktaları + startup poke, board claim 3 katmanlı kural (aynı lig boşta board paylaşımı serbest), liga.html lig/sezon puan formu ayrımı, tanı scriptleri — ayrı bölüme bak
 - **Production deploy (26 Mayıs 2026)**: Lig & Sezon sistemi (Dilim 1-5b) + board PWA + Excel raporu altyapısı `dartcorepro.com` üzerinde canlıya alındı. Render Starter ($7/ay) + 1GB kalıcı disk (`/data/data.db`) + auto-deploy from `main`. Faz 1 (Render deploy) tamamlandı; sıradaki yol haritası Faz 2 hardening.
 - **Tanıtım videosu / "DartCorePro Nedir?" (Haziran 2026)**: Anasayfaya gömülü, otomatik oynayan animasyonlu tanıtım — ayrı bölüme bak.
+- **Klasman/Braket PDF + 32'lik braket dilimleri (Haziran 2026)**: `pdf-print.js` ortak motoru; tarayıcı "PDF kaydet" ile dikey A4 klasman + yatay A4 braket (32'lik bölme), viewer ekranında 32'lik sekmeler, TV'de rotasyonla dilim geçişi; viewer maç listesi sıralaması (canlı → board'a atanmış → bitmiş → sırası gelecek) — ayrı bölüme bak.
 
 ## Tanıtım videosu — "DartCorePro Nedir?" (Haziran 2026)
 
@@ -684,6 +694,60 @@ görselini değiştirirsen scorer'ı da güncelle.
 ### Bekleyen: viewer/TV'ye taşıma
 Aktif yarı vurgusu şimdilik sadece tablet board'unda. İzleyici (`viewer.js`) ve TV (`tv.js`)
 ayrı renderer kullanıyor; istenirse oralara da benzer vurgu taşınabilir.
+
+## Klasman/Braket PDF + 32'lik braket dilimleri (Haziran 2026)
+
+Klasman ve braketler tarayıcının "PDF olarak kaydet" özelliğiyle yazdırılabiliyor; ayrıca
+büyük braketler hem PDF'te hem ekranda 32'lik (16 maç) dilimlere bölünüyor. Yeni paket /
+bağımlılık YOK, korumalı modüllere (board.js, scorer.html, match-engine, tournament,
+scheduler) dokunulmadı — tamamen additive, salt-okuma veri alır.
+
+### Ortak motor — `public/js/pdf-print.js` (yeni)
+- `window.printStandings(meta, headers, rows, aligns?)` — dikey A4, çok sayfa. `thead`
+  `table-header-group` ile başlık her sayfada tekrar eder, satırlar kendiliğinden taşar.
+- `window.printBracket(meta, matches)` — yatay A4. Braketi 32'lik dilim sayfalarına böler.
+  meta: `{title, subtitle, format}` (format: single_elim | double_elim | round_robin).
+  matches: entry1/entry2 objeli maç dizisi (viewer/organizer `renderBracketMatch` ile aynı veri).
+  Kendi bağımsız kompakt SVG braketini çizer (uygulama CSS'inden bağımsız, beyaz zemin/siyah
+  yazı), her sayfayı A4-yatay alanına `transform: scale()` ile sığdırır.
+- `window.splitBracketColumns(cols, prefix)` — ekran tarafı (viewer/tv) için sütun bölücü;
+  PDF ile **aynı** bölme mantığını paylaşır → tek kaynak.
+
+### 32'lik bölme kuralı
+- ≤32 oyuncu (firstCount ≤ 16 maç) → tek sayfa/sekme, bölme yok.
+- \>32 → her 32 oyuncu (16 ilk-tur maçı) bir "Bölüm". Etiket aralıklı: "1. Bölüm (1–32)",
+  "2. Bölüm (33–64)"… Her bölüm kendi çeyrek-finaline (1 maç) kadar gider; ardından
+  "Finaller (Çeyrek Final → Final)" sayfası birleşimi gösterir.
+- Çift elemede: winners 32'lik bölünür, Grand Final finaller sayfasına eklenir,
+  **alt taraf (losers) ayrı sayfa/sekme** (bölünmez, ölçeklenerek sığar).
+
+### Butonlar
+- `competition.html` Klasman sekmesi → 🖨️ Klasman PDF (`printCompetitionStandings`,
+  `competition.js`). Sezon/lig birikimli klasman, atış istatistikleri dahil.
+- `organizer.html` her turnuva kartı (draft hariç) → 🖨️ Braket PDF (`printTournamentBracket`).
+- `viewer.html` her turnuva kartı → 🖨️ Braket PDF.
+- TV'ye PDF butonu **bilinçli olarak konmadı** (kiosk, tıklanamaz). RR turnuvalarının ayrı
+  klasman PDF'i yok — braket PDF'inde RR maçları liste olarak çıkar (ileride eklenebilir).
+
+### Ekranda 32'lik sekmeler
+- **viewer (`viewer.js`):** `renderBracketWithTabs(columns, prefix)` — >32 ise sekme barı +
+  `bt-pane` panelleri üretir. `window.selectBracketTab(id, idx)` paneli değiştirir ve
+  `fitBrackets()` çağırır (gizli panel clientWidth=0 olduğu için sekme açılınca yeniden
+  ölçeklenir). Tek eleme + çift elemenin winners bölümü sekmeli; losers/final tek görünüm.
+- **TV (`tv.js`):** Tıklama yok → **rotasyonla** ilerler. `_tvBracketPage` modül sayacı,
+  `nextSection()` braketten ayrılırken artar; `renderBracket` o anki dilimi gösterir, başlıkta
+  "1. Bölüm · 1/N" rozeti. Birkaç rotasyon turunda tüm dilimler sırayla ekrana gelir. TV kendi
+  CSS-kolon renderer'ını kullandığı için `splitBracketColumns` ile sütunları bölüp aynı
+  pair/last-col markup'ıyla çizer.
+
+### Maç listesi sıralaması (`viewer.js` → "Tüm Maçlar")
+Yukarıdan aşağı: (1) CANLI, (2) başlamamış ama board'a atanmış (oynanmaya hazır),
+(3) bitmiş (en yeni üstte), (4) sırası gelecek (board'a atanmamış bekleyenler). Board ataması
+maçta alan olarak yok → `state.boards`'taki `current_match_id` set'inden türetiliyor.
+
+### HTML script include'ları
+`competition.html`, `organizer.html`, `viewer.html`, `tv.html` → `common.js`'ten sonra
+`<script src="/js/pdf-print.js">` eklendi (pdf-print, `window.entryLabel`'a bağımlı).
 
 ## Takım Maçı — Yarın Yapılacaklar (öncelik sırası)
 
