@@ -138,7 +138,7 @@ function recordFBCezaliVisit(matchId, playerSlot, allocation) {
 // Kullanıcı bir el (3 dart toplamı) girdiğinde çağrılır.
 // finishDarts: leg'i bitiren visit'te kaç ok atıldığı (1, 2 veya 3) — sadece checkout'ta anlamlı.
 // Sağlanmazsa varsayılan 3 (eski davranış). 3-ok ortalaması ve leg-başına-dart hesabı buna göre düzelir.
-function recordThrow(matchId, playerSlot, score, finishDarts) {
+function recordThrow(matchId, playerSlot, score, finishDarts, forceBust) {
   const match = db.matchById(matchId);
   if (!match) throw new Error('Maç bulunamadı');
   if (match.status !== 'live') throw new Error('Maç başlamadı. Önce "MAÇA BAŞLA" deyin.');
@@ -168,6 +168,10 @@ function recordThrow(matchId, playerSlot, score, finishDarts) {
     // Must check out on a double - we trust user reporting (can't verify from total only)
     isFinish = true;
   }
+
+  // BUST tuşu: kullanıcı açıkça bust işaretledi (skor 0 gelir, kalan değişmez).
+  // İstatistik: 3 ok atıldı, 0 puan (mevcut bust path'i bunu zaten yapar) — ortalamaya 0 katkı.
+  if (forceBust) { bust = true; isFinish = false; }
 
   const remainingAfter = bust ? currentRem : newRem;
 

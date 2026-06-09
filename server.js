@@ -679,9 +679,9 @@ app.patch('/api/matches/:id/scorer', (req, res) => {
 
 app.post('/api/matches/:id/throw', (req, res) => {
   try {
-    const { playerSlot, score, finishDarts } = req.body;
+    const { playerSlot, score, finishDarts, bust } = req.body;
     const matchId = +req.params.id;
-    const result = engine.recordThrow(matchId, playerSlot, +score, finishDarts ? +finishDarts : null);
+    const result = engine.recordThrow(matchId, playerSlot, +score, finishDarts ? +finishDarts : null, !!bust);
     io.emit('match:update', { matchId });
     if (result.matchFinished) {
       const m = db.matchById(matchId);

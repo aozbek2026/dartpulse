@@ -564,9 +564,9 @@ function renderMatch() {
 
       <div class="dp-scores${isTurn1 ? ' p1-active' : ' p2-active'}">
         <div class="dp-rem-row">
-          <div class="dp-rem">${rem1}</div>
+          <div class="dp-rem"${isTurn1 && !isReadonly ? ' onclick="submitRemaining()"' : ''}>${rem1}</div>
           <div></div>
-          <div class="dp-rem dp-rem-r">${rem2}</div>
+          <div class="dp-rem dp-rem-r"${!isTurn1 && !isReadonly ? ' onclick="submitRemaining()"' : ''}>${rem2}</div>
         </div>
         <div class="dp-visit-table">
           ${visitRows}
@@ -590,7 +590,7 @@ function renderMatch() {
             ${[1,2,3,4,5,6,7,8,9].map(n => `<div class="dp-key" onclick="addDigit('${n}')">${n}</div>`).join('')}
             <div class="dp-key c" onclick="clearInput()">C</div>
             <div class="dp-key${currentInput ? '' : ' dp-key-180'}" id="key-zero" onclick="${currentInput ? "addDigit('0')" : 'setScore(180)'}">${currentInput ? '0' : '180'}</div>
-            <div class="dp-key bust" onclick="setScore(0)">Bust</div>
+            <div class="dp-key bust" onclick="submitBust()">Bust</div>
           </div>
           <div class="dp-quick">
             ${[60,81,85,100,140].map(s => `<div class="dp-qbtn" onclick="setScore(${s})">${s}</div>`).join('')}
@@ -854,6 +854,7 @@ async function submitCricketDarts() {
   }
   if (res.legFinished && !res.matchFinished && res.legSummary) {
     await showLegSummary(res.legSummary);
+    if (!res.matchFinished) showLegScoreFlash(res.legSummary.p1_legs ?? 0, res.legSummary.p2_legs ?? 0);
   }
   if (res.matchFinished) toast('Maç tamamlandı!');
 }
@@ -1174,6 +1175,7 @@ async function submitFBCezaliDarts() {
   }
   if (res.legFinished && !res.matchFinished && res.legSummary) {
     await showLegSummary(res.legSummary);
+    if (!res.matchFinished) showLegScoreFlash(res.legSummary.p1_legs ?? 0, res.legSummary.p2_legs ?? 0);
     if (currentMatch?.entry1?.player2 || currentMatch?.entry2?.player2) {
       await askDoublesSubStarters(currentMatch);
       await api.post(`/api/matches/${currentMatch.id}/set-sub-starters`, {
@@ -1362,6 +1364,7 @@ async function submitKarambolDarts() {
   }
   if (res.legFinished && !res.matchFinished && res.legSummary) {
     await showLegSummary(res.legSummary);
+    if (!res.matchFinished) showLegScoreFlash(res.legSummary.p1_legs ?? 0, res.legSummary.p2_legs ?? 0);
     if (currentMatch?.entry1?.player2 || currentMatch?.entry2?.player2) {
       await askDoublesSubStarters(currentMatch);
       await api.post(`/api/matches/${currentMatch.id}/set-sub-starters`, {
@@ -1540,6 +1543,7 @@ async function submitScore() {
   // (Maç tamamlandıysa zaten post-match ekranı açılıyor; ayrıca özet vermiyoruz.)
   if (res.legFinished && !res.matchFinished && res.legSummary) {
     await showLegSummary(res.legSummary);
+    if (!res.matchFinished) showLegScoreFlash(res.legSummary.p1_legs ?? 0, res.legSummary.p2_legs ?? 0);
     // Doubles: yeni leg için her takımdan ilk atanı sor
     const isDoubles = !!(currentMatch?.entry1?.player2 || currentMatch?.entry2?.player2);
     if (isDoubles && currentMatch) {
@@ -1550,6 +1554,40 @@ async function submitScore() {
     }
   }
   if (res.matchFinished) toast('Maç tamamlandı!');
+}
+
+// Kalan-dokun kolaylığı (checkout): keypad'e YENİ kalanı yazıp aktif oyuncunun
+// kalan sayısına dokununca, atılan skor = mevcut kalan − yazılan kalan olarak hesaplanır.
+// Hesaplanan skoru normal submitScore akışına verir (checkout/bust kuralları aynen geçerli).
+function submitRemaining() {
+  if (!currentMatch) return;
+  const m = currentMatch;
+  if (m.game_mode === 'cricket') return;
+  if (!currentInput) return toast('Önce keypad\'e kalan sayıyı yaz');
+  const slot = m.current_turn;
+  const currentRem = slot === 1 ? (m.p1_leg_score ?? getStartScore(m)) : (m.p2_leg_score ?? getStartScore(m));
+  const newRem = +currentInput;
+  if (isNaN(newRem) || newRem < 0) return;
+  if (newRem > currentRem) return toast('Yeni kalan, mevcut kalandan büyük olamaz');
+  const score = currentRem - newRem;
+  if (score > 180) return toast('Bir visit 180\'den fazla olamaz');
+  currentInput = String(score);
+  submitScore();
+}
+
+// BUST tuşu — gerçek bust kaydı (skor 0, kalan değişmez, sıra rakibe geçer).
+// İstatistik: 3 ok atıldı, 0 puan (motor tarafında). Leg bitmez.
+async function submitBust() {
+  if (!currentMatch) return;
+  const m = currentMatch;
+  if (m.game_mode === 'cricket') return;
+  const slot = m.current_turn;
+  const res = await api.post(`/api/matches/${currentMatch.id}/throw`, { playerSlot: slot, score: 0, bust: true });
+  if (res.error) return toast('Hata: ' + res.error);
+  currentInput = '';
+  const inputEl = document.getElementById('keypad-input');
+  if (inputEl) { inputEl.classList.remove('score-flash'); void inputEl.offsetWidth; inputEl.classList.add('score-flash'); }
+  showScoreFlash('Bust', true);
 }
 
 // Atış flash modalı — kaydedilen sayıyı ekran ortasında kısa süre gösterir.
@@ -1568,6 +1606,24 @@ function showScoreFlash(text, isBust) {
     el.classList.remove('show');
     setTimeout(() => { if (el === _scoreFlashEl) _scoreFlashEl = null; el.remove(); }, 250);
   }, 800);
+}
+
+// Leg skoru flash modalı — leg bitip yeni leg ekranı açılırken maçın leg sayısını
+// (örn. "0-1", "3-2") ekran ortasında ~1.2 sn gösterir. Tıklamayı engellemez.
+let _legFlashEl = null;
+function showLegScoreFlash(p1, p2) {
+  if (_legFlashEl) { _legFlashEl.remove(); _legFlashEl = null; }
+  const el = document.createElement('div');
+  el.className = 'score-flash-modal leg-flash';
+  el.innerHTML = `<div class="score-flash-num">${p1}-${p2}</div>`;
+  document.body.appendChild(el);
+  _legFlashEl = el;
+  void el.offsetWidth;
+  el.classList.add('show');
+  setTimeout(() => {
+    el.classList.remove('show');
+    setTimeout(() => { if (el === _legFlashEl) _legFlashEl = null; el.remove(); }, 250);
+  }, 1200);
 }
 
 // Checkout anında "Bitiren çift kaçıncı oktu?" promptu.

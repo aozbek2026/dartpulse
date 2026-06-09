@@ -683,9 +683,9 @@ function renderX01Match(m) {
       </div>
       <div class="dp-scores${isTurn1 ? ' p1-active' : ' p2-active'}">
         <div class="dp-rem-row">
-          <div class="dp-rem">${rem1}</div>
+          <div class="dp-rem"${isTurn1 ? ' onclick="x01SubmitRemaining()"' : ''}>${rem1}</div>
           <div></div>
-          <div class="dp-rem dp-rem-r">${rem2}</div>
+          <div class="dp-rem dp-rem-r"${!isTurn1 ? ' onclick="x01SubmitRemaining()"' : ''}>${rem2}</div>
         </div>
         <div class="dp-visit-table">
           ${visitRows}
@@ -706,7 +706,7 @@ function renderX01Match(m) {
             ${[1,2,3,4,5,6,7,8,9].map(n => `<div class="dp-key" onclick="x01AddDigit('${n}')">${n}</div>`).join('')}
             <div class="dp-key c" onclick="x01ClearInput()">C</div>
             <div class="dp-key${currentInput ? '' : ' dp-key-180'}" onclick="${currentInput ? "x01AddDigit('0')" : 'x01SetQuick(180)'}">${currentInput ? '0' : '180'}</div>
-            <div class="dp-key bust" onclick="x01SetQuick(0)">Bust</div>
+            <div class="dp-key bust" onclick="x01Bust()">Bust</div>
           </div>
           <div class="dp-quick">
             ${[60,81,85,100,140].map(s => `<div class="dp-qbtn" onclick="x01SetQuick(${s})">${s}</div>`).join('')}
@@ -1062,9 +1062,53 @@ async function x01Submit() {
   // board.js ile birebir: leg/maç bittiyse zaten özet/sonuç açılıyor, çakışmasın diye flash gösterme.
   const legFinished = G.finished || G.currentLeg !== legBefore;
   if (!legFinished) showScoreFlash(bust ? 'Bust' : String(score), bust);
+  else if (!G.finished) showLegScoreFlash(G.legs[1], G.legs[2]);
 
   refresh();
   if (G.finished) showResult();
+}
+
+// Kalan-dokun kolaylığı (checkout) — board.js submitRemaining ile birebir.
+// keypad'e YENİ kalanı yaz, aktif oyuncunun kalanına dokun → atılan = mevcut − yeni.
+function x01SubmitRemaining() {
+  if (!G || G.finished) return;
+  if (submitLocked) return;
+  if (!currentInput) return;
+  const slot = G.currentTurn;
+  const currentRem = G.remaining[slot];
+  const newRem = +currentInput;
+  if (isNaN(newRem) || newRem < 0) return;
+  if (newRem > currentRem) return;
+  const score = currentRem - newRem;
+  if (score > 180) return;
+  currentInput = String(score);
+  x01Submit();
+}
+
+// BUST tuşu — gerçek bust kaydı (skor 0, kalan değişmez, sıra rakibe geçer).
+// İstatistik: 3 ok atıldı, 0 puan. Leg bitmez. board.js submitBust mirror.
+function x01Bust() {
+  if (!G || G.finished) return;
+  if (submitLocked) return;
+  currentInput = '';
+  submitLocked = true;
+  setTimeout(() => { submitLocked = false; }, 350);
+  const slot = G.currentTurn;
+  saveUndoSnapshot();
+  recordX01ForceBust(slot);
+  showScoreFlash('Bust', true);
+  refresh();
+}
+
+// Açık bust kaydı (recordX01Throw'un bust dalı ile aynı istatistik: 3 ok, 0 puan).
+function recordX01ForceBust(slot) {
+  const cur = G.remaining[slot];
+  G.history.push({ slot, score: 0, remaining: cur, bust: true, leg: G.currentLeg, finishDarts: null });
+  G.totalScore[slot] += 0;
+  G.darts[slot] += 3;
+  G.turns[slot] += 1;
+  // kalan değişmez
+  G.currentTurn = G.currentTurn === 1 ? 2 : 1;
 }
 
 // Atış flash modalı — board.js'ten birebir kopya (style.css .score-flash-modal kullanır).
@@ -1083,6 +1127,22 @@ function showScoreFlash(text, isBust) {
     el.classList.remove('show');
     setTimeout(() => { if (el === _scoreFlashEl) _scoreFlashEl = null; el.remove(); }, 250);
   }, 800);
+}
+// Leg skoru flash modalı — board.js showLegScoreFlash mirror.
+let _legFlashEl = null;
+function showLegScoreFlash(p1, p2) {
+  if (_legFlashEl) { _legFlashEl.remove(); _legFlashEl = null; }
+  const el = document.createElement('div');
+  el.className = 'score-flash-modal leg-flash';
+  el.innerHTML = `<div class="score-flash-num">${p1}-${p2}</div>`;
+  document.body.appendChild(el);
+  _legFlashEl = el;
+  void el.offsetWidth;
+  el.classList.add('show');
+  setTimeout(() => {
+    el.classList.remove('show');
+    setTimeout(() => { if (el === _legFlashEl) _legFlashEl = null; el.remove(); }, 250);
+  }, 1200);
 }
 function askFinishDarts(score) {
   return new Promise((resolve) => {

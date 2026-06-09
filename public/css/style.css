@@ -850,13 +850,13 @@ body.board-page #root.board-screen {
   color: #fff;
   font-weight: 900;
   line-height: 1;
-  height: clamp(72px, 16vmin, 150px);
-  min-width: clamp(110px, 26vmin, 240px);
-  padding: 0 clamp(20px, 5vmin, 48px);
+  height: clamp(96px, 20vmin, 200px);
+  min-width: clamp(140px, 32vmin, 300px);
+  padding: 0 clamp(28px, 6vmin, 60px);
   display: flex;
   align-items: center;
   justify-content: center;
-  font-size: clamp(40px, 11vmin, 96px);
+  font-size: clamp(56px, 14vmin, 130px);
   font-variant-numeric: tabular-nums;
   transform: scale(0.85);
   transition: transform 0.18s ease-out;
