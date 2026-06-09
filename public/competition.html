@@ -302,6 +302,17 @@
           </div>
         </div>
 
+        <!-- Tur bazında özel leg/set — çeyrek/yarı/final için ayrı kazanılacak leg sayısı -->
+        <div id="ns-round-ov-section" style="margin-top:0.9rem;border-top:1px solid var(--border, rgba(255,255,255,0.08));padding-top:0.7rem;">
+          <label style="display:flex;align-items:center;gap:0.5rem;cursor:pointer;font-size:0.92rem">
+            <input type="checkbox" id="ns-round-ov-toggle" onchange="toggleRoundOverridesNs(this.checked)" />
+            <span>🎯 <strong>Tur bazında özel leg/set</strong> <span style="color:var(--text-dim);font-size:0.85rem">— çeyrek, yarı ve final maçlarında farklı leg sayısı</span></span>
+          </label>
+          <div id="ns-round-ov-panel" hidden style="margin-top:0.6rem;padding:0.6rem;background:rgba(0,212,255,0.04);border:1px solid rgba(0,212,255,0.2);border-radius:8px;">
+            <p style="font-size:0.8rem;color:var(--text-dim);margin:0 0 0.5rem 0">Boş bıraktığın turlar sezonun varsayılan leg/set değerini kullanır. Turlar seçili katılımcı sayısına göre listelenir.</p>
+          </div>
+        </div>
+
         <!-- Dilim 5c-1: Ustalar (Masters) oturumu — sezona daha yüksek puan ekler -->
         <div id="ns-masters-section" style="margin-top:0.9rem;border-top:1px solid var(--border, rgba(255,255,255,0.08));padding-top:0.7rem;">
           <label style="display:flex;align-items:center;gap:0.5rem;cursor:pointer;font-size:0.92rem">
@@ -356,6 +367,7 @@
 </div>
 
 <script src="/js/common.js"></script>
+<script src="/js/pdf-print.js"></script>
 <script src="/js/competition.js"></script>
 </body>
 </html>

@@ -14,6 +14,7 @@ const SECTIONS = [
 ];
 let activeIdx = 0;
 let rotateTimer = null;
+let _tvBracketPage = 0;   // büyük braketin gösterilen 32'lik dilimi (rotasyonla ilerler)
 
 function visibleSections() {
   return SECTIONS.map((s, i) => ({ ...s, idx: i })).filter(s => s.show());
@@ -44,6 +45,8 @@ function renderDots() {
 function nextSection() {
   const visible = visibleSections();
   if (visible.length <= 1) { applyActive(); return; }
+  // Bracket'ten ayrılırken bir sonraki 32'lik dilime geç (bir sonraki tura kadar gösterilir)
+  if (SECTIONS[activeIdx] && SECTIONS[activeIdx].id === 'tv-bracket') _tvBracketPage++;
   const curPos = visible.findIndex(s => s.idx === activeIdx);
   const nextPos = (curPos + 1) % visible.length;
   activeIdx = visible[nextPos].idx;
@@ -354,37 +357,51 @@ function renderBracket() {
     `;
   };
 
+  // Sütunları (winners + final) ve (losers) ayrı kümeler halinde kur
+  const mkCols = (ks) => ks.map(k => {
+    const [bracket, round] = k.split('-');
+    return { label: labelFor(bracket, round, rounds[k].length), matches: rounds[k] };
+  });
+  const wfKeys = keys.filter(k => k.startsWith('winners-') || k.startsWith('final-'));
+  const lbKeys = keys.filter(k => k.startsWith('losers-'));
+  // Yedek: yukarıdaki sınıflamaya uymayan key'ler (tek eleme 'main' vb.) → winners gibi davran
+  const otherKeys = keys.filter(k => !wfKeys.includes(k) && !lbKeys.includes(k));
+
+  let pages = (window.splitBracketColumns
+    ? window.splitBracketColumns(mkCols(otherKeys.concat(wfKeys)), '')
+    : [{ label: '', cols: mkCols(otherKeys.concat(wfKeys)) }]);
+  if (lbKeys.length) pages = pages.concat([{ label: 'Alt Taraf (Losers)', cols: mkCols(lbKeys) }]);
+
+  const n = pages.length || 1;
+  const pi = (((_tvBracketPage % n) + n) % n);
+  const page = pages[pi] || { label: '', cols: [] };
+  const cols = page.cols;
+
+  const renderCols = (cols) => cols.map((col, idx) => {
+    const ms = col.matches;
+    const isLastCol = (idx === cols.length - 1);
+    let inner;
+    if (isLastCol || ms.length <= 1) {
+      inner = ms.map(renderMatch).join('');
+    } else {
+      const pairs = [];
+      for (let i = 0; i < ms.length; i += 2) pairs.push(ms.slice(i, i + 2));
+      inner = pairs.map(pair => {
+        const single = pair.length === 1 ? 'single' : '';
+        return `<div class="pair ${single}">${pair.map(renderMatch).join('')}</div>`;
+      }).join('');
+    }
+    return `<div class="col ${isLastCol ? 'last-col' : ''}"><h4>${col.label}</h4><div class="matches">${inner}</div></div>`;
+  }).join('');
+
+  // Birden fazla dilim varsa başlıkta hangi dilimde olduğumuzu göster
+  const pageTag = n > 1
+    ? ` <span class="sub" style="background:var(--accent,#ff3860);color:#000;padding:0.1em 0.5em;border-radius:6px;margin-left:0.4em;">${page.label || `${pi + 1}. Bölüm`} · ${pi + 1}/${n}</span>`
+    : '';
+
   host.innerHTML = `
-    <h2>🏆 Bracket <span class="sub">${t.name}</span></h2>
-    <div class="tv-bracket">
-      ${keys.map((k, idx) => {
-        const ms = rounds[k];
-        const [bracket, round] = k.split('-');
-        const isLastCol = (idx === keys.length - 1);
-        const label = labelFor(bracket, round, ms.length);
-
-        // Son kolon veya tek maçlı round → pair gruplaması yok
-        let inner;
-        if (isLastCol || ms.length <= 1) {
-          inner = ms.map(renderMatch).join('');
-        } else {
-          // 2'şer 2'şer pair'le
-          const pairs = [];
-          for (let i = 0; i < ms.length; i += 2) pairs.push(ms.slice(i, i + 2));
-          inner = pairs.map(pair => {
-            const single = pair.length === 1 ? 'single' : '';
-            return `<div class="pair ${single}">${pair.map(renderMatch).join('')}</div>`;
-          }).join('');
-        }
-
-        return `
-          <div class="col ${isLastCol ? 'last-col' : ''}">
-            <h4>${label}</h4>
-            <div class="matches">${inner}</div>
-          </div>
-        `;
-      }).join('')}
-    </div>
+    <h2>🏆 Bracket <span class="sub">${t.name}</span>${pageTag}</h2>
+    <div class="tv-bracket">${renderCols(cols)}</div>
   `;
 }
 

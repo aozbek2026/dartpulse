@@ -364,6 +364,9 @@ function renderStandings() {
   const hasAnyData = ranked.some(r => (+r.sessions_played || 0) > 0);
 
   wrap.innerHTML = `
+    <div style="display:flex;justify-content:flex-end;margin-bottom:0.5rem">
+      <button class="secondary" onclick="printCompetitionStandings()" title="Klasmanı A4 (dikey) PDF olarak yazdır" style="font-size:0.85rem;padding:0.4rem 0.75rem">🖨️ Klasman PDF</button>
+    </div>
     <div class="card" style="padding:0;overflow-x:auto">
       <table class="standings-table">
         <thead>
@@ -771,6 +774,12 @@ function toggleNewSessionForm() {
       if (roster) roster.style.display = 'none';
       STATE.mastersRoster = [];
       renderMastersGrid();
+      // Tur bazında override panelini sıfırla (kapalı başlasın)
+      STATE.roundOv = {};
+      const rovCb = document.getElementById('ns-round-ov-toggle');
+      if (rovCb) rovCb.checked = false;
+      const rovPanel = document.getElementById('ns-round-ov-panel');
+      if (rovPanel) rovPanel.hidden = true;
     }
   }
 }
@@ -782,8 +791,124 @@ function onNsFormatChange() {
   const row = document.getElementById('ns-lb-legs-row');
   if (!fmt || !row) return;
   row.style.display = (fmt.value === 'double_elim') ? '' : 'none';
+  renderRoundOvPanel(); // format değişince tur listesi de değişir
 }
 window.onNsFormatChange = onNsFormatChange;
+
+// ── Tur bazında özel leg/set (çeyrek/yarı/final) ───────────────────
+// organizer.js'deki round-override panelinin sezon oturum formuna uyarlaması.
+// STATE.roundOv: { 'winners-2': {legs:5}, 'final-3': {legs:7,sets:2}, ... }
+// Anahtarlar tournament.js / server.js ile birebir aynı.
+function _nextPow2Ns(n) { let p = 1; while (p < n) p *= 2; return p; }
+
+function _roundLabelNs(matchCount) {
+  if (matchCount === 1) return 'Final';
+  if (matchCount === 2) return 'Yarı Final';
+  if (matchCount === 4) return 'Çeyrek Final';
+  if (matchCount === 8) return 'Son 16';
+  if (matchCount === 16) return 'Son 32';
+  if (matchCount === 32) return 'Son 64';
+  return matchCount * 2 + ' kişilik tur';
+}
+
+// Seçili katılımcı sayısı + formata göre {key,label} tur listesi.
+function _roundsForStageNs(format, entryCount) {
+  if (format === 'round_robin') return []; // RR'de çeyrek/yarı/final yok
+  if (entryCount < 2) return [];
+  const bracketSize = _nextPow2Ns(entryCount);
+  const wbRounds = Math.log2(bracketSize);
+
+  if (format === 'single_elim') {
+    const out = [];
+    for (let r = 1; r <= wbRounds; r++) {
+      const matchCount = bracketSize / Math.pow(2, r);
+      const isFinal = r === wbRounds;
+      out.push({ key: `${isFinal ? 'final' : 'winners'}-${r}`, label: _roundLabelNs(matchCount) });
+    }
+    return out;
+  }
+  if (format === 'double_elim') {
+    const out = [];
+    for (let r = 1; r <= wbRounds; r++) {
+      const matchCount = bracketSize / Math.pow(2, r);
+      out.push({ key: `winners-${r}`, label: matchCount === 1 ? 'WB Final' : 'WB ' + _roundLabelNs(matchCount) });
+    }
+    const lbRounds = wbRounds === 1 ? 0 : 2 * (wbRounds - 1);
+    for (let r = 1; r <= lbRounds; r++) {
+      out.push({ key: `losers-${r}`, label: r === lbRounds ? 'LB Final' : `LB Round ${r}` });
+    }
+    out.push({ key: `final-${wbRounds + lbRounds + 1}`, label: 'Grand Final' });
+    return out;
+  }
+  return [];
+}
+
+function toggleRoundOverridesNs(checked) {
+  const panel = document.getElementById('ns-round-ov-panel');
+  if (panel) panel.hidden = !checked;
+  if (!checked) STATE.roundOv = {};   // kapanınca temizle, submit'e gitmesin
+  else renderRoundOvPanel();
+}
+window.toggleRoundOverridesNs = toggleRoundOverridesNs;
+
+function renderRoundOvPanel() {
+  const toggle = document.getElementById('ns-round-ov-toggle');
+  const panel = document.getElementById('ns-round-ov-panel');
+  if (!panel || !toggle || !toggle.checked) return;
+  if (!STATE.roundOv) STATE.roundOv = {};
+
+  const format = (document.getElementById('ns-format') || {}).value || 'single_elim';
+  // Ustalar modunda katılımcı sayısı roster'dan, normalde checkbox'tan gelir
+  const mastersCb = document.getElementById('ns-is-masters');
+  const count = (mastersCb && mastersCb.checked)
+    ? (STATE.mastersRoster ? STATE.mastersRoster.length : 0)
+    : checkedParticipantIds().length;
+  const rounds = _roundsForStageNs(format, count);
+
+  const baseLegs = (STATE.comp && STATE.comp.legs_to_win) || 2;
+  const baseSets = (STATE.comp && STATE.comp.sets_to_win) || 1;
+  const intro = '<p style="font-size:0.8rem;color:var(--text-dim);margin:0 0 0.5rem 0">Boş bıraktığın turlar sezonun varsayılan leg/set değerini kullanır. Turlar seçili katılımcı sayısına göre listelenir.</p>';
+
+  if (format === 'round_robin') {
+    panel.innerHTML = intro + '<p style="font-size:0.82rem;color:var(--text-dim);margin:0">Round-robin formatında çeyrek/yarı/final yoktur; tur bazında özel leg geçerli değil.</p>';
+    return;
+  }
+  if (rounds.length === 0) {
+    panel.innerHTML = intro + '<p style="font-size:0.82rem;color:var(--text-dim);margin:0">Turları görmek için en az 2 katılımcı seç.</p>';
+    return;
+  }
+
+  const rows = rounds.map(rd => {
+    const cur = STATE.roundOv[rd.key] || {};
+    const legVal = cur.legs ?? '';
+    const setVal = cur.sets ?? '';
+    return `
+      <div style="display:flex;gap:0.5rem;align-items:center;margin-bottom:0.4rem">
+        <span style="flex:1;color:var(--text-dim);font-size:0.86rem">${rd.label}</span>
+        <label style="display:flex;align-items:center;gap:0.3rem;font-size:0.82rem">
+          <span style="color:var(--text-dim)">Leg</span>
+          <input type="number" min="1" max="15" placeholder="${baseLegs}" value="${legVal}" style="width:62px"
+            oninput="updateRoundOvNs('${rd.key}','legs',this.value)" />
+        </label>
+        <label style="display:flex;align-items:center;gap:0.3rem;font-size:0.82rem">
+          <span style="color:var(--text-dim)">Set</span>
+          <input type="number" min="1" max="9" placeholder="${baseSets}" value="${setVal}" style="width:62px"
+            oninput="updateRoundOvNs('${rd.key}','sets',this.value)" />
+        </label>
+      </div>`;
+  }).join('');
+  panel.innerHTML = intro + rows;
+}
+
+function updateRoundOvNs(key, field, value) {
+  if (!STATE.roundOv) STATE.roundOv = {};
+  if (!STATE.roundOv[key]) STATE.roundOv[key] = {};
+  const n = value ? +value : null;
+  if (n && n >= 1) STATE.roundOv[key][field] = n;
+  else delete STATE.roundOv[key][field];
+  if (!STATE.roundOv[key].legs && !STATE.roundOv[key].sets) delete STATE.roundOv[key];
+}
+window.updateRoundOvNs = updateRoundOvNs;
 
 // ── Ustalar (Masters) puan tablosu ────────────────────────────────
 // Ulaşılan tur için input grid'i render eder. Varsayılan değerler
@@ -839,6 +964,7 @@ function toggleMastersMode() {
     renderMastersGrid();
     initMastersRoster();
   }
+  renderRoundOvPanel(); // mod değişince katılımcı sayısı kaynağı değişir
 }
 window.toggleMastersMode = toggleMastersMode;
 
@@ -925,6 +1051,7 @@ function renderMastersRoster() {
   });
   listEl.innerHTML = rows.join('') || '<p style="color:var(--text-dim);font-size:0.85rem;margin:0">Liste boş — sayıyı artır veya oyuncu ekle</p>';
   if (countEl) countEl.textContent = `Toplam: ${STATE.mastersRoster.length} katılımcı`;
+  renderRoundOvPanel(); // roster sayısı değişince tur listesi güncellenir
 }
 
 function swapMastersSlot(idx) {
@@ -1003,6 +1130,7 @@ function updateParticipantCount() {
   const lbl = document.getElementById('ns-participant-count');
   if (lbl) lbl.textContent = `${checked} oyuncu seçili (en az 2 gerekli)`;
   invalidateSeedDraft();
+  renderRoundOvPanel(); // katılımcı sayısı değişince tur listesi güncellenir
 }
 window.updateParticipantCount = updateParticipantCount;
 
@@ -1161,6 +1289,13 @@ async function submitNewSession() {
     if (format === 'double_elim') {
       const lbVal = +(document.getElementById('ns-lb-legs')?.value);
       if (Number.isInteger(lbVal) && lbVal >= 1) body.lb_legs = lbVal;
+    }
+
+    // Tur bazında özel leg/set (çeyrek/yarı/final). Panel açık + dolu ise gönder.
+    const rovToggle = document.getElementById('ns-round-ov-toggle');
+    if (format !== 'round_robin' && rovToggle && rovToggle.checked &&
+        STATE.roundOv && Object.keys(STATE.roundOv).length) {
+      body.round_overrides = STATE.roundOv;
     }
 
     // Kura & Seri Başı taslağı varsa ve seçili oyuncularla birebir eşleşiyorsa,
@@ -1337,6 +1472,45 @@ function downloadReport() {
   setTimeout(() => a.remove(), 1500);
 }
 window.downloadReport = downloadReport;
+
+// ── Klasman PDF (dikey A4, çok sayfa) ──────────────────────────────
+function printCompetitionStandings() {
+  const c = STATE.comp;
+  const players = STATE.players || [];
+  if (!players.length) { toast('Klasmanda oyuncu yok'); return; }
+  // renderStandings ile aynı sıralama
+  const ranked = [...players].sort((a, b) => {
+    const pa = +a.total_points || 0, pb = +b.total_points || 0;
+    if (pb !== pa) return pb - pa;
+    const wa = +a.matches_won || 0, wb = +b.matches_won || 0;
+    if (wb !== wa) return wb - wa;
+    const la = (+a.legs_won || 0) - (+a.legs_lost || 0);
+    const lb = (+b.legs_won || 0) - (+b.legs_lost || 0);
+    if (lb !== la) return lb - la;
+    return (a.player_name || '').localeCompare(b.player_name || '');
+  });
+  const headers = ['Sıra', 'Oyuncu', 'Puan', 'Oyn.', '🥇', '🥈', '🥉',
+    'Maç G', 'Maç M', 'Maç %', 'Leg G', 'Leg M', 'Leg %', '3DA', 'EYÇ', '100+', '140+', '180'];
+  const rows = ranked.map((p, i) => {
+    const mw = +p.matches_won || 0, ml = +p.matches_lost || 0;
+    const lw = +p.legs_won || 0, ll = +p.legs_lost || 0;
+    const mPct = (mw + ml) ? Math.round(mw / (mw + ml) * 100) + '%' : '–';
+    const lPct = (lw + ll) ? Math.round(lw / (lw + ll) * 100) + '%' : '–';
+    const name = (p.player_name || '?') + (p.player_nickname ? ` (${p.player_nickname})` : '');
+    const stat = (p.stats_json && typeof p.stats_json === 'object') ? p.stats_json : {};
+    const totalScore = +stat.total_score || 0, dartsTotal = +stat.darts_thrown || 0;
+    const avg3 = dartsTotal > 0 ? ((totalScore / dartsTotal) * 3).toFixed(2) : '–';
+    return [i + 1, name, +p.total_points || 0, +p.sessions_played || 0,
+      +p.first_place || 0, +p.second_place || 0, +p.third_place || 0,
+      mw, ml, mPct, lw, ll, lPct,
+      avg3, (+stat.best_checkout || 0) || '–',
+      +stat.tons || 0, +stat.ton_plus || 0, +stat.one_eighty || 0];
+  });
+  window.printStandings(
+    { title: (c?.name || 'Yarışma') + ' — Klasman', subtitle: c?.type === 'league' ? 'Lig' : 'Sezon' },
+    headers, rows);
+}
+window.printCompetitionStandings = printCompetitionStandings;
 
 function showFinalizeModal(standings, opts) {
   opts = opts || {};

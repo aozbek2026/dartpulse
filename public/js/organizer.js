@@ -1256,6 +1256,7 @@ function renderTournament(t) {
           ${t.status === 'draft' && t.entries.length >= 2 ? `<button class="secondary" onclick="showMatchEditModal(${t.id})">🔀 Eşleşmeleri Düzenle</button>` : ''}
           ${t.status === 'draft' ? `<button class="primary" onclick="startTournament(${t.id})">Başlat</button>` : ''}
           ${t.status !== 'draft' ? `<button class="secondary" onclick="toggleReport(${t.id})">📊 Rapor</button>` : ''}
+          ${t.status !== 'draft' ? `<button class="secondary" title="Braketi A4 (yatay) PDF olarak yazdır" onclick="printTournamentBracket(${t.id})">🖨️ Braket PDF</button>` : ''}
           ${canFinishTournament(t) ? `<button class="btn" style="background: #22c55e; color: #000; font-weight: 700;" onclick="showTournamentStats(${t.id})">🏆 Turnuvayı Bitir</button>` : ''}
           ${t.status === 'finished' && !t.hidden_from_public ? `<button class="secondary" title="İzleyici listesinden kaldır" onclick="hideFromPublic(${t.id}, this)">👁 Listeden Kaldır</button>` : ''}
           <button class="danger" onclick="deleteTournament(${t.id})">Sil</button>
@@ -1275,6 +1276,20 @@ function renderTournament(t) {
     </div>
   `;
 }
+
+// Braket PDF (yatay A4, 32'lik dilim sayfaları) — pdf-print.js
+function printTournamentBracket(tid) {
+  const t = state.tournaments.find(x => x.id === tid);
+  if (!t) return;
+  const elim = t.stages.find(s => s.format !== 'round_robin');
+  const stage = elim || t.stages[0];
+  if (!stage) return;
+  const matches = t.matches.filter(m => m.stage_id === stage.id);
+  window.printBracket(
+    { title: t.name, subtitle: `${modeLabel(t.game_mode)} · ${t.entries.length} katılımcı`, format: stage.format },
+    matches);
+}
+window.printTournamentBracket = printTournamentBracket;
 
 function renderStage(t, stage, index) {
   const stageMatches = t.matches.filter(m => m.stage_id === stage.id);

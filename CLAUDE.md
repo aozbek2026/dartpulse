@@ -493,6 +493,14 @@ Aynı ligin tournament_id'lerini bulmak için `db.leagueSchedule(compId)` dönd�
 
 Yeni bir endpoint board veya match state'ini değiştiriyorsa scheduler çağrısı eklemeyi unutma. Aksi halde maçlar görünmez şekilde askıda kalır, kullanıcı "tabletlere maç gelmiyor" diye gelir.
 
+### Turnuva bitince board serbest bırakma — turnuva-bazlı olmalı (Haziran 2026 fix)
+
+**Bug:** Bir maç bitince turnuva tamamlandıysa (`t.status==='finished'`) `server.js` throw + walkover finish handler'ları `db.clearUserBoards(t.user_id)` çağırıyordu — bu kullanıcının **TÜM** board'larını sıfırlar. Paralel iki turnuva oynanırken (ör. SMDN sezon oturumu + Lucky Loser) biri bitince diğerinin tabletleri de bekleme ekranına düştü; canlı maç eski `board_id`'ye bağlı `live` kaldığı için scheduler yeniden atayamadı → ikinci turnuva yarıda kaldı.
+
+**Fix:** Yeni `db.clearTournamentBoards(userId, tournamentId)` helper'ı **sadece** `WHERE user_id=? AND tournament_id=?` board'ları sıfırlar ve sıfırlanan board listesini döndürür. `server.js`'teki iki finish handler'ı (`/api/matches/:id/throw` ve `/api/matches/:id/walkover`) artık bunu kullanıyor + sonrasında `scheduler.assignPendingMatches` çağırıp boşalan board'ları bekleyen başka turnuvaya yönlendiriyor. `scheduler.js` / skor motoru değişmedi.
+
+**Ders:** Çok-turnuvalı (federasyon) senaryoda board temizliği **asla kullanıcı bazında** yapılma — daima turnuva bazında scope et. `clearUserBoards` hâlâ duruyor ama yeni kodda kullanma.
+
 ### Round-bazlı finalize ve puan formülü
 
 Lig için klasman finalize'ı **round-bazlıdır**, gün-bazlı değil. `POST /api/competitions/:id/rounds/:roundNumber/finalize` (`db.recordLeagueRoundResults`):

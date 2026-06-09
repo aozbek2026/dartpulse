@@ -1386,18 +1386,39 @@ app.get('/api/competitions/:id/sessions', auth.requireAuth, (req, res) => {
   }
 });
 
-// Sezon oturumu için stage config'i kurar. Çift elemede body.lb_legs varsa
-// loser braket maçları için round_overrides (losers-*) üretir; yoksa boş config.
+// Sezon oturumu için stage config'i kurar.
+// - Çift elemede body.lb_legs varsa loser braket maçları için round_overrides (losers-*) üretir.
+// - body.round_overrides verilmişse (çeyrek/yarı/final vb. tur bazında özel leg/set),
+//   sanitize edilip config'e yedirilir. Tur bazında verilen değer toplu lb_legs'i ezer.
+// Anahtar formatı: `winners-1`, `final-3`, `losers-2`, `rr` (tournament.js ile aynı).
 function buildSessionStageConfig(format, body) {
   const config = {};
+  const ovs = {};
+
+  // Çift eleme: loser braket için toplu leg override (eski davranış, geriye dönük uyumlu)
   if (format === 'double_elim') {
     const lb = +(body && body.lb_legs);
     if (Number.isInteger(lb) && lb >= 1) {
-      const ovs = {};
       for (let r = 1; r <= 40; r++) ovs[`losers-${r}`] = { legs: lb };
-      config.round_overrides = ovs;
     }
   }
+
+  // Tur bazında özel leg/set override (çeyrek/yarı/final vb.)
+  const raw = body && body.round_overrides;
+  if (raw && typeof raw === 'object') {
+    for (const [key, val] of Object.entries(raw)) {
+      if (!val || typeof val !== 'object') continue;
+      if (key !== 'rr' && !/^(winners|losers|final)-\d+$/.test(key)) continue;
+      const entry = {};
+      const legs = +val.legs;
+      const sets = +val.sets;
+      if (Number.isInteger(legs) && legs >= 1) entry.legs = legs;
+      if (Number.isInteger(sets) && sets >= 1) entry.sets = sets;
+      if (Object.keys(entry).length) ovs[key] = { ...(ovs[key] || {}), ...entry };
+    }
+  }
+
+  if (Object.keys(ovs).length) config.round_overrides = ovs;
   return config;
 }
 

@@ -434,8 +434,9 @@ function renderBracket() {
     <div class="card">
       <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom: 0.85rem;">
         <h4 style="margin: 0;">${t.name}</h4>
-        <span style="color: var(--text-dim); font-size: 0.85rem;">
+        <span style="color: var(--text-dim); font-size: 0.85rem; display:flex; align-items:center; gap:0.6rem;">
           ${modeLabel(t.game_mode)} · ${t.team_mode === 'singles' ? 'Teklik' : 'Çiftli'} · ${t.entries.length} katılımcı
+          <button class="secondary" onclick="printTournamentBracket(${t.id})" title="Braketi A4 (yatay) PDF olarak yazdır" style="font-size:0.8rem;padding:0.3rem 0.6rem">🖨️ Braket PDF</button>
         </span>
       </div>
       ${t.stages.map(s => renderStage(t, s)).join('')}
@@ -443,6 +444,21 @@ function renderBracket() {
   `).join('');
   fitBrackets();
 }
+
+// Braket PDF (yatay A4, 32'lik dilim sayfaları) — pdf-print.js
+function printTournamentBracket(tid) {
+  const t = state.tournaments.find(x => x.id === tid);
+  if (!t) return;
+  // Elim aşaması varsa onu, yoksa RR aşamasını kullan
+  const elim = t.stages.find(s => s.format !== 'round_robin');
+  const stage = elim || t.stages[0];
+  if (!stage) return;
+  const matches = t.matches.filter(m => m.stage_id === stage.id);
+  window.printBracket(
+    { title: t.name, subtitle: `${modeLabel(t.game_mode)} · ${t.entries.length} katılımcı`, format: stage.format },
+    matches);
+}
+window.printTournamentBracket = printTournamentBracket;
 
 // Her braketi, içinde bulunduğu kutuya yatayda sığacak şekilde ölçekler.
 // Sabit px'li iç katman (.bracket-fit-inner) kutudan genişse küçültülür; asla büyütülmez.
@@ -556,7 +572,7 @@ function renderElim(stage, matches) {
           const label = cnt === 1 ? 'WB Final' : cnt === 2 ? 'WB Yarı Final' : `WB R${round}`;
           return { label, matches: rounds[k] };
         });
-        bracketHTML = renderElimBracketSVG(cols, renderBracketMatch);
+        bracketHTML = renderBracketWithTabs(cols, 'Üst Taraf');
       } else {
         bracketHTML = `<div class="bracket">
           ${keys.map(k => {
@@ -600,10 +616,44 @@ function renderElim(stage, matches) {
       <h4 style="color: var(--text-dim); font-size: 0.78rem; text-transform: uppercase; letter-spacing: 0.05em; margin-bottom: 0.5rem;">
         ${formatLabel(stage.format)}
       </h4>
-      ${renderElimBracketSVG(columns, renderBracketMatch)}
+      ${renderBracketWithTabs(columns, '')}
     </div>
   `;
 }
+
+// Büyük braketi (>32 oyuncu) ekranda 32'lik dilim sekmelerine böler.
+// ≤32 oyuncu ise normal tek görünüm döner.
+let _btSeq = 0;
+function btBtnStyle(active) {
+  return 'font-size:0.8rem;padding:0.3rem 0.7rem;border-radius:6px;cursor:pointer;border:1px solid var(--border);'
+    + (active ? 'background:var(--accent);color:#000;font-weight:700;'
+              : 'background:var(--bg-2);color:var(--text-dim);font-weight:400;');
+}
+function renderBracketWithTabs(columns, prefix) {
+  const split = window.splitBracketColumns
+    ? window.splitBracketColumns(columns, prefix || '')
+    : [{ label: '', cols: columns }];
+  if (split.length <= 1) return renderElimBracketSVG(columns, renderBracketMatch);
+  const id = 'bt' + (++_btSeq);
+  const bar = split.map((p, i) =>
+    `<button class="bt-btn" data-bt="${id}" data-i="${i}" onclick="selectBracketTab('${id}',${i})" style="${btBtnStyle(i === 0)}">${p.label}</button>`
+  ).join('');
+  const panes = split.map((p, i) =>
+    `<div class="bt-pane" data-bt="${id}" data-i="${i}" ${i ? 'hidden' : ''}>${renderElimBracketSVG(p.cols, renderBracketMatch)}</div>`
+  ).join('');
+  return `<div class="bracket-tabs" data-bt="${id}">
+    <div style="display:flex;flex-wrap:wrap;gap:0.4rem;margin-bottom:0.6rem;">${bar}</div>
+    ${panes}</div>`;
+}
+window.selectBracketTab = function (id, idx) {
+  document.querySelectorAll('.bt-btn[data-bt="' + id + '"]').forEach(b => {
+    b.style.cssText = btBtnStyle(+b.dataset.i === idx);
+  });
+  document.querySelectorAll('.bt-pane[data-bt="' + id + '"]').forEach(p => {
+    p.hidden = +p.dataset.i !== idx;
+  });
+  fitBrackets();
+};
 
 function renderBracketMatch(m) {
   const cls = m.status === 'live' ? 'live' : m.status === 'finished' ? 'finished' : '';
@@ -692,18 +742,28 @@ function renderMatches() {
   else if (matchFilter === 'ready') filtered = all.filter(m => m.status === 'ready');
   else if (matchFilter === 'finished') filtered = all.filter(m => m.status === 'finished');
 
-  // Sıralama: son biten en üstte; aktif (live/ready) sonra; bekleyenler en altta
+  // Sıralama (yukarıdan aşağı):
+  //   1) CANLI oynanan maçlar
+  //   2) Başlamamış ama board'a atanmış maçlar (oynanmaya hazır)
+  //   3) Oynanmış / bitmiş maçlar (en yeni üstte)
+  //   4) Sırası gelecek maçlar (board'a atanmamış bekleyenler)
+  const assigned = new Set(
+    (state.boards || []).filter(b => b.current_match_id).map(b => b.current_match_id));
+  const rank = (m) => {
+    if (m.status === 'live') return 0;
+    if (m.status === 'finished') return 2;
+    if ((m.status === 'ready' || m.status === 'pending') && assigned.has(m.id)) return 1;
+    return 3;  // sırası gelecek (atanmamış ready/pending)
+  };
   filtered.sort((a, b) => {
-    const aFin = a.status === 'finished';
-    const bFin = b.status === 'finished';
-    // İkisi de bitmişse → finished_at desc (en yeni üstte)
-    if (aFin && bFin) {
+    const ra = rank(a), rb = rank(b);
+    if (ra !== rb) return ra - rb;
+    // Bitmişler kendi içinde: en yeni üstte
+    if (ra === 2) {
       if (a.finished_at && b.finished_at) return b.finished_at.localeCompare(a.finished_at);
       return (b.id || 0) - (a.id || 0);
     }
-    // Bitmişler önce, sonra live, ready, pending
-    const order = { finished: 0, live: 1, ready: 2, pending: 3 };
-    return (order[a.status] ?? 9) - (order[b.status] ?? 9);
+    return (a.id || 0) - (b.id || 0);
   });
 
   if (filtered.length === 0) {
