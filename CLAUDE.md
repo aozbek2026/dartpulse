@@ -811,7 +811,85 @@ maçta alan olarak yok → `state.boards`'taki `current_match_id` set'inden tür
 
 ---
 
-## Turnuva Kayıt Sistemi — Tasarım (Haziran 2026, beyin fırtınası tamam, KOD BEKLİYOR)
+## Turnuva Kayıt Sistemi — UYGULANDI (Dilim A–G, Haziran 2026)
+
+> **Durum:** Tüm dilimler (A–G) kodlandı, yerelde test edildi, `node --check` temiz. Korumalı
+> modüllere (`match-engine.js`, `tournament.js`/`entries`/`stages`/`matches` ŞEMASI, `scheduler.js`,
+> `board.js`, `scorer.html`) hiç dokunulmadı — her şey additive: yeni tablolar, yeni kolonlar
+> (yalnız korumasız `users` ve `players`), yeni endpoint'ler, yeni sayfalar.
+
+### Ne yapıldı (dilim dilim)
+
+- **A — Rol altyapısı:** `users` tablosuna `role` (DEFAULT 'player'), `organizer_status`
+  (DEFAULT 'none' — none|pending|approved|rejected), `organizer_note` (migrasyon + CREATE).
+  db helper'lar: `setUserRole`, `setOrganizerStatus`, `usersByOrganizerStatus`, `usersByRole`,
+  `countAdmins`. `auth.requireAdmin` middleware. `scripts/seed-admin.js` (zaten vardı; env
+  `ADMIN_EMAIL`/`ADMIN_PASSWORD` ile çalışır, kullanıcı yoksa oluşturur).
+- **B — Organizatör başvurusu:** `auth.applyOrganizerHandler` + `POST /auth/organizer-apply`.
+  `mailer.sendOrganizerRequestEmail` (tüm admin'lere). `index.html` kullanıcı menüsünde
+  "🎫 Organizatör Ol" (duruma göre etiket/kilit) + admin'lere "🛡️ Yönetici Paneli" linki.
+- **C — Admin paneli (`public/admin.html`, yalnız role='admin'):** Endpoint'ler `requireAdmin`:
+  `GET /api/admin/organizer-requests`, `.../:userId/approve|reject`, `GET /api/admin/organizers`,
+  `.../:userId/revoke`, `GET /api/admin/tournaments`, `.../:id/finish`, `DELETE .../:id`.
+  db: `adminAllTournaments()` (users join'li). Onay/red'de başvurana mail YOK (panelden görür).
+- **D — Etkinlik ayarları (AYRI TABLO):** `tournaments`'a DOKUNULMADAN `tournament_event_settings`
+  (1:1, `tournament_id` PK+FK): `reg_enabled`, `checkin_enabled`, `stats_to_profile`, `category`,
+  `capacity`, `reg_deadline`, `checkin_time`, `event_date`, `description`. db: `eventSettings`,
+  `upsertEventSettings`. Endpoint: `GET/PUT /api/tournaments/:id/event-settings` (sahiplik).
+  organizer.js: turnuva kartında "🎫 Etkinlik" modalı (`showEventSettings`). **Kullanıcı kararı:
+  tournaments tablosuna kolon eklemek istemedi, ayrı tablo tercih edildi.**
+- **E — Online kayıt + yedek liste:** `registrations` tablosu (UNIQUE(tournament_id,user_id),
+  status: registered|waitlisted|checked_in|confirmed|withdrawn|no_show, `reg_order`, `player_id`).
+  db: `createRegistration` (kontenjan doluysa otomatik yedek), `withdrawRegistration` (iptalde ilk
+  yedeği otomatik terfi), `registrationsForUser`, `upcomingTournaments` (sayaçlı), `registrationsForTournament`.
+  Endpoint'ler: `GET /api/public/upcoming-tournaments`, `POST .../register`, `POST .../withdraw`,
+  `GET /api/my-registrations`, `GET /api/tournaments/:id/registrations`. Sayfa: `public/turnuvalar.html`
+  (Gelecek Turnuvalar + Turnuvalarım sekmeleri). `index.html` nav'ında "Turnuvalar" linki.
+- **F — Check-in + Confirm (motora aktarım):** `players` tablosuna `account_user_id` (korumasız,
+  migrasyon+CREATE). db: `confirmRegistrations(tid, ownerUserId, checkinEnabled)` — transaction;
+  aktif kayıtları `createPlayer`+`addEntry` ile mevcut motora aktarır, **idempotent** (yalnız
+  `player_id` boş olanlar; check-in açıksa sadece `checked_in`). `registrationById`, `setRegistrationStatus`,
+  `playerByAccountUser`. Endpoint'ler: `POST .../registrations/:regId/status`, `POST .../confirm`
+  (sadece draft, `scheduleBroadcast`). organizer.js: draft kartında "📋 Kayıtlar" modalı
+  (`showRegistrations`) — asıl/yedek/iptal grupları + check-in butonları + "✓ Katılımcıları Onayla".
+- **G — Katılımcı profili (canlı, koşullu):** db `playerCareerProfile(accountUserId)` — ayrı tablo
+  YOK, mevcut maç verisinden (`players.account_user_id` → entries → matches + match_stats) canlı
+  hesaplar. **Koşul:** yalnız `stats_to_profile=1` + `reg_enabled=1` turnuvalar dahil (gating doğal
+  filtreyle). Endpoint `GET /api/my-profile`. Sayfa `public/profil.html` (özet kartlar + turnuva
+  listesi). `index.html` menüsünde "Performans & Başarımlar" artık `/profil.html`'e bağlı.
+
+### Dummy oyuncu sorunu + entry çıkarma (önemli pratik not)
+
+Mevcut motor turnuva oluşturmak için **en az 2 entry** istiyor (`tournament.createTournament`,
+korumalı). Saf kayıt-etkinliği turnuvasında oluşturma anında katılımcı yok → organizatör 2 "dolgu"
+(dummy) oyuncuyla oluşturup, kayıtları Confirm'le ekleyince dummy'ler listede kalıyor (ör. 2 dummy +
+4 onaylı = 6 kişi). Çözüm: **draft turnuvadan katılımcı çıkarma** eklendi.
+- db: `removeEntry(tournamentId, entryId)` — entry'yi siler; o entry online kayıttan geldiyse ilgili
+  `registrations` kaydını `registered`'a + `player_id=NULL`'a geri alır (tekrar onaylanabilsin).
+- Endpoint: `DELETE /api/tournaments/:id/entries/:entryId` (draft only, sahiplik).
+- organizer.js: draft kartında "👥 Katılımcılar (N)" modalı (`showParticipants`) — her satırda × ile çıkarma.
+- **İleride:** kayıt-etkinliği turnuvasını dummy olmadan oluşturmak `tournament.createTournament`'ın
+  ≥2 şartını gevşetmeyi (korumalı modül) gerektirir; kullanıcı onayıyla ayrıca yapılabilir.
+
+### Test araçları (scripts/)
+
+- `scripts/seed-test-registrations.js` — 8 İngiliz isimli sahte hesap (email_verified=1, şifre
+  `test1234`) oluşturup verilen turnuvaya kaydeder. id'siz çalıştırınca kayıt-açık turnuvaları
+  listeler. Kullanım: `TOURNAMENT_ID=<id> node scripts/seed-test-registrations.js`. Idempotent.
+  (Organizatörün tek başına kayıt akışını test edebilmesi için — gerçek katılımcı simülasyonu.)
+- Hızlı id öğrenme / kaydı elle açma örnekleri: `db.upcomingTournaments()`, `db.adminAllTournaments()`,
+  `db.upsertEventSettings(id,{reg_enabled:1})` tek-satır node komutlarıyla.
+
+### Yeni dosyalar
+`public/admin.html`, `public/turnuvalar.html`, `public/profil.html`, `scripts/seed-test-registrations.js`.
+
+### Bekleyen
+Canlıya deploy (git push → Render) + production'da `seed-admin.js` ile admin tohumlama. Dummy'siz
+kayıt-etkinliği akışı (opsiyonel, motor şartı gevşetme gerektirir).
+
+---
+
+## Turnuva Kayıt Sistemi — Tasarım (orijinal beyin fırtınası, Haziran 2026)
 
 Ayrıntılı tasarım belgesi: `turnuva-kayit-sistemi-tasarim.docx` (klasör kökünde). Aşağısı özet.
 
