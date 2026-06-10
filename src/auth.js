@@ -59,6 +59,26 @@ function requireAdmin(req, res, next) {
   next();
 }
 
+// Middleware: organizatör gerekir (admin ya da onaylı organizatör)
+function requireOrganizer(req, res, next) {
+  if (!req.session || !req.session.userId) {
+    return res.status(401).json({ error: 'Giriş gerekli' });
+  }
+  const u = db.userById(req.session.userId);
+  if (!u) {
+    req.session.userId = null;
+    return res.status(401).json({ error: 'Kullanıcı bulunamadı' });
+  }
+  if (u.role !== 'admin' && u.organizer_status !== 'approved') {
+    return res.status(403).json({
+      error: 'Organizatör yetkisi gerekli. Turnuva düzenlemek için önce "Organizatör Ol" başvurusu yapmanız ve onaylanmanız gerekir.',
+      organizer_status: u.organizer_status || 'none',
+    });
+  }
+  req.user = u;
+  next();
+}
+
 // Middleware: user varsa req.user doldur (opsiyonel)
 function optionalAuth(req, res, next) {
   if (req.session && req.session.userId) {
@@ -218,7 +238,7 @@ function deleteAccountHandler(req, res) {
 
 module.exports = {
   hashPassword, verifyPassword,
-  requireAuth, requireAdmin, optionalAuth,
+  requireAuth, requireAdmin, requireOrganizer, optionalAuth,
   registerHandler, loginHandler, logoutHandler, meHandler,
   forgotPasswordHandler, resetPasswordHandler, verifyEmailHandler,
   resendVerifyHandler, deleteAccountHandler,

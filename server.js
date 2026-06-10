@@ -395,7 +395,7 @@ app.patch('/api/tournaments/:id/hide-public', auth.requireAuth, (req, res) => {
   scheduleBroadcast();
   res.json({ ok: true });
 });
-app.post('/api/tournaments', auth.requireAuth, (req, res) => {
+app.post('/api/tournaments', auth.requireOrganizer, (req, res) => {
   try {
     const t = tournament.createTournament({ ...req.body, user_id: req.user.id });
     scheduleBroadcast();
@@ -404,7 +404,7 @@ app.post('/api/tournaments', auth.requireAuth, (req, res) => {
     res.status(400).json({ error: e.message });
   }
 });
-app.post('/api/tournaments/:id/start', auth.requireAuth, (req, res) => {
+app.post('/api/tournaments/:id/start', auth.requireOrganizer, (req, res) => {
   try {
     const t = db.tournamentById(+req.params.id);
     if (t && t.user_id && t.user_id !== req.user.id) {
@@ -442,7 +442,7 @@ app.get('/api/tournaments/:id/event-settings', auth.requireAuth, (req, res) => {
   res.json({ settings: db.eventSettings(t.id) });
 });
 // Turnuva etkinlik / kayıt ayarları — kaydet (Dilim D)
-app.put('/api/tournaments/:id/event-settings', auth.requireAuth, (req, res) => {
+app.put('/api/tournaments/:id/event-settings', auth.requireOrganizer, (req, res) => {
   const t = db.tournamentById(+req.params.id);
   if (!t) return res.status(404).json({ error: 'Turnuva bulunamadı' });
   if (t.user_id !== req.user.id) return res.status(403).json({ error: 'Yetkisiz' });
@@ -526,7 +526,7 @@ function _ownTournamentOr(req, res) {
   return t;
 }
 // Kayıt durumunu değiştir (check-in / no-show / yedekten asıl listeye vb.)
-app.post('/api/tournaments/:id/registrations/:regId/status', auth.requireAuth, (req, res) => {
+app.post('/api/tournaments/:id/registrations/:regId/status', auth.requireOrganizer, (req, res) => {
   const t = _ownTournamentOr(req, res); if (!t) return;
   const reg = db.registrationById(+req.params.regId);
   if (!reg || reg.tournament_id !== t.id) return res.status(404).json({ error: 'Kayıt bulunamadı' });
@@ -538,7 +538,7 @@ app.post('/api/tournaments/:id/registrations/:regId/status', auth.requireAuth, (
   res.json({ ok: true });
 });
 // Confirm: aktif kayıtları motora aktar (players + entries)
-app.post('/api/tournaments/:id/confirm', auth.requireAuth, (req, res) => {
+app.post('/api/tournaments/:id/confirm', auth.requireOrganizer, (req, res) => {
   const t = _ownTournamentOr(req, res); if (!t) return;
   if (t.status !== 'draft') return res.status(400).json({ error: 'Sadece taslak turnuvaya katılımcı aktarılabilir' });
   const es = db.eventSettings(t.id);
@@ -549,7 +549,7 @@ app.post('/api/tournaments/:id/confirm', auth.requireAuth, (req, res) => {
 });
 
 // Draft turnuvadan katılımcı çıkar — sadece draft durumunda
-app.delete('/api/tournaments/:id/entries/:entryId', auth.requireAuth, (req, res) => {
+app.delete('/api/tournaments/:id/entries/:entryId', auth.requireOrganizer, (req, res) => {
   const t = db.tournamentById(+req.params.id);
   if (!t) return res.status(404).json({ error: 'Turnuva bulunamadı' });
   if (t.user_id !== req.user.id) return res.status(403).json({ error: 'Yetkisiz' });
@@ -561,7 +561,7 @@ app.delete('/api/tournaments/:id/entries/:entryId', auth.requireAuth, (req, res)
 });
 
 // Katılımcı sırasını yeniden düzenle — sadece draft durumunda
-app.put('/api/tournaments/:id/entries/reorder', auth.requireAuth, (req, res) => {
+app.put('/api/tournaments/:id/entries/reorder', auth.requireOrganizer, (req, res) => {
   try {
     const t = db.tournamentById(+req.params.id);
     if (!t) return res.status(404).json({ error: 'Turnuva bulunamadı' });
@@ -579,7 +579,7 @@ app.put('/api/tournaments/:id/entries/reorder', auth.requireAuth, (req, res) => 
   }
 });
 
-app.delete('/api/tournaments/:id', auth.requireAuth, (req, res) => {
+app.delete('/api/tournaments/:id', auth.requireOrganizer, (req, res) => {
   const t = db.tournamentById(+req.params.id);
   if (t && t.user_id && t.user_id !== req.user.id) {
     return res.status(403).json({ error: 'Yetkiniz yok' });
@@ -1049,7 +1049,7 @@ app.get('/api/team-events', auth.requireAuth, (req, res) => {
 });
 
 // Yeni takım maçı oluştur
-app.post('/api/team-events', auth.requireAuth, (req, res) => {
+app.post('/api/team-events', auth.requireOrganizer, (req, res) => {
   const { name, team1_name, team2_name, phases } = req.body;
   if (!name || !team1_name || !team2_name) {
     return res.status(400).json({ error: 'name, team1_name, team2_name zorunlu' });
@@ -1094,7 +1094,7 @@ app.patch('/api/team-events/:id', auth.requireAuth, (req, res) => {
 });
 
 // Takım maçı sil
-app.delete('/api/team-events/:id', auth.requireAuth, (req, res) => {
+app.delete('/api/team-events/:id', auth.requireOrganizer, (req, res) => {
   const ev = db.teamEventById(+req.params.id);
   if (!ev || ev.user_id !== req.session.userId) return res.status(404).json({ error: 'bulunamadı' });
   db.deleteTeamEvent(ev.id);
@@ -1116,7 +1116,7 @@ app.patch('/api/team-phases/:id', auth.requireAuth, (req, res) => {
 });
 
 // Aşamaya maç ekle
-app.post('/api/team-phases/:id/matches', auth.requireAuth, (req, res) => {
+app.post('/api/team-phases/:id/matches', auth.requireOrganizer, (req, res) => {
   const ph = db.teamPhaseById(+req.params.id);
   if (!ph) return res.status(404).json({ error: 'bulunamadı' });
   const ev = db.teamEventById(ph.team_event_id);
@@ -1139,7 +1139,7 @@ app.post('/api/team-phases/:id/matches', auth.requireAuth, (req, res) => {
 });
 
 // Toplu maç ekleme (liste ile)
-app.post('/api/team-phases/:id/matches/bulk', auth.requireAuth, (req, res) => {
+app.post('/api/team-phases/:id/matches/bulk', auth.requireOrganizer, (req, res) => {
   const ph = db.teamPhaseById(+req.params.id);
   if (!ph) return res.status(404).json({ error: 'bulunamadı' });
   const ev = db.teamEventById(ph.team_event_id);
@@ -1190,7 +1190,7 @@ app.patch('/api/team-phase-matches/:id', auth.requireAuth, (req, res) => {
 });
 
 // Bireysel maç sil
-app.delete('/api/team-phase-matches/:id', auth.requireAuth, (req, res) => {
+app.delete('/api/team-phase-matches/:id', auth.requireOrganizer, (req, res) => {
   const pm = db.teamPhaseMatchById(+req.params.id);
   if (!pm) return res.status(404).json({ error: 'bulunamadı' });
   const ph = db.teamPhaseById(pm.team_phase_id);
@@ -1205,7 +1205,7 @@ app.delete('/api/team-phase-matches/:id', auth.requireAuth, (req, res) => {
 });
 
 // ── Takım maçını board'a gönder ───────────────────────────────────────────────
-app.post('/api/team-phase-matches/:id/send-to-board', auth.requireAuth, (req, res) => {
+app.post('/api/team-phase-matches/:id/send-to-board', auth.requireOrganizer, (req, res) => {
   try {
     const userId = req.session.userId;
     const pm = db.teamPhaseMatchById(+req.params.id);
@@ -1355,7 +1355,7 @@ app.get('/api/competitions/:id', auth.requireAuth, (req, res) => {
 });
 
 // Olustur
-app.post('/api/competitions', auth.requireAuth, (req, res) => {
+app.post('/api/competitions', auth.requireOrganizer, (req, res) => {
   try {
     const userId = req.session.userId;
     const b = req.body || {};
@@ -1398,7 +1398,7 @@ app.post('/api/competitions', auth.requireAuth, (req, res) => {
 });
 
 // Guncelle (sadece draft veya temel alanlar)
-app.put('/api/competitions/:id', auth.requireAuth, (req, res) => {
+app.put('/api/competitions/:id', auth.requireOrganizer, (req, res) => {
   try {
     const userId = req.session.userId;
     const id = +req.params.id;
@@ -1424,7 +1424,7 @@ app.put('/api/competitions/:id', auth.requireAuth, (req, res) => {
 });
 
 // Sil
-app.delete('/api/competitions/:id', auth.requireAuth, (req, res) => {
+app.delete('/api/competitions/:id', auth.requireOrganizer, (req, res) => {
   try {
     const userId = req.session.userId;
     const id = +req.params.id;
@@ -1461,7 +1461,7 @@ app.get('/api/competitions/:id/players', auth.requireAuth, (req, res) => {
 });
 
 // Ekle — body: { name: "Ali", nickname?: "..." } veya { player_id: 42 }
-app.post('/api/competitions/:id/players', auth.requireAuth, (req, res) => {
+app.post('/api/competitions/:id/players', auth.requireOrganizer, (req, res) => {
   try {
     const userId = req.session.userId;
     const compId = +req.params.id;
@@ -1524,7 +1524,7 @@ app.post('/api/competitions/:id/players', auth.requireAuth, (req, res) => {
 });
 
 // Cikar
-app.delete('/api/competitions/:id/players/:playerId', auth.requireAuth, (req, res) => {
+app.delete('/api/competitions/:id/players/:playerId', auth.requireOrganizer, (req, res) => {
   try {
     const userId = req.session.userId;
     const compId = +req.params.id;
@@ -1627,7 +1627,7 @@ function buildSessionStageConfig(format, body) {
 
 // Olustur
 // body: { name?, session_date?, format, participant_player_ids: number[], lb_legs? }
-app.post('/api/competitions/:id/sessions', auth.requireAuth, (req, res) => {
+app.post('/api/competitions/:id/sessions', auth.requireOrganizer, (req, res) => {
   try {
     const userId = req.session.userId;
     const compId = +req.params.id;
@@ -1802,7 +1802,7 @@ app.get('/api/competitions/:id/sessions/:sid/preview', auth.requireAuth, (req, r
 
 // Finalize — standings'i hesaplayip session_results'a + competition_players birikimli istatistige isle
 // Idempotent: zaten islenmisse 'already_recorded' donar, tekrar isleme yapmaz (cift sayim onlenir)
-app.post('/api/competitions/:id/sessions/:sid/finalize', auth.requireAuth, (req, res) => {
+app.post('/api/competitions/:id/sessions/:sid/finalize', auth.requireOrganizer, (req, res) => {
   try {
     const userId = req.session.userId;
     const compId = +req.params.id;
@@ -1949,7 +1949,7 @@ app.get('/api/competitions/:id/report.xlsx', auth.requireAuth, (req, res) => {
 });
 
 // Sil — sadece pending (turnuva henuz baslamamis) oturumlar silinebilir
-app.delete('/api/competitions/:id/sessions/:sid', auth.requireAuth, (req, res) => {
+app.delete('/api/competitions/:id/sessions/:sid', auth.requireOrganizer, (req, res) => {
   try {
     const userId = req.session.userId;
     const compId = +req.params.id;
@@ -2066,7 +2066,7 @@ app.get('/api/competitions/:id/schedule', auth.requireAuth, (req, res) => {
 // Lig planını oluştur (Berger). Henüz oturum yoksa otomatik "1. Gün" açar
 // ve tüm round'ları o güne bağlar — organizatör roundları o gün altında istediği
 // sırada başlatabilsin diye.
-app.post('/api/competitions/:id/plan', auth.requireAuth, (req, res) => {
+app.post('/api/competitions/:id/plan', auth.requireOrganizer, (req, res) => {
   try {
     const userId = req.session.userId;
     const compId = +req.params.id;
@@ -2122,7 +2122,7 @@ app.post('/api/competitions/:id/plan', auth.requireAuth, (req, res) => {
 
 // Lig round'unu oturum içinde başlat
 // body: { round_number, game_mode?, legs_to_win?, sets_to_win? }
-app.post('/api/competitions/:id/sessions/:sid/start-round', auth.requireAuth, (req, res) => {
+app.post('/api/competitions/:id/sessions/:sid/start-round', auth.requireOrganizer, (req, res) => {
   try {
     const userId = req.session.userId;
     const compId = +req.params.id;
@@ -2236,7 +2236,7 @@ app.post('/api/competitions/:id/sessions/:sid/start-round', auth.requireAuth, (r
 
 // Lig round'unu başka bir güne taşı (henüz başlatılmamış olmalı).
 // body: { session_id }
-app.post('/api/competitions/:id/rounds/:roundNumber/move', auth.requireAuth, (req, res) => {
+app.post('/api/competitions/:id/rounds/:roundNumber/move', auth.requireOrganizer, (req, res) => {
   try {
     const userId = req.session.userId;
     const compId = +req.params.id;
@@ -2268,7 +2268,7 @@ app.post('/api/competitions/:id/rounds/:roundNumber/move', auth.requireAuth, (re
 
 // Atış istatistiklerini geriye dönük yaz (eski finalize edilmiş round'lar için).
 // Bug fix sonrası mevcut data için tek seferlik bir kurtarma.
-app.post('/api/competitions/:id/backfill-shot-stats', auth.requireAuth, (req, res) => {
+app.post('/api/competitions/:id/backfill-shot-stats', auth.requireOrganizer, (req, res) => {
   try {
     const userId = req.session.userId;
     const compId = +req.params.id;
@@ -2283,7 +2283,7 @@ app.post('/api/competitions/:id/backfill-shot-stats', auth.requireAuth, (req, re
 
 // Lig round'unu finalize et — round'un mini turnuvası bittiyse oyuncu istatistiklerini
 // klasmana yansıtır. Idempotent.
-app.post('/api/competitions/:id/rounds/:roundNumber/finalize', auth.requireAuth, (req, res) => {
+app.post('/api/competitions/:id/rounds/:roundNumber/finalize', auth.requireOrganizer, (req, res) => {
   try {
     const userId = req.session.userId;
     const compId = +req.params.id;

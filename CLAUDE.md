@@ -811,6 +811,32 @@ maçta alan olarak yok → `state.boards`'taki `current_match_id` set'inden tür
 
 ---
 
+## Organizatör yetki kilidi — DÜZELTME (Haziran 2026)
+
+**Bug:** Katılımcı/organizatör ayrımı tasarlanmıştı (rol + admin onay akışı) ama
+**zorlanmıyordu** — turnuva/lig/takım oluşturma uçları sadece `auth.requireAuth` ile
+korunduğu için giriş yapan **herkes** (varsayılan `player` rolü) turnuva düzenleyebiliyordu.
+
+**Fix (additive, korumalı modüllere dokunulmadı — `auth.js`/`server.js` korumalı değil):**
+- `src/auth.js` yeni **`requireOrganizer`** middleware: `role === 'admin'` **veya**
+  `organizer_status === 'approved'` değilse `403` + Türkçe "Organizatör Ol başvurusu yapın"
+  mesajı (+ `organizer_status` döner). `module.exports`'a eklendi.
+- `server.js`'de 27 yönetim ucu `requireAuth → requireOrganizer`: `POST /api/tournaments`,
+  `/start`, event-settings, confirm, entries, sil; tüm `/api/competitions` yazma uçları
+  (oluştur/güncelle/sil, players, sessions, plan, start-round, finalize, move, backfill);
+  tüm `/api/team-events` + `/api/team-phases` + `/api/team-phase-matches` yazma uçları.
+- **Katılımcı uçları `requireAuth` kaldı** (kasten): `POST /api/tournaments/:id/register`,
+  `/withdraw` — normal kullanıcıya açık olmalı. Profil/my-registrations da aynı.
+
+**Yetkilendirme akışı (zaten canlıydı, burada belgeleniyor):** Admin hesabı (`role='admin'`,
+`scripts/seed-admin.js` ile tohumlanmış) gelen "Organizatör Ol" başvurularını **admin
+panelinden** (`admin.html`) onay/red eder. Onaylanan kullanıcı `organizer_status='approved'`
+olur ve artık turnuva düzenleyebilir. Yeni kayıtlar varsayılan `player` kalır.
+
+`node --check server.js src/auth.js` temiz.
+
+---
+
 ## Turnuva Kayıt Sistemi — UYGULANDI (Dilim A–G, Haziran 2026)
 
 > **Durum:** Tüm dilimler (A–G) kodlandı, yerelde test edildi, `node --check` temiz. Korumalı
