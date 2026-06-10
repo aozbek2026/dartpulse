@@ -14,6 +14,31 @@ services:
         value: /data/data.db
       - key: SESSION_SECRET
         generateValue: true   # Render otomatik üretir, her deploy'da sabit kalır
+      # --- E-posta (Resend) ---
+      # RESEND_API_KEY: GÜVENLIK gereği koda/yaml'a YAZILMAZ.
+      # Render panelinden elle gir: Dashboard > Service > Environment > Add (key: RESEND_API_KEY)
+      - key: RESEND_API_KEY
+        sync: false           # Render panelinden manuel girilir, repoya kaydedilmez
+      - key: EMAIL_FROM
+        value: "Dart Core Pro <noreply@dartcorepro.com>"
+      - key: BASE_URL
+        value: https://dartcorepro.com   # canonical host (www değil) — token linkleri 301'e takılmasın
+      # --- Bulut yedekleme (opsiyonel) ---
+      # Hepsi girilince sunucu periyodik olarak data.db'yi sıkıştırıp bulut deposuna
+      # (Cloudflare R2 / Backblaze B2 / S3) yükler. Girilmezse yedekleme kapalı kalır,
+      # davranış değişmez. Anahtarlar panelden elle girilir (repoya YAZILMAZ).
+      - key: BACKUP_S3_ENDPOINT
+        sync: false           # Backblaze B2: ör. https://s3.us-west-004.backblazeb2.com
+      - key: BACKUP_S3_REGION
+        sync: false           # Backblaze B2: endpoint'teki bölge, ör. us-west-004
+      - key: BACKUP_S3_BUCKET
+        sync: false           # ör. dartcorepro-yedek
+      - key: BACKUP_S3_KEY_ID
+        sync: false
+      - key: BACKUP_S3_SECRET
+        sync: false
+      - key: BACKUP_INTERVAL_HOURS
+        value: "24"           # kaç saatte bir yedek (varsayılan 24)
     disk:
       name: sqlite-data
       mountPath: /data

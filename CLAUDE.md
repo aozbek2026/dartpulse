@@ -857,8 +857,15 @@ Otomatik bildirim YOK (her iki taraf panelden görür). Tek e-posta: organizatö
 - **F** Check-in + Confirm (→ players/entries transfer)
 - **G** Katılımcı profili + koşullu kariyer aktarımı
 
-### E-posta durumu (kontrol gerekiyor)
-`src/mailer.js` Resend ile hazır ama: (1) `RESEND_API_KEY` `render.yaml`'da YOK — Render panelinden manuel set edilmediyse production'da da mail gitmiyor (no-op). (2) FROM hâlâ test adresi `onboarding@resend.dev`; gerçek `noreply@dartcorepro.com` için Resend'de domain doğrulama (DNS) + `EMAIL_FROM` env gerekir. Yerelde `.env` yok → yerel testte mail gitmez (beklenen).
+### E-posta durumu — ✅ CANLIDA ÇALIŞIYOR (Haziran 2026, doğrulandı)
+`src/mailer.js` Resend ile production'da **çalışıyor**. Resend gönderim logunda kayıt doğrulama ("E-posta Doğrulama") ve şifre sıfırlama ("Şifre Sıfırlama") mailleri gerçek kullanıcılara **"Delivered"** olarak gidiyor.
+
+Production yapılandırması (Render panelinde **elle** ayarlı — `render.yaml` blueprint'ten değil):
+- `RESEND_API_KEY` — geçerli, "Onboarding" anahtarı (sending access). Render env'de set.
+- `EMAIL_FROM` = `Dart Core Pro <noreply@dartcorepro.com>` — domain Resend'de **verified** (~Mayıs 2026).
+- `BASE_URL` = `https://dartcorepro.com` (Haziran 2026'da www'den www'siz canonical'a çekildi — mail linkleri 301 sıçraması yapmasın diye).
+
+Not: Deploy repo'su `aozbek2026/dartpulse` (branch `main`); env değişkenleri dashboard'dan yönetiliyor, `render.yaml` sadece dökümantasyon. Yerelde `.env` yok → yerel testte mail gitmez (beklenen).
 
 ---
 

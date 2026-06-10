@@ -21,14 +21,31 @@ const engine = require('./src/match-engine');
 const scheduler = require('./src/scheduler');
 const auth = require('./src/auth');
 const competitionReport = require('./src/competition-report');
+const backup = require('./src/backup');
 
 const app = express();
 const server = http.createServer(app);
-const io = new Server(server, { cors: { origin: '*' } });
+// perMessageDeflate: websocket paketlerini sıkıştırır. Çalışma mantığı aynı —
+// sadece TV/izleyici/panel'e giden büyük 'state' paketleri çok daha küçük gider
+// (bant genişliği tasarrufu). threshold: 1KB altı paketler sıkıştırılmaz (gereksiz CPU).
+const io = new Server(server, {
+  cors: { origin: '*' },
+  perMessageDeflate: { threshold: 1024 },
+});
 
 // Render ve benzeri proxy'lerin arkasında çalışmak için — session cookie'lerin
 // "secure" flag'i doğru çalışsın diye proxy'e güven.
 app.set('trust proxy', 1);
+
+// HTTP yanıtlarını (statik JS/CSS, REST JSON) gzip ile sıkıştır — bant genişliği
+// tasarrufu, davranış aynı. 'compression' paketi opsiyonel (mailer/resend gibi):
+// yoksa server sessizce sıkıştırmasız devam eder, çökmez.
+try {
+  const compression = require('compression');
+  app.use(compression());
+} catch (e) {
+  console.warn('[compression] paket yok, sıkıştırma devre dışı:', e.message);
+}
 
 // Prod'da HTTP ile gelen istekleri HTTPS'e yönlendir
 app.use((req, res, next) => {
@@ -2202,4 +2219,11 @@ server.listen(PORT, '0.0.0.0', () => {
     console.log(`\n⚠️  Aktif LAN arayüzü bulunamadı — kabloya/Wi-Fi'a bağlı mısın?`);
   }
   console.log('');
+  // Bulut yedekleme zamanlayıcısı — env var'lar set ise periyodik yedek alır,
+  // değilse sessizce kapalı kalır (davranış değişmez).
+  try {
+    backup.startSchedule();
+  } catch (e) {
+    console.warn('[backup] zamanlayıcı başlatılamadı:', e.message);
+  }
 });
