@@ -67,13 +67,9 @@
 <body>
 <div class="app">
   <aside class="sidebar">
-    <h1><span class="dot"></span> Dart Core Pro</h1>
-    <div id="user-bar" style="margin-bottom:1rem;font-size:0.85rem;color:var(--text-dim);display:none;">
-      <div id="user-name" style="margin-bottom:0.4rem;"></div>
-      <button id="logout-btn" style="background:transparent;border:1px solid var(--border);color:var(--text-dim);padding:0.35rem 0.7rem;border-radius:6px;cursor:pointer;font-size:0.82rem;">Çıkış Yap</button>
-    </div>
+    <h1><a href="/" style="color:inherit;text-decoration:none;" title="Anasayfa"><span class="dot"></span> Dart Core Pro</a></h1>
     <nav>
-      <a href="/organizer.html">← Turnuvalar</a>
+      <a href="/organizer.html">← Organizatör Paneli</a>
       <a href="#list" class="tab-link active" data-tab="list">Ligler & Sezonlar</a>
       <a href="#new" class="tab-link" data-tab="new">Yeni Oluştur</a>
     </nav>
@@ -82,16 +78,7 @@
   <script>
     fetch('/auth/me',{credentials:'same-origin'}).then(r=>r.json()).then(d=>{
       if(!d.user){window.location.href='/login.html';return;}
-      const bar=document.getElementById('user-bar');
-      const nm=document.getElementById('user-name');
-      if(bar)bar.style.display='block';
-      if(nm)nm.textContent=d.user.name||d.user.email;
     }).catch(()=>window.location.href='/login.html');
-    document.addEventListener('click',e=>{
-      if(e.target&&e.target.id==='logout-btn'){
-        fetch('/auth/logout',{method:'POST',credentials:'same-origin'}).finally(()=>window.location.href='/login.html');
-      }
-    });
   </script>
 
   <main class="main">
