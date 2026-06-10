@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Dart Core Pro — Tanıtım</title>
+<title>Dart Core Pro — Turnuva Modülü Tanıtımı</title>
 <style>
   /* ===== Dart Core Pro gerçek renk değişkenleri (style.css) ===== */
   :root{
@@ -16,7 +16,6 @@
   html,body{height:100%;background:#000;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Inter,sans-serif}
   body{display:flex;align-items:center;justify-content:center}
 
-  /* stage = 16:9, viewport'a tam otur (gerçek ekranların vw ölçüleri stage ile örtüşür) */
   .stage{position:relative;width:min(100vw,177.78vh);height:min(56.25vw,100vh);
     background:var(--bg);overflow:hidden;color:var(--text);
     box-shadow:0 30px 80px rgba(0,0,0,.6)}
@@ -25,7 +24,6 @@
     align-items:center;justify-content:center;text-align:center;
     padding:4% 7%;opacity:0;pointer-events:none;transition:opacity .5s ease}
   .scene.active{opacity:1}
-  /* gerçek-ekran sahneleri kenardan kenara */
   .scene.real{padding:0;justify-content:flex-start}
 
   h1{font-size:clamp(28px,6.2vw,76px);font-weight:800;letter-spacing:-1px;line-height:1.02}
@@ -52,7 +50,6 @@
   .active .dartt{animation:throw 1s .5s both}
   @keyframes throw{0%{opacity:0;transform:translate(120px,-90px) rotate(35deg)}70%{opacity:1}100%{opacity:1;transform:none}}
 
-  /* scene caption (gerçek ekranların üstünde) */
   .cap{position:absolute;left:0;right:0;top:0;z-index:4;text-align:center;
     padding:10px 6px 14px;background:linear-gradient(180deg,rgba(11,13,20,.92),rgba(11,13,20,0));
     pointer-events:none}
@@ -64,12 +61,6 @@
     font-weight:600;font-size:.95rem;background:var(--surface-2);color:var(--text)}
   .btn.secondary{background:transparent;border:1px solid var(--border);color:var(--text-dim)}
   .card{background:var(--surface);border:1px solid var(--border);border-radius:12px}
-
-  .board-header{display:flex;justify-content:space-between;align-items:center;
-    padding:clamp(.5rem,1.2vmin,1rem) clamp(.75rem,1.8vmin,1.5rem);
-    background:var(--surface);border-radius:14px;border:1px solid var(--border);flex:0 0 auto}
-  .board-header .board-name{font-size:clamp(1rem,2.4vmin,1.4rem);font-weight:700}
-  .board-header .match-info{color:var(--text-dim);font-size:clamp(.7rem,1.6vmin,.9rem)}
 
   /* bracket */
   .bracket{display:flex;gap:1.25rem;padding:.75rem 0}
@@ -85,106 +76,34 @@
   .bracket-match .slot.winner{color:var(--success);font-weight:600}
   .bracket-match .slot .score{color:var(--text-dim);font-variant-numeric:tabular-nums}
 
-  /* dp (X01 skor ekranı) — gerçek */
-  .dp{display:flex;flex-direction:column;flex:1 1 auto;min-height:0;background:#0b0d14}
-  .dp-gap{flex:0}
-  .dp-names{display:grid;grid-template-columns:1fr 1fr;border-bottom:1px solid #1e2336;flex:0 0 auto}
-  .dp-name-col{padding:2.1vw 2.6vw;display:flex;align-items:center;justify-content:space-between;
-    gap:1.6vw;border-top:3px solid transparent;background:#0f1220}
-  .dp-name-col.active{border-top-color:#ff3860;background:#140a10}
-  .dp-leg-big{font-size:clamp(22px,7.4vw,60px);font-weight:900;line-height:1;color:#2a2e42;
-    flex-shrink:0;font-variant-numeric:tabular-nums}
-  .dp-name-col.active .dp-leg-big{color:#ff3860}
-  .dp-name-center{flex:1;text-align:center;min-width:0}
-  .dp-pname{font-size:clamp(12px,3.7vw,28px);font-weight:500;color:#e2e8f0;margin-bottom:.8vw;
-    white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-  .dp-name-col.active .dp-pname{color:#ff3860}
-  .dp-meta{display:flex;justify-content:center;gap:2.6vw}
-  .dp-meta span{font-size:clamp(9px,2.6vw,20px);color:#4a5568}
-  .dp-meta strong{font-size:clamp(10px,2.9vw,22px);color:#8892b0}
-  .dp-scores{display:flex;flex-direction:column;flex:1 1 0;min-height:0;border-bottom:1px solid #1e2336}
-  .dp-rem-row{display:grid;grid-template-columns:1fr clamp(18px,7.4vw,36px) 1fr;flex-shrink:0}
-  .dp-rem-row > :first-child{padding:2.1vw 2.6vw;text-align:center}
-  .dp-rem-row > :last-child{padding:2.1vw 2.6vw;text-align:center}
-  .dp-scores.p1-active .dp-rem-row > :first-child{background:#140a10}
-  .dp-scores.p1-active .dp-rem-row > :last-child{background:#0f1220}
-  .dp-rem-row > :nth-child(2){background:#0d0f1c;border-left:1px solid #1e2336;border-right:1px solid #1e2336}
-  .dp-visit-table{flex:1;min-height:0;overflow:hidden;display:flex;flex-direction:column;justify-content:flex-end}
-  .dp-visit-row{display:grid;grid-template-columns:1fr clamp(18px,7.4vw,36px) 1fr;flex-shrink:0}
-  .dp-scores.p1-active .dp-visit-row > :first-child{background:#140a10}
-  .dp-scores.p1-active .dp-visit-row > :last-child{background:#0f1220}
-  .dp-visit-row > :nth-child(2){background:#0d0f1c;border-left:1px solid #1e2336;border-right:1px solid #1e2336}
-  .dp-visit-num{font-size:clamp(13px,3.8vw,28px);color:#2a2e42;line-height:2;font-weight:500;
-    font-variant-numeric:tabular-nums;text-align:center}
-  .dp-rem{font-size:clamp(32px,10vw,80px);font-weight:900;line-height:1;letter-spacing:-.05em;
-    margin-bottom:clamp(4px,1.3vw,10px);font-variant-numeric:tabular-nums}
-  .dp-throw{font-size:clamp(16px,4.8vw,36px);color:#4a5568;text-align:center;line-height:2;
-    font-variant-numeric:tabular-nums}
-  .dp-throw.last{color:#00d4ff;font-weight:500}
-  .dp-throw.bust{color:#ef4444}
-  .dp-keypad{background:#0b0d14;padding:1.8vw;flex:0 0 auto}
-  .dp-top{display:grid;grid-template-columns:1fr 1.6fr 1fr;gap:clamp(3px,1.3vw,10px);margin-bottom:clamp(3px,1.3vw,10px)}
-  .dp-undo{background:#1a1e2d;border:1px solid #2a2e42;border-radius:7px;padding:clamp(6px,1.84vw,14px) 0;
-    text-align:center;color:#8892b0;font-size:clamp(11px,3.2vw,24px)}
-  .dp-inp{background:#111526;border:1.5px solid #2a2e42;border-radius:7px;padding:clamp(6px,1.84vw,14px);
-    text-align:center;font-size:clamp(18px,5.3vw,40px);font-weight:500;color:#fff;font-variant-numeric:tabular-nums}
-  .dp-gon{background:#ff3860;border-radius:7px;padding:clamp(6px,1.84vw,14px) 0;text-align:center;
-    color:#000;font-size:clamp(11px,3.2vw,24px);font-weight:500}
-  .dp-main{display:grid;grid-template-columns:clamp(26px,8.9vw,52px) 1fr clamp(26px,8.9vw,52px);gap:clamp(3px,1.3vw,10px)}
-  .dp-quick{display:flex;flex-direction:column;gap:clamp(2px,.8vw,5px)}
-  .dp-qbtn{flex:1;background:#1a1e2d;border:1px solid #2a2e42;border-radius:5px;padding:clamp(3px,1.05vw,8px) 0;
-    text-align:center;font-size:clamp(10px,2.9vw,22px);color:#8892b0;display:flex;align-items:center;justify-content:center}
-  .dp-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:clamp(2px,.8vw,5px)}
-  .dp-key{background:#1a1e2d;border:1px solid #2a2e42;border-radius:5px;padding:clamp(7px,1.84vw,14px) 0;
-    text-align:center;font-size:clamp(13px,3.95vw,30px);color:#e2e8f0}
-  .dp-key.c{color:#f6ad55}
-  .dp-key.dp-key-180{color:var(--accent);font-size:clamp(11px,3vw,22px);font-weight:700}
-  .dp-key.bust{background:#2d1020;border-color:#5a1f35;color:#ff6b8a;font-size:clamp(9px,2.6vw,20px)}
-  /* landscape — gerçek media query (stage 16:9 olduğu için bu düzen geçerli) */
-  .dp{display:grid;grid-template-columns:1fr 1fr;grid-template-rows:auto 1fr;
-    column-gap:clamp(4px,1vmin,12px);overflow:hidden}
-  .dp-names{grid-column:1;grid-row:1}
-  .dp-scores{grid-column:1;grid-row:2;min-height:0}
-  .dp-keypad{grid-column:2;grid-row:1 / span 2;display:flex;flex-direction:column;min-height:0}
-  .dp-keypad .dp-main{flex:1 1 auto;min-height:0}
-  .dp-keypad .dp-grid{height:100%}
-  .dp-gap{display:none}
-
-  /* gerçek ekran sahnesini stage'e oturtan sarmalayıcı */
-  .device{position:absolute;inset:0;display:flex;flex-direction:column;
-    padding:64px 14px 14px;gap:.5rem}
-  .device.tablet-pad{padding-top:64px}
-
-  /* bracket sığdırma kabı — 128'lik braketin tamamı görünsün */
+  /* bracket sığdırma kabı */
   .bkwrap{position:absolute;inset:0;overflow:hidden}
   .bkpan{position:absolute;left:0;top:0;transform-origin:top left}
   .bkpan .bracket{padding:0}
 
-  /* standings */
-  .table{width:min(620px,90%);border:1px solid var(--border);border-radius:10px;overflow:hidden;margin-top:6px}
-  .tr{display:grid;grid-template-columns:36px 1fr 64px;gap:6px;align-items:center;
-    padding:clamp(7px,1.2vw,13px) clamp(10px,1.6vw,18px);font-size:clamp(11px,1.5vw,18px);
-    border-top:1px solid var(--border);text-align:left}
-  .tr:first-child{border-top:none;color:var(--text-dim);font-size:.85em;letter-spacing:1px}
-  .tr .pos{font-weight:800;text-align:center}
-  .tr.t1{background:rgba(74,222,128,.10)} .tr.t1 .pos{color:var(--success)}
-  .tr.t2 .pos{color:#cfd8dc} .tr.t3 .pos{color:#cd7f32}
-  .tr .pts{text-align:right;font-weight:800;color:var(--accent-2)}
-  .active .tr{animation:up .5s both}
-  .active .tr:nth-child(2){animation-delay:.1s}
-  .active .tr:nth-child(3){animation-delay:.2s}
-  .active .tr:nth-child(4){animation-delay:.3s}
-  .active .tr:nth-child(5){animation-delay:.4s}
+  /* format kartları */
+  .fmts{display:grid;grid-template-columns:repeat(3,1fr);gap:clamp(10px,1.8vw,22px);
+    width:min(880px,94%);margin-top:18px}
+  .fmt{background:var(--surface);border:1px solid var(--border);border-radius:12px;
+    padding:clamp(12px,2vw,24px) clamp(10px,1.6vw,18px);text-align:center}
+  .fmt .ic{font-size:clamp(22px,3.4vw,42px);margin-bottom:8px}
+  .fmt .t{font-weight:800;font-size:clamp(13px,1.8vw,21px);margin-bottom:6px}
+  .fmt .d{font-size:clamp(10px,1.3vw,15px);color:var(--text-dim);line-height:1.4}
+  .fmt.hl{border-color:var(--accent);box-shadow:0 0 28px rgba(255,56,96,.18)}
+  .active .fmt{animation:slot .6s both}
+  .active .fmt:nth-child(2){animation-delay:.2s}
+  .active .fmt:nth-child(3){animation-delay:.4s}
 
   /* pills */
   .pills{display:flex;flex-wrap:wrap;gap:10px;justify-content:center;margin-top:20px;max-width:90%}
   .pill{background:rgba(255,56,96,.12);border:1px solid rgba(255,56,96,.4);color:#ff8fa6;
     font-weight:700;border-radius:999px;padding:clamp(6px,1vw,11px) clamp(12px,1.8vw,22px);font-size:clamp(11px,1.5vw,18px)}
+  .pill.cy{background:rgba(0,212,255,.10);border-color:rgba(0,212,255,.4);color:#7fe6ff}
   .active .pill{animation:pop .5s both}
   .active .pill:nth-child(2){animation-delay:.1s}.active .pill:nth-child(3){animation-delay:.2s}
   .active .pill:nth-child(4){animation-delay:.3s}.active .pill:nth-child(5){animation-delay:.4s}.active .pill:nth-child(6){animation-delay:.5s}
 
-  /* autopilot boards */
+  /* otopilot boards */
   .boards{display:grid;grid-template-columns:repeat(2,1fr);gap:clamp(10px,1.8vw,20px);width:min(760px,92%);margin-top:10px}
   .bcard{background:var(--surface);border:1px solid var(--border);border-radius:10px;padding:clamp(8px,1.4vw,16px);text-align:left}
   .bcard .bh{display:flex;align-items:center;justify-content:space-between;font-size:clamp(10px,1.3vw,15px);
@@ -199,7 +118,7 @@
   .active .bcard:nth-child(3){animation-delay:.55s}.active .bcard:nth-child(4){animation-delay:.75s}
   @keyframes slot{from{opacity:0;transform:translateY(20px) scale(.95)}to{opacity:1;transform:none}}
 
-  /* portrait cihaz çerçevesi (maç öncesi + skor ekranı iframe içinde) */
+  /* portrait cihaz çerçevesi */
   .devwrap{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;padding-top:46px}
   .dev{height:calc(100% - 70px);aspect-ratio:10/16;background:#05070c;border:7px solid #1c2233;
     border-radius:22px;box-shadow:0 24px 60px rgba(0,0,0,.6);overflow:hidden;position:relative}
@@ -235,7 +154,7 @@
   </div>
 
   <!-- 1: INTRO -->
-  <section class="scene" data-dur="4000">
+  <section class="scene" data-dur="4200">
     <svg class="board" viewBox="0 0 200 200">
       <circle cx="100" cy="100" r="98" fill="#0a0f13" stroke="#2a2f48" stroke-width="2"/>
       <circle cx="100" cy="100" r="84" fill="#11181f"/>
@@ -248,73 +167,92 @@
       <g class="dartt"><line x1="148" y1="52" x2="104" y2="96" stroke="#fbbf24" stroke-width="3.5" stroke-linecap="round"/>
         <polygon points="104,96 112,98 110,90" fill="#eaf2f0"/><polygon points="148,52 158,44 152,60" fill="#00d4ff"/></g>
     </svg>
-    <h1 class="up">DART CORE <span class="accent">PRO</span></h1>
-    <p class="sub up2">Türkçe dart turnuvası yönetim sistemi — kura, skor, klasman, hepsi tek yerde.</p>
+    <h1 class="up">TURNUVA <span class="accent">MODÜLÜ</span></h1>
+    <p class="sub up2">Kur, kurayı çek, başlat — gerisini Dart Core Pro yönetsin.</p>
   </section>
 
-  <!-- 2: PROBLEM -->
-  <section class="scene" data-dur="3600">
-    <span class="tag up">TANIDIK MI?</span>
-    <h2 class="up2">Kağıt fikstür, dağınık skorlar,<br>kafa karıştıran klasman.</h2>
-    <p class="sub up3">Turnuva yönetmek bu kadar zor olmamalı.</p>
+  <!-- 2: 3 FORMAT -->
+  <section class="scene" data-dur="5000">
+    <span class="tag up">3 FORMAT · TEK TIKLA</span>
+    <h2 class="up2">Turnuvanı formatına göre kur</h2>
+    <div class="fmts">
+      <div class="fmt hl"><div class="ic">🏆</div><div class="t">Tek Eleme</div><div class="d">Kaybeden elenir, klasik kupa heyecanı — yüzlerce oyuncuyla bile.</div></div>
+      <div class="fmt"><div class="ic">🔁</div><div class="t">Çift Eleme</div><div class="d">İkinci şans braketi — bir mağlubiyet seni bitirmez.</div></div>
+      <div class="fmt"><div class="ic">⚔️</div><div class="t">Round-Robin</div><div class="d">Herkes herkesle oynar, puan tablosu kazananı belirler.</div></div>
+    </div>
+    <p class="sub up4">501 / 701 / 1001, Cricket — leg ve set sayısı sana kalmış.</p>
   </section>
 
-  <!-- 3: GERÇEK BRAKET (32'lik gösterim) -->
+  <!-- 3: KURA & SERİ BAŞI -->
+  <section class="scene" data-dur="4800">
+    <span class="tag up">🎲 KURA &amp; SERİ BAŞI</span>
+    <h2 class="up2">Tek dokunuşla <span class="accent">adil kura</span></h2>
+    <div class="pills">
+      <span class="pill">🎲 Otomatik kura</span>
+      <span class="pill cy">🏅 Seri başı koruması</span>
+      <span class="pill">🎯 Akıllı BYE dağılımı</span>
+      <span class="pill cy">↕️ Sürükle-bırak sıralama</span>
+    </div>
+    <p class="sub up4">Seri başları erken turda eşleşmez, BYE'lar brakete eşit dağıtılır.</p>
+  </section>
+
+  <!-- 4: GERÇEK BRAKET (32'lik gösterim) -->
   <section class="scene real" data-dur="7600">
-    <div class="cap"><span class="tag">GERÇEK BRAKET · YÜZLERCE OYUNCU</span><h2>Bütün kadroyu gir, braketi sistem kursun</h2></div>
+    <div class="cap"><span class="tag">GERÇEK BRAKET · YÜZLERCE OYUNCU</span><h2>Braketi sistem kursun, sen turnuvayı yaşa</h2></div>
     <div class="bkwrap"><div class="bkpan" id="bkpan"></div></div>
   </section>
 
-  <!-- 4: OTOPİLOT -->
+  <!-- 5: OTOPİLOT -->
   <section class="scene" data-dur="5200">
     <span class="tag up">KUR VE BIRAK · OTOPİLOT</span>
-    <h2 class="up2">Turnuvayı başlat — maçlar tabletlere <span class="accent">kendiliğinden</span> düşer</h2>
+    <h2 class="up2">Maçlar tabletlere <span class="accent">kendiliğinden</span> düşer</h2>
     <div class="boards">
       <div class="bcard"><div class="bh"><span>📱 Board 1</span><span class="dotlive"></span></div><div class="match">Yusuf <span class="sc">3</span> – <span class="sc">2</span> Kaan</div><div class="nxt">Bitince → sıradaki maç otomatik</div></div>
       <div class="bcard"><div class="bh"><span>📱 Board 2</span><span class="dotlive"></span></div><div class="match">Ece <span class="sc">2</span> – <span class="sc">1</span> Deniz</div><div class="nxt">Bitince → sıradaki maç otomatik</div></div>
       <div class="bcard"><div class="bh"><span>📱 Board 3</span><span class="dotlive"></span></div><div class="match">Mert <span class="sc">3</span> – <span class="sc">0</span> Onur</div><div class="nxt">Bitince → sıradaki maç otomatik</div></div>
       <div class="bcard"><div class="bh"><span>📱 Board 4</span><span class="dotlive"></span></div><div class="match">Selin <span class="sc">1</span> – <span class="sc">1</span> Burak</div><div class="nxt">Bitince → sıradaki maç otomatik</div></div>
     </div>
-    <p class="sub up4">Eşleştirme, board ataması ve sıradaki maç — sistem hallediyor. Sen sadece izle.</p>
+    <p class="sub up4">Eşleştirme, board ataması, sıradaki maç — sistem hallediyor. Sen sadece izle.</p>
   </section>
 
-  <!-- 5: GERÇEK MAÇ ÖNCESİ EKRANI (portrait) -->
-  <section class="scene real" data-dur="5200">
+  <!-- 6: GERÇEK MAÇ ÖNCESİ EKRANI (portrait) -->
+  <section class="scene real" data-dur="5000">
     <div class="cap"><span class="tag">TABLET · MAÇ ÖNCESİ EKRANI</span></div>
     <div class="devwrap"><div class="dev"><iframe id="pmFrame" title="Maç öncesi"></iframe></div></div>
   </section>
 
-  <!-- 6: GERÇEK SKOR EKRANI (.dp portrait) -->
+  <!-- 7: GERÇEK SKOR EKRANI (.dp portrait) -->
   <section class="scene real" data-dur="5600">
     <div class="cap"><span class="tag">TABLET · SKOR EKRANI</span></div>
     <div class="devwrap"><div class="dev"><iframe id="scoreFrame" title="Skor ekranı"></iframe></div></div>
   </section>
 
-  <!-- 7: KLASMAN -->
+  <!-- 8: İNCE AYARLAR -->
   <section class="scene" data-dur="4800">
-    <span class="tag up">LİG &amp; SEZON</span>
-    <h2 class="up2">Canlı klasman, anında güncellenir</h2>
-    <div class="table">
-      <div class="tr"><span class="pos">#</span><span>Oyuncu</span><span class="pts">Puan</span></div>
-      <div class="tr t1"><span class="pos">1</span><span>Yusuf Kaya 🥇</span><span class="pts">48</span></div>
-      <div class="tr t2"><span class="pos">2</span><span>Ece Yıldız 🥈</span><span class="pts">41</span></div>
-      <div class="tr t3"><span class="pos">3</span><span>Kaan Demir 🥉</span><span class="pts">37</span></div>
-      <div class="tr"><span class="pos">4</span><span>Deniz Arslan</span><span class="pts">29</span></div>
-    </div>
-    <p class="sub up4">Berger fikstürü, podyum, G/M yüzdeleri, Excel raporu — otomatik.</p>
-  </section>
-
-  <!-- 8: TÜM EKRANLAR -->
-  <section class="scene" data-dur="4200">
-    <span class="tag up">HER EKRAN İÇİN</span>
-    <h2 class="up2">Tablet, TV ve organizatör — <span class="accent">canlı senkron</span></h2>
+    <span class="tag up">ORGANİZATÖR KONTROLÜNDE</span>
+    <h2 class="up2">Her tur, <span class="accent">senin kuralınla</span></h2>
     <div class="pills">
-      <span class="pill">📱 Tablet skor</span><span class="pill">📺 TV bracket</span><span class="pill">🎲 Otomatik kura</span>
-      <span class="pill">🏅 Seri başı</span><span class="pill">📊 Excel rapor</span><span class="pill">⚡ Anlık güncelleme</span>
+      <span class="pill">⚙️ Tur bazında leg/set</span>
+      <span class="pill cy">🚷 Hükmen galibiyet</span>
+      <span class="pill">📈 180 / 140+ / 100+ takibi</span>
+      <span class="pill cy">🧮 Ortalama &amp; checkout</span>
+      <span class="pill">📋 Leg özet ekranı</span>
+    </div>
+    <p class="sub up4">Final Bo7, ilk turlar Bo3 — oturum oluştururken belirle, sistem uygular.</p>
+  </section>
+
+  <!-- 9: HER EKRANDA CANLI -->
+  <section class="scene" data-dur="4400">
+    <span class="tag up">HER EKRAN İÇİN</span>
+    <h2 class="up2">Tablet, TV ve izleyici — <span class="accent">canlı senkron</span></h2>
+    <div class="pills">
+      <span class="pill">📱 Tablet skor</span><span class="pill cy">📺 TV bracket</span>
+      <span class="pill">👀 İzleyici ekranı</span><span class="pill cy">🖨️ Braket PDF</span>
+      <span class="pill">⚡ Anlık güncelleme</span>
     </div>
   </section>
 
-  <!-- 9: CTA -->
+  <!-- 10: CTA -->
   <section class="scene" data-dur="5000">
     <span class="tag up">ÜCRETSİZ BAŞLA</span>
     <h2 class="up2">Kendi turnuvanı dakikalar içinde kur</h2>
@@ -339,7 +277,6 @@
       "Bora","Çağrı","Furkan","Kuzey","Ali","Veli","Sıla","Naz","İpek","Berke"];
     const last=["K.","Y.","D.","A.","T.","S.","B.","Ç.","Ö.","G.","M.","E.","U.","O.","V.","Ş."];
     function nm(i){return first[i%first.length]+" "+last[(i*5+((i/first.length)|0))%last.length];}
-    // 32 oyuncu → 16 maç ilk tur (32'lik braket standardı)
     let players=[]; for(let i=0;i<32;i++) players.push(nm(i));
     const roundNames=["Son 32","Son 16","Çeyrek Final","Yarı Final","Final"];
     const bracket=document.createElement('div'); bracket.className='bracket';
@@ -350,7 +287,7 @@
       const winners=[];
       for(let p=0;p<current.length;p+=2){
         const a=current[p], b=current[p+1]||'BYE';
-        const aw=(p/2+r)%2===0; // görsel kazanan
+        const aw=(p/2+r)%2===0;
         const wa=aw, wb=!aw && b!=='BYE';
         const sa=wa?'3':((p+r)%3); const sb=wb?'3':((p+r+1)%3);
         const finished=r<3; const live=r>=3 && p===0;
@@ -366,7 +303,6 @@
       bracket.appendChild(round);
       current=winners;
     }
-    // şampiyon kolonu
     const champ=document.createElement('div'); champ.className='bracket-round';
     champ.innerHTML='<h4>Şampiyon</h4>';
     const c=document.createElement('div'); c.className='bracket-match'; c.style.borderColor='var(--success)';
@@ -389,23 +325,20 @@
     const cx=stage.clientWidth/2, cy=padTop+availH/2;
     const cols=6;                      // 5 tur + şampiyon kolonu
     const colPitch=bw/cols;
-    // --- BAŞLANGIÇ: tüm braket sığar ---
     BK.s0=Math.min(availW/bw, availH/bh);
     BK.tx0=(stage.clientWidth-bw*BK.s0)/2;
     BK.ty0=padTop+(availH-bh*BK.s0)/2;
-    // --- BİTİŞ: son ~3 kolona (Final + Şampiyon) zoom-in ---
     BK.s1=Math.max(BK.s0*1.6, Math.min(2.4, stage.clientWidth/(colPitch*3)));
-    const fx=bw-colPitch*1.5;          // odak: final/şampiyon bandı
-    const fy=bh/2;                     // dikey orta (huni burada yakınsar)
+    const fx=bw-colPitch*1.5;
+    const fy=bh/2;
     BK.tx1=cx-fx*BK.s1;
     BK.ty1=cy-fy*BK.s1;
     b.pan.style.transform=`translate(${BK.tx0}px,${BK.ty0}px) scale(${BK.s0})`;
   }
   function panBracket(p){
     const b=window.__bracket; if(!b) return;
-    // 0–45% tüm braketi göster, 45–100% şampiyona zoom-in (yumuşak)
     let e=(p-0.45)/0.55; e=Math.max(0,Math.min(1,e));
-    e=e*e*(3-2*e);                     // smoothstep
+    e=e*e*(3-2*e);
     const s=BK.s0+(BK.s1-BK.s0)*e;
     const tx=BK.tx0+(BK.tx1-BK.tx0)*e;
     const ty=BK.ty0+(BK.ty1-BK.ty0)*e;
@@ -427,7 +360,6 @@
   .board-header .board-name{font-size:1.2rem;font-weight:700}
   .board-header .match-info{color:var(--text-dim);font-size:.8rem}
   .screen{display:flex;flex-direction:column;height:100vh;padding:10px;gap:.5rem;overflow:hidden}
-  /* dp — PORTRAIT (gerçek varsayılan board düzeni) */
   .dp{display:flex;flex-direction:column;flex:1 1 auto;min-height:0;background:#0b0d14}
   .dp-names{display:grid;grid-template-columns:1fr 1fr;border-bottom:1px solid #1e2336;flex:0 0 auto}
   .dp-name-col{padding:2.1vw 2.6vw;display:flex;align-items:center;justify-content:space-between;gap:1.6vw;border-top:3px solid transparent;background:#0f1220}
@@ -533,7 +465,7 @@
   document.getElementById('scoreFrame').srcdoc=frameDoc(SCORE);
 
   const scenes=[...document.querySelectorAll('.scene')];
-  const BRACKET_SCENE=2; // 0:intro 1:problem 2:braket
+  const BRACKET_SCENE=3; // 0:intro 1:format 2:kura 3:braket
   const progress=document.getElementById('progress');
   const replay=document.getElementById('replay');
   let timer=null,startT=0,dur=0,raf=null,curScene=0;

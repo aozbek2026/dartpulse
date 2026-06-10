@@ -535,7 +535,7 @@
 
   @media (max-width: 540px) {
     .hp-nav { padding: 0.85rem 1rem; }
-    #hp-about { display: none; }
+    #hp-about, .hp-promo-link { display: none; }
     .hp-hero { padding: 3rem 1rem 2.5rem; }
     .hp-cta { gap: 0.6rem; }
     .hp-btn { width: 100%; justify-content: center; padding: 0.9rem 1rem; }
@@ -555,6 +555,8 @@
     </div>
     <a class="hp-nav-link" href="/turnuvalar.html">Turnuvalar</a>
     <a class="hp-nav-link" href="/tanitim.html" id="hp-about" onclick="return openIntroLink(event)" data-i18n="nav_about">DartCorePro Nedir?</a>
+    <a class="hp-nav-link hp-promo-link" href="/tanitim-turnuva.html" onclick="return openIntroLink(event, '/tanitim-turnuva.html')" data-i18n="nav_promo_t">Turnuva Tanıtımı</a>
+    <a class="hp-nav-link hp-promo-link" href="/tanitim-lig.html" onclick="return openIntroLink(event, '/tanitim-lig.html')" data-i18n="nav_promo_l">Lig &amp; Sezon Tanıtımı</a>
     <a id="hp-auth-link" class="hp-nav-link" href="/login.html" data-i18n="nav_login">Giriş Yap</a>
     <div class="hp-user" id="hp-user">
       <button class="hp-user-trigger" onclick="toggleUserMenu(event)">
@@ -745,10 +747,10 @@
 
 <script>
   // === Tanıtım videosu (DartCorePro Nedir?) ===
-  function openIntro() {
+  function openIntro(src) {
     const o = document.getElementById('dcpIntro');
     const f = document.getElementById('dcpIntroFrame');
-    f.src = '/tanitim.html';
+    f.src = src || '/tanitim.html';
     o.classList.add('show');
     document.body.style.overflow = 'hidden';
   }
@@ -760,7 +762,7 @@
     document.body.style.overflow = '';
     try { localStorage.setItem('dcp_intro_seen', '1'); } catch {}
   }
-  function openIntroLink(e) { e.preventDefault(); openIntro(); return false; }
+  function openIntroLink(e, src) { e.preventDefault(); openIntro(src); return false; }
   // Video bitince veya "Geç"e basınca tanıtım kapanır, anasayfa görünür
   window.addEventListener('message', (e) => {
     if (e.data === 'dcp-intro-done') closeIntro();
@@ -777,6 +779,8 @@
     tr: {
       nav_login: 'Giriş Yap',
       nav_about: 'DartCorePro Nedir?',
+      nav_promo_t: 'Turnuva Tanıtımı',
+      nav_promo_l: 'Lig & Sezon Tanıtımı',
       nav_panel: 'Panele Git',
       menu_panel: 'Panel', menu_boards: "Board'lar",
       menu_perf: 'Performans & Başarımlar', menu_settings: 'Hesap Ayarları',
@@ -829,6 +833,8 @@
     en: {
       nav_login: 'Sign In',
       nav_about: 'What is DartCorePro?',
+      nav_promo_t: 'Tournament Tour',
+      nav_promo_l: 'League & Season Tour',
       nav_panel: 'Go to Panel',
       menu_panel: 'Dashboard', menu_boards: 'Boards',
       menu_perf: 'Performance & Achievements', menu_settings: 'Account Settings',

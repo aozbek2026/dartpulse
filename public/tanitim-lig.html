@@ -1,0 +1,336 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Dart Core Pro — Lig &amp; Sezon Modülü Tanıtımı</title>
+<style>
+  /* ===== Dart Core Pro gerçek renk değişkenleri (style.css) ===== */
+  :root{
+    --bg:#0b0d14; --bg-2:#111420; --surface:#1a1e2d; --surface-2:#232840;
+    --border:#2a2f48; --text:#e8ebf5; --text-dim:#9099b4;
+    --accent:#ff3860; --accent-2:#00d4ff; --accent-3:#7c5cff;
+    --success:#4ade80; --warn:#fbbf24; --danger:#ef4444;
+  }
+  *{margin:0;padding:0;box-sizing:border-box;-webkit-font-smoothing:antialiased}
+  html,body{height:100%;background:#000;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Inter,sans-serif}
+  body{display:flex;align-items:center;justify-content:center}
+
+  .stage{position:relative;width:min(100vw,177.78vh);height:min(56.25vw,100vh);
+    background:var(--bg);overflow:hidden;color:var(--text);
+    box-shadow:0 30px 80px rgba(0,0,0,.6)}
+
+  .scene{position:absolute;inset:0;display:flex;flex-direction:column;
+    align-items:center;justify-content:center;text-align:center;
+    padding:4% 7%;opacity:0;pointer-events:none;transition:opacity .5s ease}
+  .scene.active{opacity:1}
+
+  h1{font-size:clamp(28px,6.2vw,76px);font-weight:800;letter-spacing:-1px;line-height:1.02}
+  h2{font-size:clamp(18px,3.4vw,40px);font-weight:800;line-height:1.1}
+  .sub{font-size:clamp(12px,1.8vw,21px);color:var(--text-dim);margin-top:12px;max-width:84%}
+  .tag{display:inline-block;font-size:clamp(11px,1.4vw,15px);letter-spacing:3px;
+    text-transform:uppercase;color:var(--accent);font-weight:700;margin-bottom:14px}
+  .accent{color:var(--accent)}
+  .cyan{color:var(--accent-2)}
+
+  .active .up{animation:up .7s both}
+  .active .up2{animation:up .7s .15s both}
+  .active .up3{animation:up .7s .3s both}
+  .active .up4{animation:up .7s .45s both}
+  @keyframes up{from{opacity:0;transform:translateY(24px)}to{opacity:1;transform:none}}
+  .active .pop{animation:pop .6s .1s both}
+  @keyframes pop{0%{opacity:0;transform:scale(.8)}60%{transform:scale(1.04)}100%{opacity:1;transform:scale(1)}}
+  @keyframes slot{from{opacity:0;transform:translateY(20px) scale(.95)}to{opacity:1;transform:none}}
+
+  /* kupa intro */
+  .cup{width:clamp(110px,20vw,220px);height:clamp(110px,20vw,220px);margin-bottom:6px}
+  .active .cup{animation:spinIn 1s cubic-bezier(.2,.8,.2,1) both}
+  @keyframes spinIn{from{opacity:0;transform:rotate(-12deg) scale(.6)}to{opacity:1;transform:none}}
+
+  /* iki format kartı */
+  .duo{display:grid;grid-template-columns:1fr 1fr;gap:clamp(14px,2.4vw,30px);
+    width:min(820px,94%);margin-top:18px}
+  .duo .card2{background:var(--surface);border:1px solid var(--border);border-radius:14px;
+    padding:clamp(14px,2.2vw,28px) clamp(12px,1.8vw,22px);text-align:center}
+  .duo .card2 .ic{font-size:clamp(26px,4vw,48px);margin-bottom:8px}
+  .duo .card2 .t{font-weight:800;font-size:clamp(15px,2.2vw,26px);margin-bottom:8px}
+  .duo .card2 .d{font-size:clamp(11px,1.4vw,17px);color:var(--text-dim);line-height:1.5}
+  .duo .card2.sea{border-color:var(--accent);box-shadow:0 0 28px rgba(255,56,96,.15)}
+  .duo .card2.lig{border-color:var(--accent-2);box-shadow:0 0 28px rgba(0,212,255,.12)}
+  .duo .card2.sea .t{color:var(--accent)}
+  .duo .card2.lig .t{color:var(--accent-2)}
+  .active .duo .card2{animation:slot .6s both}
+  .active .duo .card2:nth-child(2){animation-delay:.25s}
+
+  /* puan tablosu */
+  .ptable{display:flex;gap:clamp(8px,1.4vw,18px);margin-top:20px;flex-wrap:wrap;justify-content:center}
+  .pcell{background:var(--surface);border:1px solid var(--border);border-radius:12px;
+    padding:clamp(10px,1.6vw,20px) clamp(14px,2vw,26px);min-width:clamp(70px,10vw,110px)}
+  .pcell .pp{font-size:clamp(11px,1.4vw,16px);color:var(--text-dim);font-weight:700;margin-bottom:4px}
+  .pcell .pv{font-size:clamp(20px,3.2vw,40px);font-weight:900;color:var(--accent-2);font-variant-numeric:tabular-nums}
+  .pcell.gold{border-color:var(--warn)} .pcell.gold .pv{color:var(--warn)}
+  .active .pcell{animation:pop .5s both}
+  .active .pcell:nth-child(2){animation-delay:.12s}.active .pcell:nth-child(3){animation-delay:.24s}
+  .active .pcell:nth-child(4){animation-delay:.36s}.active .pcell:nth-child(5){animation-delay:.48s}
+
+  /* Berger fikstür */
+  .fix{width:min(680px,92%);margin-top:14px;display:flex;flex-direction:column;gap:clamp(6px,1vw,12px)}
+  .fixrow{background:var(--surface);border:1px solid var(--border);border-radius:10px;
+    display:flex;align-items:center;gap:clamp(8px,1.4vw,18px);
+    padding:clamp(8px,1.2vw,14px) clamp(12px,1.8vw,20px);text-align:left}
+  .fixrow .rn{font-weight:800;color:var(--accent);font-size:clamp(12px,1.6vw,19px);
+    min-width:clamp(52px,7vw,84px)}
+  .fixrow .prs{display:flex;flex-wrap:wrap;gap:clamp(5px,.8vw,10px);flex:1}
+  .fixrow .pr{background:var(--surface-2);border:1px solid var(--border);border-radius:999px;
+    font-size:clamp(10px,1.25vw,15px);padding:clamp(3px,.5vw,6px) clamp(8px,1.2vw,14px);color:var(--text)}
+  .fixrow .pr b{color:var(--accent-2);font-weight:700}
+  .fixrow.run{border-color:var(--success)}
+  .fixrow.run .rn{color:var(--success)}
+  .active .fixrow{animation:slot .55s both}
+  .active .fixrow:nth-child(2){animation-delay:.15s}
+  .active .fixrow:nth-child(3){animation-delay:.3s}
+  .active .fixrow:nth-child(4){animation-delay:.45s}
+
+  /* otopilot boards */
+  .boards{display:grid;grid-template-columns:repeat(2,1fr);gap:clamp(10px,1.8vw,20px);width:min(760px,92%);margin-top:10px}
+  .bcard{background:var(--surface);border:1px solid var(--border);border-radius:10px;padding:clamp(8px,1.4vw,16px);text-align:left}
+  .bcard .bh{display:flex;align-items:center;justify-content:space-between;font-size:clamp(10px,1.3vw,15px);
+    color:var(--text-dim);font-weight:700;margin-bottom:8px;letter-spacing:.5px}
+  .bcard .dotlive{width:9px;height:9px;border-radius:50%;background:var(--success);animation:pulse 1.4s infinite}
+  @keyframes pulse{0%{box-shadow:0 0 0 0 rgba(74,222,128,.6)}70%{box-shadow:0 0 0 9px rgba(74,222,128,0)}100%{box-shadow:0 0 0 0 rgba(74,222,128,0)}}
+  .bcard .match{font-weight:700;font-size:clamp(12px,1.6vw,19px)}
+  .bcard .match .sc{color:var(--accent)}
+  .bcard .nxt{font-size:clamp(9px,1.2vw,13px);color:var(--text-dim);margin-top:6px}
+  .active .bcard{animation:slot .6s both}
+  .active .bcard:nth-child(1){animation-delay:.15s}.active .bcard:nth-child(2){animation-delay:.35s}
+  .active .bcard:nth-child(3){animation-delay:.55s}.active .bcard:nth-child(4){animation-delay:.75s}
+
+  /* klasman — competition.html klasman sekmesi esinli */
+  .table{width:min(780px,94%);border:1px solid var(--border);border-radius:10px;overflow:hidden;margin-top:8px}
+  .tr{display:grid;grid-template-columns:36px 1.5fr 60px 80px 70px 64px;gap:6px;align-items:center;
+    padding:clamp(7px,1.1vw,12px) clamp(10px,1.6vw,18px);font-size:clamp(10px,1.4vw,17px);
+    border-top:1px solid var(--border);text-align:left}
+  .tr:first-child{border-top:none;color:var(--text-dim);font-size:.8em;letter-spacing:1px;text-transform:uppercase}
+  .tr .pos{font-weight:800;text-align:center}
+  .tr .num{text-align:center;color:var(--text-dim);font-variant-numeric:tabular-nums}
+  .tr.t1{background:rgba(74,222,128,.10)} .tr.t1 .pos{color:var(--success)}
+  .tr.t2 .pos{color:#cfd8dc} .tr.t3 .pos{color:#cd7f32}
+  .tr .pts{text-align:right;font-weight:800;color:var(--accent-2);font-variant-numeric:tabular-nums}
+  .active .tr{animation:up .5s both}
+  .active .tr:nth-child(2){animation-delay:.1s}
+  .active .tr:nth-child(3){animation-delay:.2s}
+  .active .tr:nth-child(4){animation-delay:.3s}
+  .active .tr:nth-child(5){animation-delay:.4s}
+  .active .tr:nth-child(6){animation-delay:.5s}
+
+  /* pills */
+  .pills{display:flex;flex-wrap:wrap;gap:10px;justify-content:center;margin-top:20px;max-width:90%}
+  .pill{background:rgba(255,56,96,.12);border:1px solid rgba(255,56,96,.4);color:#ff8fa6;
+    font-weight:700;border-radius:999px;padding:clamp(6px,1vw,11px) clamp(12px,1.8vw,22px);font-size:clamp(11px,1.5vw,18px)}
+  .pill.cy{background:rgba(0,212,255,.10);border-color:rgba(0,212,255,.4);color:#7fe6ff}
+  .pill.gd{background:rgba(251,191,36,.10);border-color:rgba(251,191,36,.45);color:#ffd778}
+  .active .pill{animation:pop .5s both}
+  .active .pill:nth-child(2){animation-delay:.1s}.active .pill:nth-child(3){animation-delay:.2s}
+  .active .pill:nth-child(4){animation-delay:.3s}.active .pill:nth-child(5){animation-delay:.4s}.active .pill:nth-child(6){animation-delay:.5s}
+
+  /* CTA */
+  .url{display:inline-block;margin-top:8px;font-size:clamp(22px,4.4vw,54px);font-weight:800;
+    background:linear-gradient(90deg,var(--accent),var(--accent-2));-webkit-background-clip:text;background-clip:text;color:transparent}
+  .free{display:inline-block;margin-top:18px;background:var(--accent);color:#000;font-weight:800;
+    border-radius:999px;padding:clamp(9px,1.5vw,15px) clamp(20px,3vw,40px);font-size:clamp(13px,2vw,24px)}
+  .active .free{animation:pop .6s .3s both}
+
+  .progress{position:absolute;left:0;bottom:0;height:4px;width:0;
+    background:linear-gradient(90deg,var(--accent),var(--accent-2));z-index:5}
+  .controls{position:absolute;top:12px;right:14px;display:flex;gap:8px;z-index:6}
+  .ctrlbtn{background:rgba(255,255,255,.08);border:1px solid var(--border);color:var(--text);
+    font-size:12px;font-weight:600;border-radius:7px;padding:7px 12px;cursor:pointer}
+  .ctrlbtn:hover{background:rgba(255,255,255,.16)}
+  .brand{position:absolute;top:14px;left:18px;font-weight:800;font-size:clamp(12px,1.5vw,18px);z-index:6;opacity:.92}
+  .brand .dot{color:var(--accent)}
+  .replay{position:absolute;inset:0;display:none;align-items:center;justify-content:center;
+    background:rgba(11,13,20,.7);z-index:7;flex-direction:column;gap:14px}
+  .replay.show{display:flex}
+</style>
+</head>
+<body>
+<div class="stage" id="stage">
+  <div class="brand">DART CORE<span class="dot">.</span>PRO</div>
+  <div class="controls">
+    <button class="ctrlbtn" id="restart">↻ Baştan</button>
+    <button class="ctrlbtn" id="skip" style="background:var(--accent);border-color:transparent;color:#000;">Geç ⏭</button>
+  </div>
+
+  <!-- 1: INTRO -->
+  <section class="scene" data-dur="4200">
+    <svg class="cup" viewBox="0 0 200 200">
+      <path d="M62 38 h76 v26 a38 38 0 0 1 -76 0 Z" fill="#1a1e2d" stroke="#fbbf24" stroke-width="4"/>
+      <path d="M62 44 h-18 a8 8 0 0 0 -8 8 c0 16 12 26 28 28" fill="none" stroke="#fbbf24" stroke-width="4" stroke-linecap="round"/>
+      <path d="M138 44 h18 a8 8 0 0 1 8 8 c0 16 -12 26 -28 28" fill="none" stroke="#fbbf24" stroke-width="4" stroke-linecap="round"/>
+      <rect x="92" y="100" width="16" height="22" fill="#1a1e2d" stroke="#fbbf24" stroke-width="3"/>
+      <rect x="72" y="122" width="56" height="12" rx="3" fill="#1a1e2d" stroke="#fbbf24" stroke-width="3"/>
+      <rect x="64" y="134" width="72" height="14" rx="3" fill="#11151f" stroke="#fbbf24" stroke-width="3"/>
+      <circle cx="100" cy="64" r="13" fill="#ff3860" opacity=".9"/>
+      <circle cx="100" cy="64" r="5" fill="#0b0d14"/>
+      <g stroke="#00d4ff" stroke-width="3" stroke-linecap="round" opacity=".85">
+        <line x1="34" y1="160" x2="46" y2="160"/><line x1="40" y1="154" x2="40" y2="166"/>
+        <line x1="158" y1="156" x2="170" y2="156"/><line x1="164" y1="150" x2="164" y2="162"/>
+      </g>
+    </svg>
+    <h1 class="up">LİG <span class="accent">&amp;</span> SEZON</h1>
+    <p class="sub up2">Haftalık oturumlar, birikimli klasman, sezon sonu büyük final — hepsi otomatik.</p>
+  </section>
+
+  <!-- 2: İKİ FORMAT -->
+  <section class="scene" data-dur="5600">
+    <span class="tag up">İKİ FORMAT · SANA UYANI SEÇ</span>
+    <h2 class="up2">Sezon mu, Lig mi?</h2>
+    <div class="duo">
+      <div class="card2 sea"><div class="ic">🌊</div><div class="t">Sezon — Açık Katılım</div>
+        <div class="d">Her oturuma yeni oyuncu katılabilir. O gün gelenlerle bracket kurulur, puanlar sezona işlenir.</div></div>
+      <div class="card2 lig"><div class="ic">🛡️</div><div class="t">Lig — Sabit Kadro</div>
+        <div class="d">Kadro baştan belli. Sistem tüm fikstürü planlar: herkes herkesle, istediğin kadar kez.</div></div>
+    </div>
+    <p class="sub up4">İkisinde de aynı tablet, aynı skor ekranı, aynı canlı klasman.</p>
+  </section>
+
+  <!-- 3: PUAN SİSTEMİ -->
+  <section class="scene" data-dur="4800">
+    <span class="tag up">PUAN SİSTEMİ · SENİN KURALLARIN</span>
+    <h2 class="up2">Her sıralamaya <span class="cyan">kendi puanın</span></h2>
+    <div class="ptable">
+      <div class="pcell gold"><div class="pp">🥇 1.</div><div class="pv">10</div></div>
+      <div class="pcell"><div class="pp">🥈 2.</div><div class="pv">7</div></div>
+      <div class="pcell"><div class="pp">🥉 3.</div><div class="pv">5</div></div>
+      <div class="pcell"><div class="pp">4.</div><div class="pv">3</div></div>
+      <div class="pcell"><div class="pp">Diğer</div><div class="pv">1</div></div>
+    </div>
+    <p class="sub up4">Sezon oluştururken belirle — her oturum sonunda puanlar klasmana otomatik işlenir.</p>
+  </section>
+
+  <!-- 4: BERGER FİKSTÜRÜ -->
+  <section class="scene" data-dur="5600">
+    <span class="tag up">LİG PLANLAMA · BERGER FİKSTÜRÜ</span>
+    <h2 class="up2">Fikstürü <span class="accent">sistem planlar</span></h2>
+    <div class="fix">
+      <div class="fixrow run"><span class="rn">1. Tur</span><div class="prs">
+        <span class="pr">Yusuf <b>vs</b> Kaan</span><span class="pr">Ece <b>vs</b> Deniz</span>
+        <span class="pr">Mert <b>vs</b> Onur</span><span class="pr">Selin <b>vs</b> Burak</span></div></div>
+      <div class="fixrow"><span class="rn">2. Tur</span><div class="prs">
+        <span class="pr">Yusuf <b>vs</b> Ece</span><span class="pr">Kaan <b>vs</b> Mert</span>
+        <span class="pr">Deniz <b>vs</b> Selin</span><span class="pr">Onur <b>vs</b> Burak</span></div></div>
+      <div class="fixrow"><span class="rn">3. Tur</span><div class="prs">
+        <span class="pr">Yusuf <b>vs</b> Mert</span><span class="pr">Ece <b>vs</b> Selin</span>
+        <span class="pr">Kaan <b>vs</b> Burak</span><span class="pr">Deniz <b>vs</b> Onur</span></div></div>
+      <div class="fixrow"><span class="rn">…</span><div class="prs">
+        <span class="pr">Herkes herkesle — kaç kez istersen</span></div></div>
+    </div>
+    <p class="sub up4">Turları istediğin güne dağıt; oynanan turlar otomatik işaretlenir.</p>
+  </section>
+
+  <!-- 5: TURU BAŞLAT → TABLETLER -->
+  <section class="scene" data-dur="5200">
+    <span class="tag up">▶ TURU BAŞLAT</span>
+    <h2 class="up2">Maçlar tabletlere <span class="accent">kendiliğinden</span> düşer</h2>
+    <div class="boards">
+      <div class="bcard"><div class="bh"><span>📱 Board 1</span><span class="dotlive"></span></div><div class="match">Yusuf <span class="sc">2</span> – <span class="sc">1</span> Kaan</div><div class="nxt">Bitince → sıradaki tur maçı otomatik</div></div>
+      <div class="bcard"><div class="bh"><span>📱 Board 2</span><span class="dotlive"></span></div><div class="match">Ece <span class="sc">3</span> – <span class="sc">0</span> Deniz</div><div class="nxt">Bitince → sıradaki tur maçı otomatik</div></div>
+      <div class="bcard"><div class="bh"><span>📱 Board 3</span><span class="dotlive"></span></div><div class="match">Mert <span class="sc">1</span> – <span class="sc">2</span> Onur</div><div class="nxt">Bitince → sıradaki tur maçı otomatik</div></div>
+      <div class="bcard"><div class="bh"><span>📱 Board 4</span><span class="dotlive"></span></div><div class="match">Selin <span class="sc">2</span> – <span class="sc">2</span> Burak</div><div class="nxt">Bitince → sıradaki tur maçı otomatik</div></div>
+    </div>
+    <p class="sub up4">Board atama, sıradaki maç, sonuç işleme — sistem hallediyor.</p>
+  </section>
+
+  <!-- 6: CANLI KLASMAN -->
+  <section class="scene" data-dur="5600">
+    <span class="tag up">CANLI KLASMAN</span>
+    <h2 class="up2">Her maç sonrası <span class="cyan">anında güncellenir</span></h2>
+    <div class="table">
+      <div class="tr"><span class="pos">#</span><span>Oyuncu</span><span class="num">Otr</span><span class="num">Podyum</span><span class="num">G-M</span><span class="pts">Puan</span></div>
+      <div class="tr t1"><span class="pos">1</span><span>Yusuf Kaya</span><span class="num">6</span><span class="num">🥇3 🥈1</span><span class="num">14-3</span><span class="pts">48</span></div>
+      <div class="tr t2"><span class="pos">2</span><span>Ece Yıldız</span><span class="num">6</span><span class="num">🥇2 🥉2</span><span class="num">12-5</span><span class="pts">41</span></div>
+      <div class="tr t3"><span class="pos">3</span><span>Kaan Demir</span><span class="num">5</span><span class="num">🥈2 🥉1</span><span class="num">11-6</span><span class="pts">37</span></div>
+      <div class="tr"><span class="pos">4</span><span>Deniz Arslan</span><span class="num">6</span><span class="num">🥉1</span><span class="num">9-8</span><span class="pts">29</span></div>
+      <div class="tr"><span class="pos">5</span><span>Mert Aksoy</span><span class="num">5</span><span class="num">—</span><span class="num">7-9</span><span class="pts">22</span></div>
+    </div>
+    <p class="sub up4">Puan, podyum, maç ve leg yüzdeleri, galibiyet serisi — hepsi birikimli.</p>
+  </section>
+
+  <!-- 7: USTALAR -->
+  <section class="scene" data-dur="5000">
+    <span class="tag up">🏆 SEZON FİNALİ</span>
+    <h2 class="up2">Ustalar oturumu: <span class="accent">en iyiler sahnede</span></h2>
+    <div class="pills">
+      <span class="pill gd">🏆 Klasmandan ilk 8 otomatik</span>
+      <span class="pill">⭐ Daha yüksek puan tablosu</span>
+      <span class="pill cy">🎲 Kura &amp; seri başı</span>
+      <span class="pill">⚙️ Tur bazında leg/set</span>
+    </div>
+    <p class="sub up4">Sezonun zirvesi: Ustalar puanları genel klasmana eklenir, şampiyon belli olur.</p>
+  </section>
+
+  <!-- 8: RAPORLAR -->
+  <section class="scene" data-dur="4600">
+    <span class="tag up">RAPOR &amp; İSTATİSTİK</span>
+    <h2 class="up2">Sezonun tüm hikayesi <span class="cyan">tek dosyada</span></h2>
+    <div class="pills">
+      <span class="pill cy">📊 Excel raporu</span>
+      <span class="pill">🖨️ Klasman PDF</span>
+      <span class="pill cy">📈 3DA · 180 · en yüksek finish</span>
+      <span class="pill">📋 Oturum &amp; maç dökümü</span>
+    </div>
+    <p class="sub up4">Klasman, oturum sonuçları, maç dökümü, atış istatistikleri — tek tıkla indir.</p>
+  </section>
+
+  <!-- 9: CTA -->
+  <section class="scene" data-dur="5000">
+    <span class="tag up">ÜCRETSİZ BAŞLA</span>
+    <h2 class="up2">Kendi ligini bu hafta başlat</h2>
+    <span class="url">dartcorepro.com</span>
+    <span class="free">Hemen Dene — Ücretsiz</span>
+  </section>
+
+  <div class="progress" id="progress"></div>
+  <div class="replay" id="replay">
+    <div style="font-weight:800;font-size:22px">dartcorepro.com</div>
+    <button class="ctrlbtn" id="replayBtn">↻ Tekrar oynat</button>
+  </div>
+</div>
+
+<script>
+  const scenes=[...document.querySelectorAll('.scene')];
+  const progress=document.getElementById('progress');
+  const replay=document.getElementById('replay');
+  let timer=null,startT=0,dur=0,raf=null;
+  function tickBar(){
+    const p=Math.min(1,(performance.now()-startT)/dur);
+    progress.style.width=(p*100)+'%';
+    if(p<1)raf=requestAnimationFrame(tickBar);
+  }
+  function show(n){
+    scenes.forEach(s=>s.classList.remove('active'));
+    const s=scenes[n]; void s.offsetWidth; s.classList.add('active');
+    dur=+s.dataset.dur||4000; startT=performance.now();
+    cancelAnimationFrame(raf); tickBar();
+    clearTimeout(timer);
+    timer=setTimeout(()=>{ if(n<scenes.length-1) show(n+1); else finishIntro(); },dur);
+  }
+  function play(){replay.classList.remove('show');show(0);}
+
+  // Bitince veya "Geç"e basınca: iframe içindeyse anasayfaya haber ver, değilse anasayfaya git
+  let __done=false;
+  function finishIntro(){
+    if(__done) return; __done=true;
+    clearTimeout(timer); cancelAnimationFrame(raf);
+    try{
+      if(window.parent && window.parent!==window){ window.parent.postMessage('dcp-intro-done','*'); return; }
+    }catch(e){}
+    window.location.href='/';
+  }
+  document.getElementById('restart').onclick=()=>{__done=false;play();};
+  document.getElementById('skip').onclick=finishIntro;
+  document.getElementById('replayBtn').onclick=()=>{__done=false;play();};
+  play();
+</script>
+</body>
+</html>
