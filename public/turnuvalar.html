@@ -93,9 +93,15 @@ function switchTab(tab) {
 async function loadUpcoming() {
   const box = document.getElementById('tn-upcoming');
   try {
-    const { tournaments } = await tnApi('/api/public/upcoming-tournaments');
-    if (!tournaments.length) { box.innerHTML = '<div class="tn-empty">Şu an açık kayıtlı turnuva yok.</div>'; return; }
-    box.innerHTML = tournaments.map(t => {
+    const [{ tournaments }, sessRes] = await Promise.all([
+      tnApi('/api/public/upcoming-tournaments'),
+      tnApi('/api/public/upcoming-sessions').catch(() => ({ sessions: [] })),
+    ]);
+    const sessions = (sessRes && sessRes.sessions) || [];
+    if (!tournaments.length && !sessions.length) {
+      box.innerHTML = '<div class="tn-empty">Şu an açık kayıtlı turnuva yok.</div>'; return;
+    }
+    const tCards = tournaments.map(t => {
       const date = fmtDate(t.event_date);
       const cap = t.capacity ? `${t.active_count}/${t.capacity} kayıt` : `${t.active_count} kayıt`;
       const wait = t.waitlist_count ? ` · ${t.waitlist_count} yedek` : '';
@@ -125,6 +131,42 @@ async function loadUpcoming() {
           </div>
         </div>`;
     }).join('');
+
+    // Sezon oturumları (kayıt açık) — turnuvalarla aynı listede
+    const sCards = sessions.map(s => {
+      const date = fmtDate(s.session_date);
+      const cap = s.capacity ? `${s.active_count}/${s.capacity} kayıt` : `${s.active_count} kayıt`;
+      const wait = s.waitlist_count ? ` · ${s.waitlist_count} yedek` : '';
+      const full = (s.capacity && s.active_count >= s.capacity);
+      let action = '';
+      if (!ME) {
+        action = '<a class="tn-btn reg" href="/login.html">Giriş yap & kayıt ol</a>';
+      } else if (s.my_status && ['registered','waitlisted','checked_in','confirmed'].includes(s.my_status)) {
+        action = `${STATUS_PILL[s.my_status]} <button class="tn-btn wd" onclick="withdrawSession(${s.session_id})">İptal et</button>`;
+      } else {
+        action = `<button class="tn-btn reg" onclick="registerSession(${s.session_id})">${full ? 'Yedek listesine katıl' : 'Kayıt ol'}</button>`;
+      }
+      const title = `${esc(s.competition_name)} — ${esc(s.session_name || 'Oturum')}`;
+      return `
+        <div class="tn-card">
+          <div class="tn-card-top">
+            <div style="min-width:0;">
+              <div class="tn-title">${title}
+                <span class="pill cat">SEZON</span>
+                ${s.category ? `<span class="pill cat">${esc(s.category)}</span>` : ''}</div>
+              <div class="tn-meta">
+                ${date ? `<span>📅 ${date}</span>` : ''}
+                ${s.checkin_enabled ? `<span>⏰ Check-in var</span>` : ''}
+                ${s.owner_name ? `<span>👤 ${esc(s.owner_name)}</span>` : ''}
+                <span class="tn-cap">${cap}${wait}</span>
+              </div>
+            </div>
+            <div class="tn-actions">${action}</div>
+          </div>
+        </div>`;
+    }).join('');
+
+    box.innerHTML = tCards + sCards;
   } catch (e) { box.innerHTML = `<div class="tn-empty">Hata: ${esc(e.message)}</div>`; }
 }
 
@@ -140,15 +182,33 @@ async function withdraw(id) {
   try { await tnApi(`/api/tournaments/${id}/withdraw`, { method: 'POST' }); loadUpcoming(); }
   catch (e) { alert(e.message); }
 }
+async function registerSession(sid) {
+  try {
+    const d = await tnApi(`/api/sessions/${sid}/register`, { method: 'POST' });
+    alert(d.status === 'waitlisted' ? 'Yedek listesine alındınız. Yer açılırsa otomatik kayda geçersiniz.' : 'Kaydınız alındı!');
+    loadUpcoming();
+  } catch (e) { alert(e.message); }
+}
+async function withdrawSession(sid) {
+  if (!confirm('Kaydınızı iptal etmek istediğinize emin misiniz?')) return;
+  try { await tnApi(`/api/sessions/${sid}/withdraw`, { method: 'POST' }); loadUpcoming(); }
+  catch (e) { alert(e.message); }
+}
 
 // ── Turnuvalarım ──
 async function loadMine() {
   const box = document.getElementById('tn-mine');
   try {
-    const { registrations } = await tnApi('/api/my-registrations');
+    const [{ registrations }, sRes] = await Promise.all([
+      tnApi('/api/my-registrations'),
+      tnApi('/api/my-session-registrations').catch(() => ({ registrations: [] })),
+    ]);
     const active = registrations.filter(r => r.status !== 'withdrawn');
-    if (!active.length) { box.innerHTML = '<div class="tn-empty">Henüz bir turnuvaya kayıt olmadınız.</div>'; return; }
-    box.innerHTML = active.map(r => {
+    const sActive = ((sRes && sRes.registrations) || []).filter(r => r.status !== 'withdrawn');
+    if (!active.length && !sActive.length) {
+      box.innerHTML = '<div class="tn-empty">Henüz bir turnuvaya kayıt olmadınız.</div>'; return;
+    }
+    const tCards = active.map(r => {
       const date = fmtDate(r.event_date);
       return `
         <div class="tn-card">
@@ -164,11 +224,35 @@ async function loadMine() {
           </div>
         </div>`;
     }).join('');
+    const sCards = sActive.map(r => {
+      const date = fmtDate(r.session_date);
+      return `
+        <div class="tn-card">
+          <div class="tn-card-top">
+            <div style="min-width:0;">
+              <div class="tn-title">${esc(r.competition_name)} — ${esc(r.session_name || 'Oturum')}
+                <span class="pill cat">SEZON</span>
+                ${r.category ? `<span class="pill cat">${esc(r.category)}</span>` : ''}</div>
+              <div class="tn-meta">${date ? `<span>📅 ${date}</span>` : ''}</div>
+            </div>
+            <div class="tn-actions">
+              ${STATUS_PILL[r.status] || ''}
+              ${['registered','waitlisted','checked_in'].includes(r.status) ? `<button class="tn-btn wd" onclick="withdrawMineSession(${r.session_id})">İptal</button>` : ''}
+            </div>
+          </div>
+        </div>`;
+    }).join('');
+    box.innerHTML = tCards + sCards;
   } catch (e) { box.innerHTML = `<div class="tn-empty">Hata: ${esc(e.message)}</div>`; }
 }
 async function withdrawMine(id) {
   if (!confirm('Kaydınızı iptal etmek istediğinize emin misiniz?')) return;
   try { await tnApi(`/api/tournaments/${id}/withdraw`, { method: 'POST' }); loadMine(); }
+  catch (e) { alert(e.message); }
+}
+async function withdrawMineSession(sid) {
+  if (!confirm('Kaydınızı iptal etmek istediğinize emin misiniz?')) return;
+  try { await tnApi(`/api/sessions/${sid}/withdraw`, { method: 'POST' }); loadMine(); }
   catch (e) { alert(e.message); }
 }
 

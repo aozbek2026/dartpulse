@@ -506,6 +506,42 @@ app.post('/api/tournaments/:id/withdraw', auth.requireAuth, (req, res) => {
 app.get('/api/my-registrations', auth.requireAuth, (req, res) => {
   res.json({ registrations: db.registrationsForUser(req.user.id) });
 });
+// --- Sezon oturumu online kaydı: katılımcı tarafı (Dilim 3) ---
+// Kayıt açık sezon oturumları (Gelecek Turnuvalar listesine eklenir)
+app.get('/api/public/upcoming-sessions', auth.optionalAuth, (req, res) => {
+  const list = db.openSessionRegistrations();
+  const uid = req.user && req.user.id;
+  if (uid) {
+    for (const s of list) {
+      const r = db.sessionRegistrationByUser(s.session_id, uid);
+      s.my_status = r ? r.status : null;
+    }
+  }
+  res.json({ sessions: list });
+});
+// Sezon oturumuna kayıt ol
+app.post('/api/sessions/:sid/register', auth.requireAuth, (req, res) => {
+  const s = db.sessionById(+req.params.sid);
+  if (!s) return res.status(404).json({ error: 'Oturum bulunamadı' });
+  if (!s.reg_enabled || s.reg_status !== 'open') {
+    return res.status(400).json({ error: 'Bu oturumda kayıt kapalı' });
+  }
+  const reg = db.createSessionRegistration(s.id, s.competition_id, req.user.id, s.capacity);
+  res.json({ ok: true, status: reg.status });
+});
+// Sezon oturumu kaydını iptal et
+app.post('/api/sessions/:sid/withdraw', auth.requireAuth, (req, res) => {
+  const s = db.sessionById(+req.params.sid);
+  if (!s) return res.status(404).json({ error: 'Oturum bulunamadı' });
+  const r = db.withdrawSessionRegistration(s.id, req.user.id, s.capacity);
+  if (!r.ok) return res.status(400).json({ error: 'Aktif kaydınız yok' });
+  res.json({ ok: true });
+});
+// Turnuvalarım — kullanıcının sezon oturumu kayıtları
+app.get('/api/my-session-registrations', auth.requireAuth, (req, res) => {
+  res.json({ registrations: db.sessionRegistrationsForUser(req.user.id) });
+});
+
 // Katılımcı kariyer profili (Dilim G) — yalnızca istatistik açık turnuvalar
 app.get('/api/my-profile', auth.requireAuth, (req, res) => {
   res.json(db.playerCareerProfile(req.user.id));
@@ -1580,7 +1616,12 @@ app.get('/api/competitions/:id/sessions', auth.requireAuth, (req, res) => {
         }
       }
       const results_recorded = db.sessionHasResults(s.id);
-      return { ...s, tournament_status, entries_count, results_recorded };
+      let reg_active = 0, reg_waitlist = 0;
+      if (s.reg_enabled) {
+        reg_active = db.countSessionRegistrations(s.id, ['registered', 'checked_in', 'confirmed']);
+        reg_waitlist = db.countSessionRegistrations(s.id, ['waitlisted']);
+      }
+      return { ...s, tournament_status, entries_count, results_recorded, reg_active, reg_waitlist };
     });
     res.json(enriched);
   } catch (e) {
@@ -1625,6 +1666,51 @@ function buildSessionStageConfig(format, body) {
   return config;
 }
 
+// player_id listesinden sezon turnuvasi kurar + bos board'lari atar.
+// Kayit-onay (confirm) akisi bunu kullanir; opsiyonel `body.entries` (seed) onurlandirilir.
+// Mevcut POST /sessions akisindaki entries+createTournament+board-claim mantiginin aynisi.
+function buildSeasonTournament(userId, comp, tName, ids, body) {
+  let entries;
+  const rawEntries = Array.isArray(body.entries) ? body.entries : null;
+  if (rawEntries && rawEntries.length) {
+    const idSet = new Set(ids);
+    const seen = new Set();
+    const ordered = [];
+    for (const e of rawEntries) {
+      const pid = Number(e && e.player_id);
+      if (!Number.isInteger(pid) || pid <= 0) continue;
+      if (!idSet.has(pid) || seen.has(pid)) continue;
+      seen.add(pid);
+      const seedNum = Number(e.seed);
+      const seed = (Number.isInteger(seedNum) && seedNum >= 1) ? seedNum : null;
+      ordered.push({ player1_id: pid, player2_id: null, seed });
+    }
+    if (ordered.length === ids.length) entries = ordered;
+  }
+  if (!entries) entries = ids.map(pid => ({ player1_id: pid, player2_id: null, seed: null }));
+
+  const format = body.format || 'single_elim';
+  const t = tournament.createTournament({
+    user_id: userId, name: tName,
+    game_mode: comp.game_mode || '501',
+    team_mode: comp.team_mode || 'singles',
+    legs_to_win: comp.legs_to_win || 2,
+    sets_to_win: comp.sets_to_win || 1,
+    entries,
+    stages: [{ format, qualifier_count: null, config: buildSessionStageConfig(format, body) }],
+  });
+
+  let claimedBoards = 0;
+  try {
+    for (const b of db.allBoards(userId)) {
+      if (!b.tournament_id) { db.setBoardTournament(b.id, t.id); claimedBoards++; }
+      else { const bt = db.tournamentById(b.tournament_id); if (!bt || bt.status === 'finished') { db.setBoardTournament(b.id, t.id); claimedBoards++; } }
+    }
+  } catch (_) {}
+
+  return { t, entries, claimedBoards };
+}
+
 // Olustur
 // body: { name?, session_date?, format, participant_player_ids: number[], lb_legs? }
 app.post('/api/competitions/:id/sessions', auth.requireOrganizer, (req, res) => {
@@ -1654,6 +1740,24 @@ app.post('/api/competitions/:id/sessions', auth.requireOrganizer, (req, res) => 
       });
       scheduleBroadcast();
       return res.json({ ...sessionRow, tournament_status: null, entries_count: 0 });
+    }
+
+    // SEZON — KAYITLI OTURUM: bracket henüz yok, online kayıt toplanır.
+    // reg_enabled true ise katılımcı/format istemeden boş bir oturum aç (tournament_id NULL).
+    // Bracket sonradan "Katılımcıları Onayla" (confirm) ile kurulur.
+    if (req.body.reg_enabled) {
+      const cap = (req.body.capacity != null && req.body.capacity !== '' && +req.body.capacity > 0)
+        ? +req.body.capacity : null;
+      const sessionRow = db.createSession({
+        competition_id: compId, user_id: userId,
+        session_number: sessionNumber, name: sessionName,
+        session_date: req.body.session_date || null, status: 'pending',
+        reg_enabled: 1, reg_status: 'open',
+        capacity: cap, checkin_enabled: req.body.checkin_enabled ? 1 : 0,
+      });
+      if (comp.status === 'draft') db.updateCompetition(compId, userId, { status: 'running' });
+      scheduleBroadcast();
+      return res.json({ ...sessionRow, tournament_status: null, entries_count: 0, reg_open: true });
     }
 
     // SEZON: eski akış (format + katılımcı seçimi)
@@ -1749,6 +1853,76 @@ app.post('/api/competitions/:id/sessions', auth.requireOrganizer, (req, res) => 
     console.error('POST /api/competitions/:id/sessions:', e);
     res.status(400).json({ error: e.message });
   }
+});
+
+// --- Sezon oturumu online kaydı: organizatör tarafı (Dilim 2) ---
+
+// Kayıt listesi (asıl/yedek/iptal + durum) — organizatör
+app.get('/api/competitions/:id/sessions/:sid/registrations', auth.requireOrganizer, (req, res) => {
+  try {
+    const userId = req.session.userId;
+    const comp = db.competitionById(+req.params.id, userId);
+    if (!comp) return res.status(404).json({ error: 'Bulunamadi' });
+    const s = db.sessionById(+req.params.sid);
+    if (!s || s.competition_id !== comp.id) return res.status(404).json({ error: 'Oturum bulunamadi' });
+    res.json({
+      session: { id: s.id, name: s.name, reg_enabled: s.reg_enabled, reg_status: s.reg_status,
+                 capacity: s.capacity, checkin_enabled: s.checkin_enabled, tournament_id: s.tournament_id },
+      registrations: db.sessionRegistrations(s.id),
+    });
+  } catch (e) { console.error('GET .../registrations:', e); res.status(400).json({ error: e.message }); }
+});
+
+// Kayıt durumu değiştir (check-in / gelmedi / geri al) — organizatör
+app.post('/api/competitions/:id/sessions/:sid/registrations/:regId/status', auth.requireOrganizer, (req, res) => {
+  try {
+    const userId = req.session.userId;
+    const comp = db.competitionById(+req.params.id, userId);
+    if (!comp) return res.status(404).json({ error: 'Bulunamadi' });
+    const s = db.sessionById(+req.params.sid);
+    if (!s || s.competition_id !== comp.id) return res.status(404).json({ error: 'Oturum bulunamadi' });
+    const reg = db.sessionRegistrationById(+req.params.regId);
+    if (!reg || reg.session_id !== s.id) return res.status(404).json({ error: 'Kayit bulunamadi' });
+    const allowed = ['registered', 'waitlisted', 'checked_in', 'no_show', 'withdrawn'];
+    if (!allowed.includes(req.body.status)) return res.status(400).json({ error: 'Gecersiz durum' });
+    res.json(db.setSessionRegistrationStatus(reg.id, req.body.status));
+  } catch (e) { console.error('POST .../registrations/status:', e); res.status(400).json({ error: e.message }); }
+});
+
+// Katılımcıları Onayla → kayıtlardan bracket kur (mevcut oturum-kurma yolu)
+// body: { format?, lb_legs?, round_overrides?, entries? }
+app.post('/api/competitions/:id/sessions/:sid/confirm', auth.requireOrganizer, (req, res) => {
+  try {
+    const userId = req.session.userId;
+    const compId = +req.params.id;
+    const comp = db.competitionById(compId, userId);
+    if (!comp) return res.status(404).json({ error: 'Bulunamadi' });
+    const s = db.sessionById(+req.params.sid);
+    if (!s || s.competition_id !== comp.id) return res.status(404).json({ error: 'Oturum bulunamadi' });
+    if (!s.reg_enabled) return res.status(400).json({ error: 'Bu oturum bir kayıt oturumu değil' });
+    if (s.reg_status === 'confirmed' || s.tournament_id) {
+      return res.status(400).json({ error: 'Bu oturum zaten onaylandı (bracket kuruldu)' });
+    }
+    const format = req.body.format || 'single_elim';
+    if (!['single_elim', 'double_elim', 'round_robin'].includes(format)) {
+      return res.status(400).json({ error: 'Gecersiz bracket formati' });
+    }
+
+    const { player_ids } = db.confirmSessionRegistrations(
+      s.id, compId, userId, !!s.checkin_enabled, s.session_number);
+    if (player_ids.length < 2) {
+      return res.status(400).json({ error: s.checkin_enabled
+        ? 'Bracket için en az 2 check-in olmuş katılımcı gerekli.'
+        : 'Bracket için en az 2 kayıtlı katılımcı gerekli.' });
+    }
+
+    const { t, entries, claimedBoards } = buildSeasonTournament(userId, comp, s.name, player_ids, req.body);
+    db.updateSession(s.id, { tournament_id: t.id, reg_status: 'confirmed', status: 'pending' });
+    if (comp.status === 'draft') db.updateCompetition(compId, userId, { status: 'running' });
+    scheduleBroadcast();
+    res.json({ tournament_id: t.id, tournament_status: t.status,
+               entries_count: entries.length, claimed_boards: claimedBoards });
+  } catch (e) { console.error('POST .../confirm:', e); res.status(400).json({ error: e.message }); }
 });
 
 // Sonuc onizleme — finalize etmeden once standings + dagilan puanlari hesaplar

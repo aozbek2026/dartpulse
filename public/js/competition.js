@@ -470,7 +470,9 @@ async function renderSessions() {
   const banner = document.getElementById('sessions-banner');
   const list = document.getElementById('sessions-list');
   const newBtn = document.getElementById('new-session-btn');
-  const canCreate = c.status !== 'finished' && STATE.players.length >= 2;
+  // Online kayıtlı oturum havuz boşken de açılabilir (katılımcılar sonradan kaydolur);
+  // katılımcı-seçmeli oturum için form içinde en az 2 seçim zaten zorunlu.
+  const canCreate = c.status !== 'finished';
 
   // Lig plan mı var?
   if (c.type === 'league') {
@@ -555,7 +557,7 @@ async function renderSessions() {
     <div class="info-banner">
       Toplam <strong>${done} / ${totalPlanned}</strong> oturum.
       ${STATE.players.length < 2
-        ? `<span style="color:#ef4444;font-weight:600">Oturum oluşturmak için en az 2 oyuncu havuzda olmalı.</span>`
+        ? `Katılımcı seçmeli oturum için en az 2 oyuncu havuzda olmalı. <span style="color:var(--text-dim)">Online kayıtlı oturumda havuz boş olabilir — katılımcılar kendileri kaydolur.</span>`
         : `Yeni bir oturum başlatmak için yukarıdaki butonu kullan.`}
     </div>
   `;
@@ -647,6 +649,36 @@ function renderSessionRow(s) {
   const canFinalize = tStatus === 'finished' && !s.results_recorded;
   const recorded = !!s.results_recorded;
   const dateStr = s.session_date ? formatDate(s.session_date) : '';
+
+  // Kayıt-açık sezon oturumu (bracket henüz kurulmadı): kayıt yönetimi + onay
+  if (s.reg_enabled && s.reg_status === 'open' && !s.tournament_id) {
+    const active = s.reg_active || 0;
+    const wait = s.reg_waitlist || 0;
+    const capStr = s.capacity ? ` / ${s.capacity}` : '';
+    const checkinNote = s.checkin_enabled ? ' · ✅ check-in' : '';
+    const name = escapeJsStr(s.name || s.session_number + '. Oturum');
+    return `
+    <div class="player-row" style="align-items:flex-start;flex-direction:column;gap:0.4rem;border-left:3px solid var(--accent,#ff3860);padding-left:0.7rem">
+      <div style="display:flex;justify-content:space-between;align-items:flex-start;width:100%;flex-wrap:wrap;gap:0.4rem">
+        <div>
+          <div class="pname">
+            <span style="color:var(--text-dim);min-width:1.8em;display:inline-block">${s.session_number}.</span>
+            ${escapeHtml(s.name || `${s.session_number}. Oturum`)}
+            <span style="margin-left:0.5rem;font-size:0.7rem;background:var(--accent,#ff3860);color:#fff;padding:0.1rem 0.55rem;border-radius:10px;font-weight:700">🎫 KAYIT AÇIK</span>
+          </div>
+          <div class="pmeta">
+            ${dateStr ? `📅 ${dateStr} · ` : ''}🎫 ${active}${capStr} kayıtlı${wait ? ` · ⏳ ${wait} yedek` : ''}${checkinNote}
+          </div>
+        </div>
+        <div class="pactions">
+          <button class="btn" onclick="openRegModal(${s.id})" style="padding:0.4rem 0.7rem;font-size:0.85rem;background:rgba(255,255,255,0.08);color:var(--text)">📋 Kayıtlar (${active})</button>
+          <button class="primary" onclick="openConfirmRegModal(${s.id})" style="padding:0.4rem 0.7rem;font-size:0.85rem">✓ Katılımcıları Onayla</button>
+          ${canDelete ? `<button class="danger" onclick="confirmDeleteSession(${s.id}, '${name}')" style="padding:0.4rem 0.6rem;font-size:0.85rem">🗑️</button>` : ''}
+        </div>
+      </div>
+    </div>
+    `;
+  }
 
   // Dilim 5c-1: Ustalar (Masters) oturumu rozeti
   const mastersBadge = s.is_masters
@@ -748,13 +780,16 @@ function toggleNewSessionForm() {
     const fmtSpacer = document.getElementById('ns-format-row-spacer');
     const partSec = document.getElementById('ns-participants-section');
     const masterSec = document.getElementById('ns-masters-section');
+    const regSec = document.getElementById('ns-reg-section');
     if (isLeague) {
-      // Lig: sadece ad + tarih, format/katılımcı/Ustalar gizli
+      // Lig: sadece ad + tarih, format/katılımcı/Ustalar/online kayıt gizli
       if (fmtRow) fmtRow.style.display = 'none';
       if (fmtSpacer) fmtSpacer.style.display = 'none';
       if (partSec) partSec.style.display = 'none';
       if (masterSec) masterSec.style.display = 'none';
+      if (regSec) regSec.style.display = 'none';
     } else {
+      if (regSec) regSec.style.display = '';
       // Sezon: tam form (Ustalar bölümü dahil)
       if (fmtRow) fmtRow.style.display = '';
       if (fmtSpacer) fmtSpacer.style.display = '';
@@ -765,6 +800,14 @@ function toggleNewSessionForm() {
       if (lbInput) lbInput.value = '';
       onNsFormatChange();
       renderParticipantPicker();
+      // Online kayıt bölümünü sıfırla (kapalı başlasın)
+      const regCb = document.getElementById('ns-reg-toggle');
+      if (regCb) regCb.checked = false;
+      const regCap = document.getElementById('ns-reg-capacity');
+      if (regCap) regCap.value = '';
+      const regChk = document.getElementById('ns-reg-checkin');
+      if (regChk) regChk.checked = false;
+      toggleRegMode(false);
       // Ustalar bölümünü sıfırla (kapalı başlasın)
       const cb = document.getElementById('ns-is-masters');
       if (cb) cb.checked = false;
@@ -794,6 +837,23 @@ function onNsFormatChange() {
   renderRoundOvPanel(); // format değişince tur listesi de değişir
 }
 window.onNsFormatChange = onNsFormatChange;
+
+// Online kayıt modu: işaretliyse katılımcı/format/kura/Ustalar gizlenir (bracket
+// sonradan "Onayla" ile kurulur), sadece kontenjan + check-in alanları gösterilir.
+function toggleRegMode(checked) {
+  const panel = document.getElementById('ns-reg-panel');
+  if (panel) panel.hidden = !checked;
+  const hide = (id, on) => { const el = document.getElementById(id); if (el) el.style.display = on ? 'none' : ''; };
+  hide('ns-format-row', checked);
+  hide('ns-format-row-spacer', checked);
+  hide('ns-lb-legs-row', checked);
+  hide('ns-participants-section', checked);
+  hide('ns-round-ov-section', checked);
+  hide('ns-masters-section', checked);
+  // Kapatınca format satırının lb alanı tekrar duruma göre ayarlansın
+  if (!checked) onNsFormatChange();
+}
+window.toggleRegMode = toggleRegMode;
 
 // ── Tur bazında özel leg/set (çeyrek/yarı/final) ───────────────────
 // organizer.js'deki round-override panelinin sezon oturum formuna uyarlaması.
@@ -1262,9 +1322,21 @@ async function submitNewSession() {
   const isLeague = STATE.comp && STATE.comp.type === 'league';
 
   let body;
+  const regToggle = document.getElementById('ns-reg-toggle');
+  const regMode = !isLeague && regToggle && regToggle.checked;
+
   if (isLeague) {
     // Lig: sadece ad + tarih — server container session yaratır
     body = { name: name || null, session_date };
+  } else if (regMode) {
+    // Sezon online kayıt: katılımcı/format yok — kayıt-açık boş oturum yarat
+    const capRaw = +(document.getElementById('ns-reg-capacity')?.value);
+    body = {
+      name: name || null, session_date,
+      reg_enabled: true,
+      capacity: (Number.isInteger(capRaw) && capRaw >= 2) ? capRaw : null,
+      checkin_enabled: !!document.getElementById('ns-reg-checkin')?.checked,
+    };
   } else {
     // Sezon: format gerekli; katılımcı kaynağı Ustalar mı normal mi'ye göre değişir
     const format = document.getElementById('ns-format').value;
@@ -1451,6 +1523,142 @@ async function openFinalizeModal(sid) {
   }
 }
 window.openFinalizeModal = openFinalizeModal;
+
+// ── Sezon online kaydı: Kayıtlar modalı (organizatör) ──────────────
+const _REG_STATUS_LABEL = {
+  registered: 'Kayıtlı', checked_in: 'Check-in ✅', confirmed: 'Onaylı',
+  waitlisted: 'Yedek', withdrawn: 'İptal', no_show: 'Gelmedi',
+};
+async function openRegModal(sid) {
+  const overlay = document.createElement('div');
+  overlay.style.cssText = 'position:fixed;inset:0;z-index:9999;background:rgba(0,0,0,0.6);display:flex;align-items:center;justify-content:center;padding:1rem';
+  overlay.innerHTML = `<div style="background:var(--bg,#1a1a1a);border:1px solid var(--border,rgba(255,255,255,0.1));border-radius:12px;max-width:560px;width:100%;max-height:85vh;display:flex;flex-direction:column;overflow:hidden">
+      <div style="padding:1rem 1.2rem;border-bottom:1px solid var(--border,rgba(255,255,255,0.08))">
+        <h3 style="margin:0">📋 Kayıtlar</h3>
+        <p id="reg-sub" style="margin:0.3rem 0 0 0;color:var(--text-dim);font-size:0.85rem">Yükleniyor…</p>
+      </div>
+      <div id="reg-body" style="padding:0.6rem 1.2rem;overflow-y:auto;flex:1"></div>
+      <div style="padding:0.8rem 1.2rem;border-top:1px solid var(--border,rgba(255,255,255,0.08));display:flex;justify-content:flex-end;gap:0.5rem">
+        <button id="reg-close">Kapat</button>
+      </div>
+    </div>`;
+  document.body.appendChild(overlay);
+  const close = () => { overlay.remove(); renderSessions(); };
+  overlay.querySelector('#reg-close').onclick = close;
+  overlay.onclick = (e) => { if (e.target === overlay) close(); };
+
+  async function load() {
+    let data;
+    try { data = await api.get(`/api/competitions/${STATE.id}/sessions/${sid}/registrations`); }
+    catch (e) { overlay.querySelector('#reg-body').innerHTML = '<p style="color:var(--accent)">Yüklenemedi</p>'; return; }
+    if (!data || data.error) { overlay.querySelector('#reg-body').innerHTML = `<p style="color:var(--accent)">${data && data.error || 'Hata'}</p>`; return; }
+    const s = data.session || {};
+    const regs = data.registrations || [];
+    const checkin = !!s.checkin_enabled;
+    const active = regs.filter(r => ['registered', 'checked_in', 'confirmed'].includes(r.status));
+    const wait = regs.filter(r => r.status === 'waitlisted');
+    const out = regs.filter(r => ['withdrawn', 'no_show'].includes(r.status));
+    overlay.querySelector('#reg-sub').textContent =
+      `${active.length}${s.capacity ? ' / ' + s.capacity : ''} asıl${wait.length ? ` · ${wait.length} yedek` : ''}${checkin ? ' · check-in açık' : ''}`;
+
+    const nameOf = (r) => escapeHtml(r.user_name || (r.user_email || '').split('@')[0] || ('Kullanıcı ' + r.user_id));
+    const rowHtml = (r) => {
+      const btns = [];
+      if (checkin && r.status === 'registered')
+        btns.push(`<button data-act="checked_in" data-id="${r.id}" style="font-size:0.72rem;padding:0.2rem 0.5rem;background:#16a34a;color:#fff">✅ Check-in</button>`);
+      if (checkin && r.status === 'checked_in')
+        btns.push(`<button data-act="registered" data-id="${r.id}" style="font-size:0.72rem;padding:0.2rem 0.5rem">↺ Geri al</button>`);
+      if (['registered', 'checked_in'].includes(r.status))
+        btns.push(`<button data-act="no_show" data-id="${r.id}" style="font-size:0.72rem;padding:0.2rem 0.5rem">Gelmedi</button>`);
+      if (['registered', 'checked_in', 'waitlisted'].includes(r.status))
+        btns.push(`<button data-act="withdrawn" data-id="${r.id}" class="danger" style="font-size:0.72rem;padding:0.2rem 0.5rem">Çıkar</button>`);
+      if (r.status === 'waitlisted')
+        btns.push(`<button data-act="registered" data-id="${r.id}" style="font-size:0.72rem;padding:0.2rem 0.5rem;background:#16a34a;color:#fff">Asıla al</button>`);
+      if (['withdrawn', 'no_show'].includes(r.status))
+        btns.push(`<button data-act="registered" data-id="${r.id}" style="font-size:0.72rem;padding:0.2rem 0.5rem">Geri ekle</button>`);
+      return `<div style="display:flex;justify-content:space-between;align-items:center;gap:0.5rem;padding:0.35rem 0;border-bottom:1px solid rgba(255,255,255,0.05)">
+        <span style="font-size:0.9rem">${nameOf(r)} <span style="color:var(--text-dim);font-size:0.75rem">— ${_REG_STATUS_LABEL[r.status] || r.status}</span></span>
+        <span style="display:flex;gap:0.3rem;flex-wrap:wrap">${btns.join('')}</span>
+      </div>`;
+    };
+    const section = (title, arr) => arr.length
+      ? `<div style="margin-bottom:0.7rem"><div style="font-size:0.78rem;color:var(--text-dim);font-weight:600;margin-bottom:0.2rem">${title} (${arr.length})</div>${arr.map(rowHtml).join('')}</div>` : '';
+    const body = overlay.querySelector('#reg-body');
+    body.innerHTML = (regs.length === 0)
+      ? '<p style="color:var(--text-dim)">Henüz kayıt yok. Katılımcılar Turnuvalar sayfasından kaydolabilir.</p>'
+      : section('Asıl liste', active) + section('Yedek liste', wait) + section('İptal / Gelmedi', out);
+    body.querySelectorAll('button[data-act]').forEach(b => {
+      b.onclick = async () => {
+        b.disabled = true;
+        try {
+          await api.post(`/api/competitions/${STATE.id}/sessions/${sid}/registrations/${b.dataset.id}/status`, { status: b.dataset.act });
+        } catch (e) { toast('İşlem başarısız'); }
+        await load();
+      };
+    });
+  }
+  await load();
+}
+window.openRegModal = openRegModal;
+
+// ── Katılımcıları Onayla → bracket kur ─────────────────────────────
+function openConfirmRegModal(sid) {
+  const s = (STATE.sessions || []).find(x => x.id === sid) || {};
+  const active = s.reg_active || 0;
+  const checkinNote = s.checkin_enabled
+    ? `<p style="margin:0.4rem 0 0 0;color:#f59e0b;font-size:0.82rem">⚠️ Check-in açık — sadece check-in olmuş katılımcılar bracket'e girer.</p>`
+    : '';
+  const overlay = document.createElement('div');
+  overlay.style.cssText = 'position:fixed;inset:0;z-index:9999;background:rgba(0,0,0,0.6);display:flex;align-items:center;justify-content:center;padding:1rem';
+  overlay.innerHTML = `<div style="background:var(--bg,#1a1a1a);border:1px solid var(--border,rgba(255,255,255,0.1));border-radius:12px;max-width:440px;width:100%;overflow:hidden">
+      <div style="padding:1rem 1.2rem;border-bottom:1px solid var(--border,rgba(255,255,255,0.08))">
+        <h3 style="margin:0">✓ Katılımcıları Onayla</h3>
+        <p style="margin:0.3rem 0 0 0;color:var(--text-dim);font-size:0.85rem">Kayıtlı oyuncularla bracket kurulacak. Bu işlemden sonra oturum normal bir sezon oturumu gibi başlatılır.</p>
+        ${checkinNote}
+      </div>
+      <div style="padding:0.9rem 1.2rem">
+        <label style="display:block;font-size:0.82rem;color:var(--text-dim);margin-bottom:0.25rem">Bracket formatı</label>
+        <select id="cr-format" style="width:100%" onchange="document.getElementById('cr-lb-row').style.display=this.value==='double_elim'?'block':'none'">
+          <option value="single_elim">Tek eleme</option>
+          <option value="double_elim">Çift eleme</option>
+          <option value="round_robin">Round-robin (herkes herkesle)</option>
+        </select>
+        <div id="cr-lb-row" style="display:none;margin-top:0.6rem">
+          <label style="display:block;font-size:0.82rem;color:var(--text-dim);margin-bottom:0.25rem">Loser braket leg sayısı <span style="opacity:0.6">(boş = winners ile aynı)</span></label>
+          <input id="cr-lb-legs" type="number" min="1" max="11" placeholder="örn. 2" style="width:100%" />
+        </div>
+      </div>
+      <div style="padding:0.8rem 1.2rem;border-top:1px solid var(--border,rgba(255,255,255,0.08));display:flex;justify-content:flex-end;gap:0.5rem">
+        <button id="cr-cancel">Vazgeç</button>
+        <button id="cr-confirm" class="primary" style="background:#16a34a">Bracket'i Kur</button>
+      </div>
+    </div>`;
+  document.body.appendChild(overlay);
+  const close = () => overlay.remove();
+  overlay.querySelector('#cr-cancel').onclick = close;
+  overlay.onclick = (e) => { if (e.target === overlay) close(); };
+  overlay.querySelector('#cr-confirm').onclick = async () => {
+    const format = overlay.querySelector('#cr-format').value;
+    const body = { format };
+    if (format === 'double_elim') {
+      const lb = +(overlay.querySelector('#cr-lb-legs').value);
+      if (Number.isInteger(lb) && lb >= 1) body.lb_legs = lb;
+    }
+    const btn = overlay.querySelector('#cr-confirm');
+    btn.disabled = true; btn.textContent = 'Kuruluyor…';
+    try {
+      const res = await api.post(`/api/competitions/${STATE.id}/sessions/${sid}/confirm`, body);
+      if (res && res.error) { toast('Hata: ' + res.error, 4000); btn.disabled = false; btn.textContent = "Bracket'i Kur"; return; }
+      toast(`Bracket kuruldu (${res.entries_count} katılımcı) ✓`);
+      close();
+      STATE.schedule = null;
+      await loadSessions();
+      renderSessions();
+      renderStandings();
+    } catch (e) { toast('Sunucu hatası', 4000); btn.disabled = false; btn.textContent = "Bracket'i Kur"; }
+  };
+}
+window.openConfirmRegModal = openConfirmRegModal;
 
 // ── Excel raporu indir (Dilim 5a) ──────────────────────────────────
 function downloadReport() {

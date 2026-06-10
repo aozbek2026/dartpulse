@@ -315,8 +315,33 @@ function init() {
       finished_at TEXT,
       points_override_json TEXT,               -- Dilim 5c-1: Ustalar oturumu icin ozel puan tablosu (null ise comp.points_json)
       is_masters INTEGER DEFAULT 0,            -- 1 ise rozet ve "Ustalar" etiketi gosterilir
+      reg_enabled INTEGER DEFAULT 0,           -- Sezon online kayit: 1 ise bu oturum kayit topluyor
+      reg_status TEXT DEFAULT 'open',          -- open (kayit acik) | confirmed (bracket kuruldu)
+      capacity INTEGER,                        -- kontenjan (NULL = sinirsiz)
+      checkin_enabled INTEGER DEFAULT 0,       -- 1 ise gun-ici check-in gerekli (sadece checked_in bracket'e girer)
       FOREIGN KEY(competition_id) REFERENCES competitions(id) ON DELETE CASCADE,
       FOREIGN KEY(tournament_id) REFERENCES tournaments(id) ON DELETE SET NULL
+    );
+
+    -- Sezon oturumu online kaydi (Sezon Kayit Sistemi — Dilim 1).
+    -- Bagimsiz turnuvalardaki 'registrations' tablosunun sezon esdegeri; ama
+    -- competition_sessions.id'ye bagli (bracket henuz yokken kayit toplanabilsin).
+    -- status: registered | waitlisted | checked_in | confirmed | withdrawn | no_show
+    -- player_id: "Katilimcilari Onayla" aninda baglanir, basta NULL.
+    CREATE TABLE IF NOT EXISTS session_registrations (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      session_id INTEGER NOT NULL,             -- competition_sessions.id
+      competition_id INTEGER NOT NULL,
+      user_id INTEGER NOT NULL,
+      status TEXT NOT NULL DEFAULT 'registered',
+      reg_order INTEGER NOT NULL DEFAULT 0,
+      player_id INTEGER,
+      created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+      updated_at TEXT DEFAULT CURRENT_TIMESTAMP,
+      UNIQUE(session_id, user_id),
+      FOREIGN KEY(session_id) REFERENCES competition_sessions(id) ON DELETE CASCADE,
+      FOREIGN KEY(competition_id) REFERENCES competitions(id) ON DELETE CASCADE,
+      FOREIGN KEY(user_id) REFERENCES users(id) ON DELETE CASCADE
     );
 
     -- Oturum bitince her oyuncunun aldigi pozisyon ve puan.
@@ -580,6 +605,19 @@ function init() {
   }
   if (!compSessCols.includes('is_masters')) {
     try { db.exec('ALTER TABLE competition_sessions ADD COLUMN is_masters INTEGER DEFAULT 0'); } catch {}
+  }
+  // Sezon online kayit (Dilim 1): kayit acik/kapali + durum + kontenjan + check-in
+  if (!compSessCols.includes('reg_enabled')) {
+    try { db.exec('ALTER TABLE competition_sessions ADD COLUMN reg_enabled INTEGER DEFAULT 0'); } catch {}
+  }
+  if (!compSessCols.includes('reg_status')) {
+    try { db.exec("ALTER TABLE competition_sessions ADD COLUMN reg_status TEXT DEFAULT 'open'"); } catch {}
+  }
+  if (!compSessCols.includes('capacity')) {
+    try { db.exec('ALTER TABLE competition_sessions ADD COLUMN capacity INTEGER'); } catch {}
+  }
+  if (!compSessCols.includes('checkin_enabled')) {
+    try { db.exec('ALTER TABLE competition_sessions ADD COLUMN checkin_enabled INTEGER DEFAULT 0'); } catch {}
   }
   // competitions'a plan_generated kolonu
   const compCols2 = db.prepare("PRAGMA table_info(competitions)").all().map(c => c.name);
@@ -2063,8 +2101,9 @@ function createSession(data) {
   const info = db.prepare(`
     INSERT INTO competition_sessions
       (competition_id, user_id, session_number, tournament_id, name, session_date,
-       status, round_number, session_type, points_override_json, is_masters)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+       status, round_number, session_type, points_override_json, is_masters,
+       reg_enabled, reg_status, capacity, checkin_enabled)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
   `).run(
     data.competition_id,
     data.user_id || null,
@@ -2077,6 +2116,10 @@ function createSession(data) {
     data.session_type || 'bracket',
     pOver || null,
     data.is_masters ? 1 : 0,
+    data.reg_enabled ? 1 : 0,
+    data.reg_status || 'open',
+    (data.capacity != null && data.capacity !== '') ? +data.capacity : null,
+    data.checkin_enabled ? 1 : 0,
   );
   return db.prepare('SELECT * FROM competition_sessions WHERE id = ?').get(info.lastInsertRowid);
 }
@@ -2094,7 +2137,8 @@ function sessionById(id) {
 function updateSession(id, fields) {
   const allowed = ['session_number', 'tournament_id', 'name', 'session_date',
                    'status', 'finished_at', 'round_number', 'session_type',
-                   'points_override_json', 'is_masters'];
+                   'points_override_json', 'is_masters',
+                   'reg_enabled', 'reg_status', 'capacity', 'checkin_enabled'];
   const keys = Object.keys(fields).filter(k => allowed.includes(k));
   if (!keys.length) return;
   // points_override_json object verilirse stringle
@@ -2103,7 +2147,7 @@ function updateSession(id, fields) {
     if (k === 'points_override_json' && v != null && typeof v !== 'string') {
       try { v = JSON.stringify(v); } catch { v = null; }
     }
-    if (k === 'is_masters') v = v ? 1 : 0;
+    if (k === 'is_masters' || k === 'reg_enabled' || k === 'checkin_enabled') v = v ? 1 : 0;
     return v;
   });
   const sql = `UPDATE competition_sessions SET ${keys.map(k => `${k} = ?`).join(', ')} WHERE id = ?`;
@@ -2112,6 +2156,140 @@ function updateSession(id, fields) {
 
 function deleteSession(id) {
   db.prepare('DELETE FROM competition_sessions WHERE id = ?').run(id);
+}
+
+// --- Sezon Oturumu Online Kaydi (Dilim 1) ---
+// Bagimsiz turnuva 'registrations' helper'larinin sezon esdegeri; session_id'ye bagli.
+// Sahiplik kontrolu (userId scope) endpoint seviyesinde yapilir (mevcut kurala uygun).
+function sessionRegistrations(sessionId) {
+  return db.prepare(
+    `SELECT r.*, u.email AS user_email, u.name AS user_name
+       FROM session_registrations r
+       LEFT JOIN users u ON u.id = r.user_id
+      WHERE r.session_id = ?
+      ORDER BY r.reg_order ASC, r.id ASC`
+  ).all(sessionId);
+}
+function sessionRegistrationByUser(sessionId, userId) {
+  return db.prepare('SELECT * FROM session_registrations WHERE session_id = ? AND user_id = ?')
+    .get(sessionId, userId);
+}
+function countSessionRegistrations(sessionId, statuses) {
+  const ph = statuses.map(() => '?').join(',');
+  return db.prepare(
+    `SELECT COUNT(*) AS n FROM session_registrations WHERE session_id = ? AND status IN (${ph})`
+  ).get(sessionId, ...statuses).n;
+}
+// Kayit olustur — kontenjan doluysa yedek listeye alir. withdrawn/no_show ise yeniden aktive eder.
+function createSessionRegistration(sessionId, competitionId, userId, capacity) {
+  const existing = sessionRegistrationByUser(sessionId, userId);
+  const activeCount = countSessionRegistrations(sessionId, ['registered', 'checked_in', 'confirmed']);
+  const full = (capacity != null && capacity > 0 && activeCount >= capacity);
+  const status = full ? 'waitlisted' : 'registered';
+  if (existing) {
+    if (ACTIVE_REG_STATUSES.includes(existing.status)) return existing;
+    const maxOrder = db.prepare('SELECT COALESCE(MAX(reg_order),0) AS m FROM session_registrations WHERE session_id = ?').get(sessionId).m;
+    db.prepare('UPDATE session_registrations SET status = ?, reg_order = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?')
+      .run(status, maxOrder + 1, existing.id);
+    return db.prepare('SELECT * FROM session_registrations WHERE id = ?').get(existing.id);
+  }
+  const maxOrder = db.prepare('SELECT COALESCE(MAX(reg_order),0) AS m FROM session_registrations WHERE session_id = ?').get(sessionId).m;
+  const info = db.prepare(
+    'INSERT INTO session_registrations (session_id, competition_id, user_id, status, reg_order) VALUES (?, ?, ?, ?, ?)'
+  ).run(sessionId, competitionId, userId, status, maxOrder + 1);
+  return db.prepare('SELECT * FROM session_registrations WHERE id = ?').get(info.lastInsertRowid);
+}
+// Kayit iptal — withdrawn yapar, kontenjan acildiysa ilk yedegi otomatik terfi ettirir.
+function withdrawSessionRegistration(sessionId, userId, capacity) {
+  const reg = sessionRegistrationByUser(sessionId, userId);
+  if (!reg || !ACTIVE_REG_STATUSES.includes(reg.status)) return { ok: false, reason: 'not_active' };
+  const wasActive = ['registered', 'checked_in', 'confirmed'].includes(reg.status);
+  db.prepare("UPDATE session_registrations SET status = 'withdrawn', updated_at = CURRENT_TIMESTAMP WHERE id = ?").run(reg.id);
+  let promoted = null;
+  if (wasActive && capacity != null && capacity > 0) {
+    const activeCount = countSessionRegistrations(sessionId, ['registered', 'checked_in', 'confirmed']);
+    if (activeCount < capacity) {
+      const next = db.prepare(
+        "SELECT * FROM session_registrations WHERE session_id = ? AND status = 'waitlisted' ORDER BY reg_order ASC, id ASC LIMIT 1"
+      ).get(sessionId);
+      if (next) {
+        db.prepare("UPDATE session_registrations SET status = 'registered', updated_at = CURRENT_TIMESTAMP WHERE id = ?").run(next.id);
+        promoted = db.prepare('SELECT * FROM session_registrations WHERE id = ?').get(next.id);
+      }
+    }
+  }
+  return { ok: true, promoted };
+}
+function sessionRegistrationById(id) {
+  return db.prepare('SELECT * FROM session_registrations WHERE id = ?').get(id);
+}
+function setSessionRegistrationStatus(id, status) {
+  db.prepare('UPDATE session_registrations SET status = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?').run(status, id);
+  return sessionRegistrationById(id);
+}
+// Kayit acik sezon oturumlari — herkese acik "Gelecek Turnuvalar" listesi icin.
+function openSessionRegistrations() {
+  const rows = db.prepare(
+    `SELECT s.id AS session_id, s.name AS session_name, s.session_date, s.capacity, s.checkin_enabled,
+            c.id AS competition_id, c.name AS competition_name, c.category, c.game_mode,
+            u.name AS owner_name
+       FROM competition_sessions s
+       JOIN competitions c ON c.id = s.competition_id
+       LEFT JOIN users u ON u.id = c.user_id
+      WHERE s.reg_enabled = 1 AND s.reg_status = 'open' AND c.type = 'season'
+      ORDER BY (s.session_date IS NULL), s.session_date ASC, s.id DESC`
+  ).all();
+  for (const s of rows) {
+    s.active_count = countSessionRegistrations(s.session_id, ['registered', 'checked_in', 'confirmed']);
+    s.waitlist_count = countSessionRegistrations(s.session_id, ['waitlisted']);
+  }
+  return rows;
+}
+// Bir kullanicinin sezon oturumu kayitlari (Turnuvalarim).
+function sessionRegistrationsForUser(userId) {
+  return db.prepare(
+    `SELECT r.*, s.name AS session_name, s.session_date, s.reg_status, s.checkin_enabled,
+            c.name AS competition_name, c.category
+       FROM session_registrations r
+       JOIN competition_sessions s ON s.id = r.session_id
+       JOIN competitions c ON c.id = r.competition_id
+      WHERE r.user_id = ?
+      ORDER BY r.id DESC`
+  ).all(userId);
+}
+// "Katilimcilari Onayla": kayitli oyunculari sezon havuzuna ekler, her kayda player_id
+// baglar, status 'confirmed' yapar. Bracket KURMAZ — onaylanmis player_id listesini doner;
+// caller mevcut oturum-kurma akisina (participant_player_ids) verir. Idempotent.
+function confirmSessionRegistrations(sessionId, competitionId, ownerUserId, checkinEnabled, joinedSession) {
+  const eligible = checkinEnabled ? ['checked_in'] : ['registered', 'checked_in'];
+  const ph = eligible.map(() => '?').join(',');
+  const regs = db.prepare(
+    `SELECT * FROM session_registrations
+      WHERE session_id = ? AND player_id IS NULL AND status IN (${ph})
+      ORDER BY reg_order ASC, id ASC`
+  ).all(sessionId, ...eligible);
+
+  const tx = db.transaction(() => {
+    for (const reg of regs) {
+      const u = db.prepare('SELECT id, name, email FROM users WHERE id = ?').get(reg.user_id);
+      const displayName = (u && (u.name || (u.email || '').split('@')[0])) || ('Oyuncu ' + reg.user_id);
+      let player = playerByAccountUser(ownerUserId, reg.user_id);
+      if (!player) {
+        const info = db.prepare(
+          'INSERT INTO players (user_id, name, nickname, account_user_id) VALUES (?, ?, ?, ?)'
+        ).run(ownerUserId, displayName, null, reg.user_id);
+        player = db.prepare('SELECT * FROM players WHERE id = ?').get(info.lastInsertRowid);
+      }
+      addCompetitionPlayer(competitionId, player.id, joinedSession || 1);
+      db.prepare("UPDATE session_registrations SET status = 'confirmed', player_id = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?")
+        .run(player.id, reg.id);
+    }
+  });
+  tx();
+  const confirmed = db.prepare(
+    "SELECT player_id FROM session_registrations WHERE session_id = ? AND status = 'confirmed' AND player_id IS NOT NULL ORDER BY reg_order ASC, id ASC"
+  ).all(sessionId).map(r => r.player_id);
+  return { player_ids: confirmed, transferred: regs.length };
 }
 
 // --- Session Results ---
@@ -2261,6 +2439,10 @@ module.exports = {
   createCompetition, allCompetitions, competitionById, updateCompetition, deleteCompetition,
   addCompetitionPlayer, competitionPlayers, removeCompetitionPlayer,
   createSession, sessionsForCompetition, sessionById, updateSession, deleteSession,
+  sessionRegistrations, sessionRegistrationByUser, countSessionRegistrations,
+  createSessionRegistration, withdrawSessionRegistration, sessionRegistrationById,
+  setSessionRegistrationStatus, openSessionRegistrations, sessionRegistrationsForUser,
+  confirmSessionRegistrations,
   recordSessionResult, resultsForSession, sessionHasResults,
   addToCompetitionPlayerStats, addShotStatsToCompetitionPlayer,
   generateLeaguePlan, leagueSchedule, linkRoundToSession,

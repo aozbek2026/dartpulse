@@ -261,6 +261,27 @@
           </div>
         </div>
 
+        <!-- Online kayıt: işaretliyse katılımcı seçme; katılımcılar Turnuvalar sayfasından kaydolur -->
+        <div id="ns-reg-section" style="margin-top:0.8rem;border-top:1px solid var(--border, rgba(255,255,255,0.08));padding-top:0.7rem;">
+          <label style="display:flex;align-items:center;gap:0.5rem;cursor:pointer;font-size:0.92rem">
+            <input type="checkbox" id="ns-reg-toggle" onchange="toggleRegMode(this.checked)" />
+            <span>🎫 <strong>Online kayıt aç</strong> <span style="color:var(--text-dim);font-size:0.85rem">— katılımcılar Turnuvalar sayfasından kendileri kaydolur; sonra "Onayla" ile bracket kurulur</span></span>
+          </label>
+          <div id="ns-reg-panel" hidden style="margin-top:0.6rem;padding:0.6rem;background:rgba(255,56,96,0.04);border:1px solid rgba(255,56,96,0.2);border-radius:8px;">
+            <div style="display:flex;gap:1.2rem;flex-wrap:wrap;align-items:flex-end">
+              <div>
+                <label style="display:block;font-size:0.82rem;color:var(--text-dim);margin-bottom:0.25rem">Kontenjan <span style="opacity:0.6">(boş = sınırsız)</span></label>
+                <input id="ns-reg-capacity" type="number" min="2" placeholder="örn. 32" style="width:120px" />
+              </div>
+              <label style="display:flex;align-items:center;gap:0.5rem;cursor:pointer;font-size:0.88rem;padding-bottom:0.35rem">
+                <input type="checkbox" id="ns-reg-checkin" />
+                <span>Gün-içi check-in iste <span style="color:var(--text-dim);font-size:0.8rem">(sadece check-in olanlar bracket'e girer)</span></span>
+              </label>
+            </div>
+            <p style="font-size:0.76rem;color:var(--text-dim);margin:0.5rem 0 0 0">Format ve kura/seri başı, kayıtları onaylarken seçilecek. Bracket o an kurulur.</p>
+          </div>
+        </div>
+
         <div id="ns-participants-section" style="margin-top:0.8rem;">
           <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:0.4rem">
             <label style="font-size:0.82rem;color:var(--text-dim);margin:0">Katılımcılar</label>
