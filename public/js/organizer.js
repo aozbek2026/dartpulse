@@ -778,6 +778,220 @@ async function startTournament(id) {
   toast('Turnuva başladı');
 }
 
+// Etkinlik / Kayıt ayarları modalı (Dilim D) — ayrı tabloda saklanır, tournaments'a dokunmaz
+async function showEventSettings(id) {
+  const t = state.tournaments.find(x => x.id === id);
+  if (!t) return;
+  let s = {};
+  try {
+    const r = await api.get('/api/tournaments/' + id + '/event-settings');
+    s = (r && r.settings) || {};
+  } catch (e) { /* ayar yoksa boş başla */ }
+
+  const v = (x) => (x == null ? '' : String(x).replace(/"/g, '&quot;'));
+  const chk = (x) => (x ? 'checked' : '');
+  const overlay = document.createElement('div');
+  overlay.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,0.75);display:flex;align-items:center;justify-content:center;z-index:9999;padding:1rem;overflow:auto;';
+  overlay.innerHTML = `
+    <div style="background:var(--surface);border-radius:16px;padding:2rem;max-width:520px;width:100%;position:relative;max-height:90vh;overflow:auto;">
+      <button onclick="this.closest('[style*=fixed]').remove()" style="position:absolute;top:1rem;right:1rem;background:none;border:none;color:var(--text-dim);font-size:1.5rem;cursor:pointer;line-height:1;">×</button>
+      <h3 style="margin-bottom:0.4rem;">🎫 Etkinlik / Kayıt Ayarları</h3>
+      <div style="color:var(--text-dim);font-size:0.85rem;margin-bottom:1.25rem;">${v(t.name)}</div>
+
+      <label style="display:flex;align-items:center;gap:0.6rem;margin-bottom:0.6rem;cursor:pointer;">
+        <input type="checkbox" id="es-reg" ${chk(s.reg_enabled)} style="width:auto;margin:0;" />
+        <span><strong>Online kayıt</strong> — katılımcılar kendi hesaplarıyla kayıt olabilir</span>
+      </label>
+      <label style="display:flex;align-items:center;gap:0.6rem;margin-bottom:0.6rem;cursor:pointer;">
+        <input type="checkbox" id="es-checkin" ${chk(s.checkin_enabled)} style="width:auto;margin:0;" />
+        <span><strong>Check-in</strong> — turnuva günü yüz yüze giriş onayı</span>
+      </label>
+      <label style="display:flex;align-items:center;gap:0.6rem;margin-bottom:1.1rem;cursor:pointer;">
+        <input type="checkbox" id="es-stats" ${chk(s.stats_to_profile)} style="width:auto;margin:0;" />
+        <span><strong>İstatistik tutulsun</strong> — maç istatistikleri katılımcı profiline işlensin</span>
+      </label>
+
+      <div id="es-extra">
+        <label>Kategori</label>
+        <input id="es-category" type="text" placeholder="Örn. Erkekler, Kadınlar, Veteran" value="${v(s.category)}" style="width:100%;margin-bottom:0.75rem;box-sizing:border-box;" />
+
+        <div style="display:flex;gap:0.75rem;">
+          <div style="flex:1;">
+            <label>Etkinlik tarihi</label>
+            <input id="es-event-date" type="date" value="${v(s.event_date)}" style="width:100%;margin-bottom:0.75rem;box-sizing:border-box;" />
+          </div>
+          <div style="flex:1;">
+            <label>Kontenjan</label>
+            <input id="es-capacity" type="number" min="0" placeholder="Sınırsız" value="${v(s.capacity)}" style="width:100%;margin-bottom:0.75rem;box-sizing:border-box;" />
+          </div>
+        </div>
+
+        <div style="display:flex;gap:0.75rem;">
+          <div style="flex:1;">
+            <label>Son kayıt tarihi</label>
+            <input id="es-reg-deadline" type="date" value="${v(s.reg_deadline)}" style="width:100%;margin-bottom:0.75rem;box-sizing:border-box;" />
+          </div>
+          <div style="flex:1;">
+            <label>Check-in saati</label>
+            <input id="es-checkin-time" type="time" value="${v(s.checkin_time)}" style="width:100%;margin-bottom:0.75rem;box-sizing:border-box;" />
+          </div>
+        </div>
+
+        <label>Açıklama</label>
+        <textarea id="es-description" rows="3" placeholder="Etkinlik hakkında kısa bilgi…" style="width:100%;margin-bottom:1rem;box-sizing:border-box;">${v(s.description)}</textarea>
+      </div>
+
+      <div style="display:flex;gap:0.75rem;justify-content:flex-end;">
+        <button id="es-cancel" style="padding:0.65rem 1.25rem;border-radius:8px;border:1px solid var(--border);background:var(--surface-2);color:var(--text);cursor:pointer;">İptal</button>
+        <button id="es-save" style="padding:0.65rem 1.25rem;border-radius:8px;border:none;background:var(--accent);color:#000;font-weight:700;cursor:pointer;">Kaydet</button>
+      </div>
+    </div>`;
+  document.body.appendChild(overlay);
+  const close = () => overlay.remove();
+  overlay.querySelector('#es-cancel').onclick = close;
+  overlay.addEventListener('click', (e) => { if (e.target === overlay) close(); });
+  overlay.querySelector('#es-save').onclick = async () => {
+    const body = {
+      reg_enabled: overlay.querySelector('#es-reg').checked,
+      checkin_enabled: overlay.querySelector('#es-checkin').checked,
+      stats_to_profile: overlay.querySelector('#es-stats').checked,
+      category: overlay.querySelector('#es-category').value,
+      capacity: overlay.querySelector('#es-capacity').value,
+      reg_deadline: overlay.querySelector('#es-reg-deadline').value,
+      checkin_time: overlay.querySelector('#es-checkin-time').value,
+      event_date: overlay.querySelector('#es-event-date').value,
+      description: overlay.querySelector('#es-description').value,
+    };
+    try {
+      await api.put('/api/tournaments/' + id + '/event-settings', body);
+      toast('Etkinlik ayarları kaydedildi');
+      close();
+    } catch (e) { toast('Kaydedilemedi: ' + (e.message || e)); }
+  };
+}
+
+// Draft turnuva katılımcı listesi — çıkarma (dummy/yanlış katılımcı temizleme)
+function showParticipants(id) {
+  const t = state.tournaments.find(x => x.id === id);
+  if (!t || t.status !== 'draft') return;
+  const esc = (s) => String(s == null ? '' : s).replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+  const entries = [...t.entries].sort((a, b) => a.slot - b.slot);
+  const overlay = document.createElement('div');
+  overlay.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,0.75);display:flex;align-items:center;justify-content:center;z-index:9999;padding:1rem;overflow:auto;';
+  const rows = entries.map(e => `
+    <div style="display:flex;align-items:center;justify-content:space-between;gap:0.6rem;padding:0.5rem 0;border-bottom:1px solid var(--border);">
+      <span><strong>${esc(entryLabel(e))}</strong></span>
+      <button class="icon danger" data-eid="${e.id}" title="Çıkar">×</button>
+    </div>`).join('');
+  overlay.innerHTML = `
+    <div style="background:var(--surface);border-radius:16px;padding:2rem;max-width:460px;width:100%;position:relative;max-height:90vh;overflow:auto;">
+      <button onclick="this.closest('[style*=fixed]').remove()" style="position:absolute;top:1rem;right:1rem;background:none;border:none;color:var(--text-dim);font-size:1.5rem;cursor:pointer;line-height:1;">×</button>
+      <h3 style="margin-bottom:0.3rem;">👥 Katılımcılar — ${esc(t.name)}</h3>
+      <div style="color:var(--text-dim);font-size:0.85rem;margin-bottom:1rem;">${entries.length} katılımcı. Çıkarmak için × tıklayın.</div>
+      <div id="pp-list">${rows || '<div style="color:var(--text-dim);">Katılımcı yok.</div>'}</div>
+    </div>`;
+  document.body.appendChild(overlay);
+  const close = () => overlay.remove();
+  overlay.addEventListener('click', (e) => { if (e.target === overlay) close(); });
+  overlay.querySelectorAll('button[data-eid]').forEach(btn => {
+    btn.onclick = async () => {
+      if (!await showOrgConfirm('Bu katılımcı turnuvadan çıkarılsın mı?', 'Çıkar', 'İptal')) return;
+      try {
+        await api.del(`/api/tournaments/${id}/entries/${btn.dataset.eid}`);
+        close();
+        // online kayıttan gelen biriyse kaydı 'registered'a döner; state socket ile tazelenir
+      } catch (e) { toast(e.message || 'Çıkarılamadı'); }
+    };
+  });
+}
+
+// Kayıt yönetimi modalı (Dilim F) — check-in + Confirm (motora aktarım)
+const REG_STATUS_TR = {
+  registered: 'Kayıtlı', waitlisted: 'Yedek', checked_in: 'Giriş yapıldı',
+  confirmed: 'Onaylı', withdrawn: 'İptal', no_show: 'Gelmedi',
+};
+async function showRegistrations(id) {
+  const t = state.tournaments.find(x => x.id === id);
+  if (!t) return;
+  let data = { registrations: [], settings: null };
+  try { data = await api.get('/api/tournaments/' + id + '/registrations'); } catch (e) {}
+  const es = data.settings || {};
+  const checkin = !!es.checkin_enabled;
+  const regs = data.registrations || [];
+  const esc = (s) => String(s == null ? '' : s).replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+
+  const overlay = document.createElement('div');
+  overlay.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,0.75);display:flex;align-items:center;justify-content:center;z-index:9999;padding:1rem;overflow:auto;';
+
+  function rowHtml(r) {
+    const name = esc(r.user_name || (r.user_email || '').split('@')[0] || ('Oyuncu ' + r.user_id));
+    let actions = '';
+    if (r.status === 'confirmed') {
+      actions = '<span style="color:#2563eb;font-weight:700;">✓ Onaylı</span>';
+    } else if (r.status === 'withdrawn' || r.status === 'no_show') {
+      actions = `<button class="secondary" data-act="registered" data-id="${r.id}" style="padding:0.3rem 0.7rem;">Geri al</button>`;
+    } else {
+      if (checkin && r.status !== 'checked_in') actions += `<button class="primary" data-act="checked_in" data-id="${r.id}" style="padding:0.3rem 0.7rem;">Giriş</button>`;
+      if (checkin && r.status === 'checked_in') actions += `<button class="secondary" data-act="no_show" data-id="${r.id}" style="padding:0.3rem 0.7rem;">Gelmedi</button>`;
+      if (!checkin) actions += `<button class="secondary" data-act="no_show" data-id="${r.id}" style="padding:0.3rem 0.7rem;">Gelmedi</button>`;
+    }
+    return `<div style="display:flex;align-items:center;justify-content:space-between;gap:0.6rem;padding:0.5rem 0;border-bottom:1px solid var(--border);">
+      <div><strong>${name}</strong> <span style="color:var(--text-dim);font-size:0.82rem;">· ${REG_STATUS_TR[r.status] || r.status}</span></div>
+      <div style="display:flex;gap:0.35rem;">${actions}</div>
+    </div>`;
+  }
+
+  const active = regs.filter(r => ['registered','checked_in','confirmed'].includes(r.status));
+  const waitlist = regs.filter(r => r.status === 'waitlisted');
+  const other = regs.filter(r => ['withdrawn','no_show'].includes(r.status));
+  const eligibleCount = regs.filter(r => r.player_id == null && (checkin ? r.status === 'checked_in' : ['registered','checked_in'].includes(r.status))).length;
+
+  overlay.innerHTML = `
+    <div style="background:var(--surface);border-radius:16px;padding:2rem;max-width:560px;width:100%;position:relative;max-height:90vh;overflow:auto;">
+      <button onclick="this.closest('[style*=fixed]').remove()" style="position:absolute;top:1rem;right:1rem;background:none;border:none;color:var(--text-dim);font-size:1.5rem;cursor:pointer;line-height:1;">×</button>
+      <h3 style="margin-bottom:0.3rem;">📋 Kayıtlar — ${esc(t.name)}</h3>
+      <div style="color:var(--text-dim);font-size:0.85rem;margin-bottom:1rem;">
+        ${es.reg_enabled ? '' : '⚠️ Online kayıt kapalı — "🎫 Etkinlik"ten açın.'}
+        ${checkin ? 'Check-in açık: yalnızca "Giriş yapıldı" olanlar aktarılır.' : 'Check-in kapalı: "Kayıtlı" olanlar aktarılır.'}
+      </div>
+
+      <h4 style="margin:0.5rem 0 0.25rem;font-size:0.85rem;color:var(--text-dim);">Asıl Liste (${active.length})</h4>
+      <div id="rg-active">${active.length ? active.map(rowHtml).join('') : '<div style="color:var(--text-dim);padding:0.5rem 0;">Kayıt yok.</div>'}</div>
+
+      ${waitlist.length ? `<h4 style="margin:1rem 0 0.25rem;font-size:0.85rem;color:var(--text-dim);">Yedek Liste (${waitlist.length})</h4><div id="rg-wait">${waitlist.map(rowHtml).join('')}</div>` : ''}
+      ${other.length ? `<h4 style="margin:1rem 0 0.25rem;font-size:0.85rem;color:var(--text-dim);">İptal / Gelmedi (${other.length})</h4><div id="rg-other">${other.map(rowHtml).join('')}</div>` : ''}
+
+      <div style="display:flex;gap:0.75rem;justify-content:flex-end;align-items:center;margin-top:1.5rem;">
+        <span style="color:var(--text-dim);font-size:0.85rem;">${eligibleCount} katılımcı aktarılacak</span>
+        <button id="rg-confirm" ${eligibleCount ? '' : 'disabled'} style="padding:0.65rem 1.25rem;border-radius:8px;border:none;background:#22c55e;color:#000;font-weight:700;cursor:${eligibleCount ? 'pointer' : 'default'};opacity:${eligibleCount ? '1' : '0.5'};">✓ Katılımcıları Onayla</button>
+      </div>
+    </div>`;
+  document.body.appendChild(overlay);
+  const close = () => overlay.remove();
+  overlay.addEventListener('click', (e) => { if (e.target === overlay) close(); });
+
+  overlay.querySelectorAll('button[data-act]').forEach(btn => {
+    btn.onclick = async () => {
+      try {
+        await api.post(`/api/tournaments/${id}/registrations/${btn.dataset.id}/status`, { status: btn.dataset.act });
+        close(); showRegistrations(id); // yeniden yükle
+      } catch (e) { toast(e.message || 'İşlem başarısız'); }
+    };
+  });
+  const confirmBtn = overlay.querySelector('#rg-confirm');
+  if (confirmBtn && eligibleCount) {
+    confirmBtn.onclick = async () => {
+      if (!await showOrgConfirm(`${eligibleCount} katılımcı turnuvaya aktarılacak. Devam edilsin mi?`, 'Onayla', 'İptal')) return;
+      try {
+        const r = await api.post(`/api/tournaments/${id}/confirm`, {});
+        toast(`${r.transferred} katılımcı aktarıldı`);
+        close();
+        // state, server'ın scheduleBroadcast'i ile socket üzerinden tazelenir
+      } catch (e) { toast(e.message || 'Aktarım başarısız'); }
+    };
+  }
+}
+
 function showOrgConfirm(message, okLabel = 'Evet', cancelLabel = 'İptal') {
   return new Promise((resolve) => {
     const overlay = document.createElement('div');
@@ -1261,6 +1475,9 @@ function renderTournament(t) {
           ${t.status !== 'draft' ? `<button class="secondary" title="Braketi A4 (yatay) PDF olarak yazdır" onclick="printTournamentBracket(${t.id})">🖨️ Braket PDF</button>` : ''}
           ${canFinishTournament(t) ? `<button class="btn" style="background: #22c55e; color: #000; font-weight: 700;" onclick="showTournamentStats(${t.id})">🏆 Turnuvayı Bitir</button>` : ''}
           ${t.status === 'finished' && !t.hidden_from_public ? `<button class="secondary" title="İzleyici listesinden kaldır" onclick="hideFromPublic(${t.id}, this)">👁 Listeden Kaldır</button>` : ''}
+          <button class="secondary" title="Online kayıt, check-in ve etkinlik ayarları" onclick="showEventSettings(${t.id})">🎫 Etkinlik</button>
+          ${t.status === 'draft' ? `<button class="secondary" title="Online kayıtlar, check-in ve katılımcı onayı" onclick="showRegistrations(${t.id})">📋 Kayıtlar</button>` : ''}
+          ${t.status === 'draft' && t.entries.length ? `<button class="secondary" title="Katılımcı listesi — çıkarma" onclick="showParticipants(${t.id})">👥 Katılımcılar (${t.entries.length})</button>` : ''}
           <button class="danger" onclick="deleteTournament(${t.id})">Sil</button>
         </div>
       </div>

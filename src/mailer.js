@@ -77,4 +77,38 @@ async function sendResetEmail(to, token) {
   });
 }
 
-module.exports = { sendVerifyEmail, sendResetEmail };
+function organizerRequestHtml(applicant, note) {
+  const url = `${BASE_URL}/admin.html`;
+  const safeNote = note
+    ? `<p style="background:#f5f5f7;padding:0.75rem 1rem;border-radius:8px;color:#333;">${String(note).replace(/</g, '&lt;')}</p>`
+    : '<p style="color:#888;">(Not eklenmedi)</p>';
+  return `
+    <div style="font-family:sans-serif;max-width:480px;margin:0 auto;padding:2rem;">
+      <h2 style="color:#ff3860;">🎯 Dart Core Pro — Organizatör Başvurusu</h2>
+      <p>Yeni bir organizatör başvurusu var:</p>
+      <p><strong>${applicant.name || '(isimsiz)'}</strong><br>
+         <span style="color:#555;">${applicant.email}</span></p>
+      ${safeNote}
+      <p style="margin:2rem 0;">
+        <a href="${url}" style="background:#ff3860;color:#fff;padding:0.75rem 1.5rem;border-radius:8px;text-decoration:none;font-weight:700;">
+          Yönetici Panelini Aç
+        </a>
+      </p>
+      <p style="color:#888;font-size:0.85rem;">Başvuruyu onaylamak veya reddetmek için yönetici panelini kullanın.</p>
+    </div>`;
+}
+
+// Tüm admin'lere organizatör başvuru bildirimi gönderir.
+async function sendOrganizerRequestEmail(adminEmails, applicant, note) {
+  if (!adminEmails || !adminEmails.length) {
+    console.warn('[Mailer] Organizatör başvurusu — admin e-postası yok, bildirim gönderilmedi.');
+    return;
+  }
+  await sendMail({
+    to: adminEmails,
+    subject: 'Dart Core Pro — Yeni Organizatör Başvurusu',
+    html: organizerRequestHtml(applicant, note),
+  });
+}
+
+module.exports = { sendVerifyEmail, sendResetEmail, sendOrganizerRequestEmail };

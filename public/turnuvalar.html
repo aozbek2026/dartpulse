@@ -1,0 +1,184 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Turnuvalar · Dart Core Pro</title>
+<link rel="stylesheet" href="/css/style.css" />
+<style>
+  .tn-wrap { max-width: 880px; margin: 0 auto; padding: 1.5rem 1rem 4rem; }
+  .tn-head { display:flex; align-items:center; justify-content:space-between; gap:1rem; flex-wrap:wrap; margin-bottom:1.25rem; }
+  .tn-head h1 { margin:0; font-size:1.5rem; }
+  .tn-back { color:var(--accent-2,#00d4ff); text-decoration:none; font-size:0.9rem; }
+  .tn-tabs { display:flex; gap:0.5rem; margin-bottom:1.25rem; border-bottom:1px solid var(--border,rgba(255,255,255,0.1)); }
+  .tn-tab { padding:0.55rem 1rem; background:none; border:none; color:var(--muted,#9aa); font-weight:600; cursor:pointer; border-bottom:2px solid transparent; }
+  .tn-tab.active { color:var(--text,#fff); border-bottom-color:var(--accent,#ff3860); }
+  .tn-card {
+    background: var(--bg-2, rgba(255,255,255,0.04));
+    border: 1px solid var(--border, rgba(255,255,255,0.08));
+    border-radius: 10px; padding: 1rem; margin-bottom: 0.75rem;
+  }
+  .tn-card-top { display:flex; align-items:flex-start; justify-content:space-between; gap:0.75rem; flex-wrap:wrap; }
+  .tn-title { font-weight:700; font-size:1.05rem; }
+  .tn-meta { color:var(--muted,#9aa); font-size:0.85rem; margin-top:0.2rem; display:flex; flex-wrap:wrap; gap:0.5rem 1rem; }
+  .tn-desc { font-size:0.88rem; color:#cbd; margin-top:0.5rem; }
+  .tn-actions { display:flex; gap:0.4rem; align-items:center; flex-wrap:wrap; }
+  .tn-btn { padding:0.45rem 0.95rem; border-radius:8px; border:none; font-weight:700; cursor:pointer; font-size:0.85rem; }
+  .tn-btn.reg { background:#1fbf6b; color:#fff; }
+  .tn-btn.wd { background:#444; color:#fff; }
+  .tn-btn:disabled { opacity:0.5; cursor:default; }
+  .pill { display:inline-block; font-size:0.72rem; padding:0.12rem 0.6rem; border-radius:20px; font-weight:700; }
+  .pill.reg { background:#1fbf6b; color:#fff; }
+  .pill.wait { background:#d9831f; color:#fff; }
+  .pill.conf { background:#2563eb; color:#fff; }
+  .pill.wd { background:#555; color:#fff; }
+  .pill.cat { background:#3340; color:#abc; border:1px solid #456; }
+  .tn-cap { font-size:0.8rem; color:var(--muted,#9aa); }
+  .tn-empty { color:var(--muted,#9aa); padding:1.5rem 0; text-align:center; }
+  #tn-loginbar { background:rgba(255,56,96,0.08); border:1px solid rgba(255,56,96,0.3); border-radius:10px; padding:0.75rem 1rem; margin-bottom:1rem; font-size:0.9rem; }
+</style>
+</head>
+<body>
+<div class="tn-wrap">
+  <div class="tn-head">
+    <h1>🎯 Turnuvalar</h1>
+    <a class="tn-back" href="/">← Anasayfa</a>
+  </div>
+
+  <div id="tn-loginbar" hidden>
+    Kayıt olabilmek için <a href="/login.html" style="color:var(--accent,#ff3860);font-weight:700;">giriş yapın</a>.
+  </div>
+
+  <div class="tn-tabs">
+    <button class="tn-tab active" data-tab="upcoming" onclick="switchTab('upcoming')">Gelecek Turnuvalar</button>
+    <button class="tn-tab" data-tab="mine" id="tn-mine-tab" onclick="switchTab('mine')" hidden>Turnuvalarım</button>
+  </div>
+
+  <div id="tn-upcoming"></div>
+  <div id="tn-mine" hidden></div>
+</div>
+
+<script>
+const esc = (s) => String(s == null ? '' : s).replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+let ME = null;
+
+async function api(url, opts) {
+  const r = await fetch(url, Object.assign({ credentials: 'same-origin' }, opts || {}));
+  const d = await r.json().catch(() => ({}));
+  if (!r.ok) throw new Error(d.error || 'İşlem başarısız');
+  return d;
+}
+function fmtDate(s) {
+  if (!s) return null;
+  try { return new Date(s + 'T00:00:00').toLocaleDateString('tr-TR', { day:'numeric', month:'long', year:'numeric' }); }
+  catch { return s; }
+}
+const STATUS_PILL = {
+  registered: '<span class="pill reg">Kayıtlı</span>',
+  waitlisted: '<span class="pill wait">Yedek</span>',
+  checked_in: '<span class="pill reg">Giriş yapıldı</span>',
+  confirmed: '<span class="pill conf">Onaylı</span>',
+  withdrawn: '<span class="pill wd">İptal</span>',
+  no_show: '<span class="pill wd">Gelmedi</span>',
+};
+
+function switchTab(tab) {
+  document.querySelectorAll('.tn-tab').forEach(b => b.classList.toggle('active', b.dataset.tab === tab));
+  document.getElementById('tn-upcoming').hidden = (tab !== 'upcoming');
+  document.getElementById('tn-mine').hidden = (tab !== 'mine');
+  if (tab === 'mine') loadMine();
+}
+
+// ── Gelecek Turnuvalar ──
+async function loadUpcoming() {
+  const box = document.getElementById('tn-upcoming');
+  try {
+    const { tournaments } = await api('/api/public/upcoming-tournaments');
+    if (!tournaments.length) { box.innerHTML = '<div class="tn-empty">Şu an açık kayıtlı turnuva yok.</div>'; return; }
+    box.innerHTML = tournaments.map(t => {
+      const date = fmtDate(t.event_date);
+      const cap = t.capacity ? `${t.active_count}/${t.capacity} kayıt` : `${t.active_count} kayıt`;
+      const wait = t.waitlist_count ? ` · ${t.waitlist_count} yedek` : '';
+      const full = (t.capacity && t.active_count >= t.capacity);
+      let action = '';
+      if (!ME) {
+        action = '<a class="tn-btn reg" href="/login.html">Giriş yap & kayıt ol</a>';
+      } else if (t.my_status && ['registered','waitlisted','checked_in','confirmed'].includes(t.my_status)) {
+        action = `${STATUS_PILL[t.my_status]} <button class="tn-btn wd" onclick="withdraw(${t.id})">İptal et</button>`;
+      } else {
+        action = `<button class="tn-btn reg" onclick="register(${t.id})">${full ? 'Yedek listesine katıl' : 'Kayıt ol'}</button>`;
+      }
+      return `
+        <div class="tn-card">
+          <div class="tn-card-top">
+            <div style="min-width:0;">
+              <div class="tn-title">${esc(t.name)} ${t.category ? `<span class="pill cat">${esc(t.category)}</span>` : ''}</div>
+              <div class="tn-meta">
+                ${date ? `<span>📅 ${date}</span>` : ''}
+                ${t.checkin_time ? `<span>⏰ Check-in ${esc(t.checkin_time)}</span>` : ''}
+                ${t.owner_name ? `<span>👤 ${esc(t.owner_name)}</span>` : ''}
+                <span class="tn-cap">${cap}${wait}</span>
+              </div>
+              ${t.description ? `<div class="tn-desc">${esc(t.description)}</div>` : ''}
+            </div>
+            <div class="tn-actions">${action}</div>
+          </div>
+        </div>`;
+    }).join('');
+  } catch (e) { box.innerHTML = `<div class="tn-empty">Hata: ${esc(e.message)}</div>`; }
+}
+
+async function register(id) {
+  try {
+    const d = await api(`/api/tournaments/${id}/register`, { method: 'POST' });
+    alert(d.status === 'waitlisted' ? 'Yedek listesine alındınız. Yer açılırsa otomatik kayda geçersiniz.' : 'Kaydınız alındı!');
+    loadUpcoming();
+  } catch (e) { alert(e.message); }
+}
+async function withdraw(id) {
+  if (!confirm('Kaydınızı iptal etmek istediğinize emin misiniz?')) return;
+  try { await api(`/api/tournaments/${id}/withdraw`, { method: 'POST' }); loadUpcoming(); }
+  catch (e) { alert(e.message); }
+}
+
+// ── Turnuvalarım ──
+async function loadMine() {
+  const box = document.getElementById('tn-mine');
+  try {
+    const { registrations } = await api('/api/my-registrations');
+    const active = registrations.filter(r => r.status !== 'withdrawn');
+    if (!active.length) { box.innerHTML = '<div class="tn-empty">Henüz bir turnuvaya kayıt olmadınız.</div>'; return; }
+    box.innerHTML = active.map(r => {
+      const date = fmtDate(r.event_date);
+      return `
+        <div class="tn-card">
+          <div class="tn-card-top">
+            <div style="min-width:0;">
+              <div class="tn-title">${esc(r.tournament_name)} ${r.category ? `<span class="pill cat">${esc(r.category)}</span>` : ''}</div>
+              <div class="tn-meta">${date ? `<span>📅 ${date}</span>` : ''}</div>
+            </div>
+            <div class="tn-actions">
+              ${STATUS_PILL[r.status] || ''}
+              ${['registered','waitlisted','checked_in'].includes(r.status) ? `<button class="tn-btn wd" onclick="withdrawMine(${r.tournament_id})">İptal</button>` : ''}
+            </div>
+          </div>
+        </div>`;
+    }).join('');
+  } catch (e) { box.innerHTML = `<div class="tn-empty">Hata: ${esc(e.message)}</div>`; }
+}
+async function withdrawMine(id) {
+  if (!confirm('Kaydınızı iptal etmek istediğinize emin misiniz?')) return;
+  try { await api(`/api/tournaments/${id}/withdraw`, { method: 'POST' }); loadMine(); }
+  catch (e) { alert(e.message); }
+}
+
+// ── Boot ──
+(async function init() {
+  try { ME = (await api('/auth/me')).user; } catch {}
+  document.getElementById('tn-loginbar').hidden = !!ME;
+  document.getElementById('tn-mine-tab').hidden = !ME;
+  loadUpcoming();
+})();
+</script>
+</body>
+</html>

@@ -42,6 +42,23 @@ function requireAuth(req, res, next) {
   next();
 }
 
+// Middleware: admin gerekir (Turnuva Kayıt Sistemi — Dilim A)
+function requireAdmin(req, res, next) {
+  if (!req.session || !req.session.userId) {
+    return res.status(401).json({ error: 'Giriş gerekli' });
+  }
+  const u = db.userById(req.session.userId);
+  if (!u) {
+    req.session.userId = null;
+    return res.status(401).json({ error: 'Kullanıcı bulunamadı' });
+  }
+  if (u.role !== 'admin') {
+    return res.status(403).json({ error: 'Yönetici yetkisi gerekli' });
+  }
+  req.user = u;
+  next();
+}
+
 // Middleware: user varsa req.user doldur (opsiyonel)
 function optionalAuth(req, res, next) {
   if (req.session && req.session.userId) {
@@ -158,6 +175,32 @@ async function resendVerifyHandler(req, res) {
   res.json({ ok: true, message: 'Doğrulama e-postası tekrar gönderildi.' });
 }
 
+// Organizatör başvurusu (Turnuva Kayıt Sistemi — Dilim B)
+async function applyOrganizerHandler(req, res) {
+  if (!req.session || !req.session.userId) return res.status(401).json({ error: 'Giriş gerekli' });
+  const user = db.userById(req.session.userId);
+  if (!user) return res.status(404).json({ error: 'Kullanıcı bulunamadı' });
+
+  if (user.role === 'admin') {
+    return res.status(400).json({ error: 'Yöneticiler zaten tüm yetkilere sahip.' });
+  }
+  if (user.organizer_status === 'approved') {
+    return res.status(400).json({ error: 'Zaten organizatörsünüz.' });
+  }
+  if (user.organizer_status === 'pending') {
+    return res.status(400).json({ error: 'Başvurunuz zaten değerlendirmede.' });
+  }
+
+  const note = (req.body && req.body.note ? String(req.body.note) : '').trim().slice(0, 1000) || null;
+  db.setOrganizerStatus(user.id, 'pending', note);
+
+  // Tüm admin'lere bildir
+  const adminEmails = db.usersByRole('admin').map(a => a.email).filter(Boolean);
+  mailer.sendOrganizerRequestEmail(adminEmails, user, note).catch(console.error);
+
+  res.json({ ok: true, organizer_status: 'pending', message: 'Başvurunuz alındı, değerlendirildikten sonra bilgilendirileceksiniz.' });
+}
+
 // Hesap sil
 function deleteAccountHandler(req, res) {
   if (!req.session || !req.session.userId) return res.status(401).json({ error: 'Giriş gerekli' });
@@ -175,8 +218,9 @@ function deleteAccountHandler(req, res) {
 
 module.exports = {
   hashPassword, verifyPassword,
-  requireAuth, optionalAuth,
+  requireAuth, requireAdmin, optionalAuth,
   registerHandler, loginHandler, logoutHandler, meHandler,
   forgotPasswordHandler, resetPasswordHandler, verifyEmailHandler,
   resendVerifyHandler, deleteAccountHandler,
+  applyOrganizerHandler,
 };

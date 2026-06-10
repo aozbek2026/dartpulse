@@ -1,0 +1,176 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Yönetici Paneli · Dart Core Pro</title>
+<link rel="stylesheet" href="/css/style.css" />
+<style>
+  .adm-wrap { max-width: 980px; margin: 0 auto; padding: 1.5rem 1rem 4rem; }
+  .adm-head { display:flex; align-items:center; justify-content:space-between; gap:1rem; flex-wrap:wrap; margin-bottom:1.5rem; }
+  .adm-head h1 { margin:0; font-size:1.5rem; }
+  .adm-section { margin-bottom:2.25rem; }
+  .adm-section h2 { font-size:1.1rem; margin:0 0 0.75rem; padding-bottom:0.4rem; border-bottom:1px solid var(--border, rgba(255,255,255,0.1)); }
+  .adm-card {
+    background: var(--bg-2, rgba(255,255,255,0.04));
+    border: 1px solid var(--border, rgba(255,255,255,0.08));
+    border-radius: 10px; padding: 0.8rem 1rem; margin-bottom: 0.6rem;
+    display:flex; align-items:center; justify-content:space-between; gap:0.75rem; flex-wrap:wrap;
+  }
+  .adm-card .who { display:flex; flex-direction:column; gap:0.15rem; min-width:0; }
+  .adm-card .who .nm { font-weight:600; }
+  .adm-card .who .em { font-size:0.82rem; color:var(--muted,#9aa); }
+  .adm-card .note { font-size:0.82rem; color:#cbd; font-style:italic; flex-basis:100%; }
+  .adm-actions { display:flex; gap:0.4rem; flex-wrap:wrap; }
+  .adm-btn { padding:0.4rem 0.85rem; border-radius:8px; border:none; font-weight:700; cursor:pointer; font-size:0.85rem; }
+  .adm-btn.ok { background:#1fbf6b; color:#fff; }
+  .adm-btn.no { background:#444; color:#fff; }
+  .adm-btn.danger { background:#ff3860; color:#fff; }
+  .adm-btn:disabled { opacity:0.5; cursor:default; }
+  .adm-empty { color:var(--muted,#9aa); font-size:0.9rem; padding:0.5rem 0; }
+  .pill { display:inline-block; font-size:0.7rem; padding:0.1rem 0.55rem; border-radius:20px; font-weight:700; }
+  .pill.draft { background:#555; color:#fff; }
+  .pill.running { background:#1fbf6b; color:#fff; }
+  .pill.finished { background:#3340; color:#abc; border:1px solid #456; }
+  .adm-back { color:var(--accent-2,#00d4ff); text-decoration:none; font-size:0.9rem; }
+  #adm-loading { text-align:center; padding:3rem; color:var(--muted,#9aa); }
+</style>
+</head>
+<body>
+<div class="adm-wrap">
+  <div id="adm-loading">Yükleniyor…</div>
+  <div id="adm-main" hidden>
+    <div class="adm-head">
+      <h1>🛡️ Yönetici Paneli</h1>
+      <a class="adm-back" href="/">← Anasayfa</a>
+    </div>
+
+    <section class="adm-section">
+      <h2>Bekleyen Organizatör Başvuruları</h2>
+      <div id="adm-requests"></div>
+    </section>
+
+    <section class="adm-section">
+      <h2>Onaylı Organizatörler</h2>
+      <div id="adm-organizers"></div>
+    </section>
+
+    <section class="adm-section">
+      <h2>Tüm Turnuvalar</h2>
+      <div id="adm-tournaments"></div>
+    </section>
+  </div>
+</div>
+
+<script>
+const esc = (s) => String(s == null ? '' : s).replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+
+async function api(url, opts) {
+  const r = await fetch(url, Object.assign({ credentials: 'same-origin' }, opts || {}));
+  const d = await r.json().catch(() => ({}));
+  if (!r.ok) throw new Error(d.error || 'İşlem başarısız');
+  return d;
+}
+
+// ── Başvurular ──
+async function loadRequests() {
+  const box = document.getElementById('adm-requests');
+  try {
+    const { requests } = await api('/api/admin/organizer-requests');
+    if (!requests.length) { box.innerHTML = '<div class="adm-empty">Bekleyen başvuru yok.</div>'; return; }
+    box.innerHTML = requests.map(u => `
+      <div class="adm-card" data-uid="${u.id}">
+        <div class="who">
+          <span class="nm">${esc(u.name || '(isimsiz)')}</span>
+          <span class="em">${esc(u.email)}</span>
+        </div>
+        <div class="adm-actions">
+          <button class="adm-btn ok" onclick="approveReq(${u.id})">Onayla</button>
+          <button class="adm-btn no" onclick="rejectReq(${u.id})">Reddet</button>
+        </div>
+        ${u.organizer_note ? `<div class="note">"${esc(u.organizer_note)}"</div>` : ''}
+      </div>`).join('');
+  } catch (e) { box.innerHTML = `<div class="adm-empty">Hata: ${esc(e.message)}</div>`; }
+}
+async function approveReq(uid) {
+  try { await api(`/api/admin/organizer-requests/${uid}/approve`, { method: 'POST' });
+        await loadRequests(); await loadOrganizers(); }
+  catch (e) { alert(e.message); }
+}
+async function rejectReq(uid) {
+  const note = prompt('Red gerekçesi (opsiyonel, başvurana gösterilmez):', '');
+  if (note === null) return;
+  try { await api(`/api/admin/organizer-requests/${uid}/reject`, {
+          method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ note }) });
+        await loadRequests(); }
+  catch (e) { alert(e.message); }
+}
+
+// ── Organizatörler ──
+async function loadOrganizers() {
+  const box = document.getElementById('adm-organizers');
+  try {
+    const { organizers } = await api('/api/admin/organizers');
+    if (!organizers.length) { box.innerHTML = '<div class="adm-empty">Henüz onaylı organizatör yok.</div>'; return; }
+    box.innerHTML = organizers.map(u => `
+      <div class="adm-card">
+        <div class="who">
+          <span class="nm">${esc(u.name || '(isimsiz)')}</span>
+          <span class="em">${esc(u.email)}</span>
+        </div>
+        <div class="adm-actions">
+          <button class="adm-btn danger" onclick="revokeOrg(${u.id})">Yetkiyi Geri Al</button>
+        </div>
+      </div>`).join('');
+  } catch (e) { box.innerHTML = `<div class="adm-empty">Hata: ${esc(e.message)}</div>`; }
+}
+async function revokeOrg(uid) {
+  if (!confirm('Bu kullanıcının organizatör yetkisi geri alınsın mı?')) return;
+  try { await api(`/api/admin/organizers/${uid}/revoke`, { method: 'POST' }); await loadOrganizers(); }
+  catch (e) { alert(e.message); }
+}
+
+// ── Turnuvalar ──
+const STATUS_TR = { draft: 'Taslak', running: 'Devam ediyor', finished: 'Bitti' };
+async function loadTournaments() {
+  const box = document.getElementById('adm-tournaments');
+  try {
+    const { tournaments } = await api('/api/admin/tournaments');
+    if (!tournaments.length) { box.innerHTML = '<div class="adm-empty">Turnuva yok.</div>'; return; }
+    box.innerHTML = tournaments.map(t => `
+      <div class="adm-card">
+        <div class="who">
+          <span class="nm">${esc(t.name)} <span class="pill ${t.status}">${STATUS_TR[t.status] || t.status}</span></span>
+          <span class="em">${esc(t.owner_name || t.owner_email || 'sahipsiz')} · #${t.id}</span>
+        </div>
+        <div class="adm-actions">
+          ${t.status === 'running' ? `<button class="adm-btn no" onclick="finishT(${t.id})">Sonlandır</button>` : ''}
+          <button class="adm-btn danger" onclick="deleteT(${t.id})">Sil</button>
+        </div>
+      </div>`).join('');
+  } catch (e) { box.innerHTML = `<div class="adm-empty">Hata: ${esc(e.message)}</div>`; }
+}
+async function finishT(id) {
+  if (!confirm('Turnuva sonlandırılsın mı?')) return;
+  try { await api(`/api/admin/tournaments/${id}/finish`, { method: 'POST' }); await loadTournaments(); }
+  catch (e) { alert(e.message); }
+}
+async function deleteT(id) {
+  if (!confirm('Turnuva KALICI olarak silinsin mi? Bu işlem geri alınamaz.')) return;
+  try { await api(`/api/admin/tournaments/${id}`, { method: 'DELETE' }); await loadTournaments(); }
+  catch (e) { alert(e.message); }
+}
+
+// ── Boot: admin doğrula ──
+(async function init() {
+  let me = null;
+  try { me = (await api('/auth/me')).user; } catch {}
+  if (!me) { location.href = '/login.html'; return; }
+  if (me.role !== 'admin') { location.href = '/'; return; }
+  document.getElementById('adm-loading').hidden = true;
+  document.getElementById('adm-main').hidden = false;
+  loadRequests(); loadOrganizers(); loadTournaments();
+})();
+</script>
+</body>
+</html>

@@ -148,6 +148,61 @@ app.post('/auth/reset-password', auth.resetPasswordHandler);
 app.get('/auth/verify-email', auth.verifyEmailHandler);
 app.post('/auth/resend-verify', auth.resendVerifyHandler);
 app.post('/auth/delete-account', auth.deleteAccountHandler);
+app.post('/auth/organizer-apply', auth.requireAuth, auth.applyOrganizerHandler);
+
+// --- Admin paneli endpoint'leri (Turnuva Kayıt Sistemi — Dilim C) ---
+// Bekleyen organizatör başvuruları
+app.get('/api/admin/organizer-requests', auth.requireAdmin, (req, res) => {
+  res.json({ requests: db.usersByOrganizerStatus('pending') });
+});
+// Başvuru onayla
+app.post('/api/admin/organizer-requests/:userId/approve', auth.requireAdmin, (req, res) => {
+  const u = db.userById(+req.params.userId);
+  if (!u) return res.status(404).json({ error: 'Kullanıcı bulunamadı' });
+  if (u.organizer_status !== 'pending') return res.status(400).json({ error: 'Bu kullanıcının bekleyen bir başvurusu yok.' });
+  db.setOrganizerStatus(u.id, 'approved', null);
+  res.json({ ok: true });
+});
+// Başvuru reddet (opsiyonel not)
+app.post('/api/admin/organizer-requests/:userId/reject', auth.requireAdmin, (req, res) => {
+  const u = db.userById(+req.params.userId);
+  if (!u) return res.status(404).json({ error: 'Kullanıcı bulunamadı' });
+  if (u.organizer_status !== 'pending') return res.status(400).json({ error: 'Bu kullanıcının bekleyen bir başvurusu yok.' });
+  const note = (req.body && req.body.note ? String(req.body.note) : '').trim().slice(0, 1000) || null;
+  db.setOrganizerStatus(u.id, 'rejected', note);
+  res.json({ ok: true });
+});
+// Onaylı organizatörler
+app.get('/api/admin/organizers', auth.requireAdmin, (req, res) => {
+  res.json({ organizers: db.usersByOrganizerStatus('approved') });
+});
+// Organizatör yetkisini geri al
+app.post('/api/admin/organizers/:userId/revoke', auth.requireAdmin, (req, res) => {
+  const u = db.userById(+req.params.userId);
+  if (!u) return res.status(404).json({ error: 'Kullanıcı bulunamadı' });
+  if (u.organizer_status !== 'approved') return res.status(400).json({ error: 'Bu kullanıcı onaylı organizatör değil.' });
+  db.setOrganizerStatus(u.id, 'none', null);
+  res.json({ ok: true });
+});
+// Tüm turnuvalar (sahip bilgisiyle)
+app.get('/api/admin/tournaments', auth.requireAdmin, (req, res) => {
+  res.json({ tournaments: db.adminAllTournaments() });
+});
+// Turnuvayı sonlandır
+app.post('/api/admin/tournaments/:id/finish', auth.requireAdmin, (req, res) => {
+  const t = db.tournamentById(+req.params.id);
+  if (!t) return res.status(404).json({ error: 'Turnuva bulunamadı' });
+  db.updateTournamentStatus(t.id, 'finished');
+  db.clearTournamentBoards(t.user_id, t.id);
+  res.json({ ok: true });
+});
+// Turnuvayı sil
+app.delete('/api/admin/tournaments/:id', auth.requireAdmin, (req, res) => {
+  const t = db.tournamentById(+req.params.id);
+  if (!t) return res.status(404).json({ error: 'Turnuva bulunamadı' });
+  db.deleteTournament(t.id);
+  res.json({ ok: true });
+});
 
 // --- Helpers ---
 // Multi-organizer: her bağlı socket için (userId varsa) o kullanıcıya özel
@@ -372,6 +427,132 @@ app.patch('/api/tournaments/:id', auth.requireAuth, (req, res) => {
   } catch (e) {
     res.status(400).json({ error: e.message });
   }
+});
+
+// Turnuva etkinlik / kayıt ayarları — oku (Dilim D)
+app.get('/api/tournaments/:id/event-settings', auth.requireAuth, (req, res) => {
+  const t = db.tournamentById(+req.params.id);
+  if (!t) return res.status(404).json({ error: 'Turnuva bulunamadı' });
+  if (t.user_id !== req.user.id) return res.status(403).json({ error: 'Yetkisiz' });
+  res.json({ settings: db.eventSettings(t.id) });
+});
+// Turnuva etkinlik / kayıt ayarları — kaydet (Dilim D)
+app.put('/api/tournaments/:id/event-settings', auth.requireAuth, (req, res) => {
+  const t = db.tournamentById(+req.params.id);
+  if (!t) return res.status(404).json({ error: 'Turnuva bulunamadı' });
+  if (t.user_id !== req.user.id) return res.status(403).json({ error: 'Yetkisiz' });
+  const b = req.body || {};
+  const toBool = v => (v ? 1 : 0);
+  const toInt = v => (v === '' || v == null ? null : (Number.isFinite(+v) ? +v : null));
+  const toStr = v => { const s = (v == null ? '' : String(v)).trim(); return s ? s.slice(0, 2000) : null; };
+  const fields = {
+    reg_enabled: toBool(b.reg_enabled),
+    checkin_enabled: toBool(b.checkin_enabled),
+    stats_to_profile: toBool(b.stats_to_profile),
+    category: toStr(b.category),
+    capacity: toInt(b.capacity),
+    reg_deadline: toStr(b.reg_deadline),
+    checkin_time: toStr(b.checkin_time),
+    event_date: toStr(b.event_date),
+    description: toStr(b.description),
+  };
+  res.json({ ok: true, settings: db.upsertEventSettings(t.id, fields) });
+});
+
+// --- Online kayıt / yedek liste (Dilim E) ---
+// Gelecek turnuvalar (online kayıt açık) — herkese açık, giriş yapanın durumu işaretlenir
+app.get('/api/public/upcoming-tournaments', auth.optionalAuth, (req, res) => {
+  const list = db.upcomingTournaments();
+  const uid = req.user && req.user.id;
+  if (uid) {
+    for (const t of list) {
+      const r = db.registrationByUser(t.id, uid);
+      t.my_status = r ? r.status : null;
+    }
+  }
+  res.json({ tournaments: list });
+});
+// Turnuvaya kayıt ol
+app.post('/api/tournaments/:id/register', auth.requireAuth, (req, res) => {
+  const t = db.tournamentById(+req.params.id);
+  if (!t) return res.status(404).json({ error: 'Turnuva bulunamadı' });
+  if (t.status === 'finished') return res.status(400).json({ error: 'Turnuva sona ermiş' });
+  const es = db.eventSettings(t.id);
+  if (!es || !es.reg_enabled) return res.status(400).json({ error: 'Bu turnuvada online kayıt kapalı' });
+  if (es.reg_deadline) {
+    const deadline = new Date(es.reg_deadline + 'T23:59:59');
+    if (!isNaN(deadline) && Date.now() > deadline.getTime()) {
+      return res.status(400).json({ error: 'Kayıt süresi sona erdi' });
+    }
+  }
+  const reg = db.createRegistration(t.id, req.user.id, es.capacity);
+  res.json({ ok: true, status: reg.status });
+});
+// Kayıt iptal
+app.post('/api/tournaments/:id/withdraw', auth.requireAuth, (req, res) => {
+  const t = db.tournamentById(+req.params.id);
+  if (!t) return res.status(404).json({ error: 'Turnuva bulunamadı' });
+  const es = db.eventSettings(t.id);
+  const r = db.withdrawRegistration(t.id, req.user.id, es ? es.capacity : null);
+  if (!r.ok) return res.status(400).json({ error: 'Aktif kaydınız yok' });
+  res.json({ ok: true });
+});
+// Turnuvalarım — kullanıcının kendi kayıtları
+app.get('/api/my-registrations', auth.requireAuth, (req, res) => {
+  res.json({ registrations: db.registrationsForUser(req.user.id) });
+});
+// Katılımcı kariyer profili (Dilim G) — yalnızca istatistik açık turnuvalar
+app.get('/api/my-profile', auth.requireAuth, (req, res) => {
+  res.json(db.playerCareerProfile(req.user.id));
+});
+// Organizatöre: bir turnuvanın kayıt listesi (sahiplik kontrolü)
+app.get('/api/tournaments/:id/registrations', auth.requireAuth, (req, res) => {
+  const t = db.tournamentById(+req.params.id);
+  if (!t) return res.status(404).json({ error: 'Turnuva bulunamadı' });
+  if (t.user_id !== req.user.id) return res.status(403).json({ error: 'Yetkisiz' });
+  res.json({ registrations: db.registrationsForTournament(t.id), settings: db.eventSettings(t.id) });
+});
+
+// --- Check-in + Confirm (Dilim F) ---
+function _ownTournamentOr(req, res) {
+  const t = db.tournamentById(+req.params.id);
+  if (!t) { res.status(404).json({ error: 'Turnuva bulunamadı' }); return null; }
+  if (t.user_id !== req.user.id) { res.status(403).json({ error: 'Yetkisiz' }); return null; }
+  return t;
+}
+// Kayıt durumunu değiştir (check-in / no-show / yedekten asıl listeye vb.)
+app.post('/api/tournaments/:id/registrations/:regId/status', auth.requireAuth, (req, res) => {
+  const t = _ownTournamentOr(req, res); if (!t) return;
+  const reg = db.registrationById(+req.params.regId);
+  if (!reg || reg.tournament_id !== t.id) return res.status(404).json({ error: 'Kayıt bulunamadı' });
+  const allowed = ['registered', 'waitlisted', 'checked_in', 'no_show', 'withdrawn'];
+  const status = String((req.body || {}).status || '');
+  if (!allowed.includes(status)) return res.status(400).json({ error: 'Geçersiz durum' });
+  if (reg.status === 'confirmed') return res.status(400).json({ error: 'Onaylanmış kayıt değiştirilemez' });
+  db.setRegistrationStatus(reg.id, status);
+  res.json({ ok: true });
+});
+// Confirm: aktif kayıtları motora aktar (players + entries)
+app.post('/api/tournaments/:id/confirm', auth.requireAuth, (req, res) => {
+  const t = _ownTournamentOr(req, res); if (!t) return;
+  if (t.status !== 'draft') return res.status(400).json({ error: 'Sadece taslak turnuvaya katılımcı aktarılabilir' });
+  const es = db.eventSettings(t.id);
+  const checkinEnabled = !!(es && es.checkin_enabled);
+  const result = db.confirmRegistrations(t.id, req.user.id, checkinEnabled);
+  scheduleBroadcast();
+  res.json({ ok: true, transferred: result.transferred });
+});
+
+// Draft turnuvadan katılımcı çıkar — sadece draft durumunda
+app.delete('/api/tournaments/:id/entries/:entryId', auth.requireAuth, (req, res) => {
+  const t = db.tournamentById(+req.params.id);
+  if (!t) return res.status(404).json({ error: 'Turnuva bulunamadı' });
+  if (t.user_id !== req.user.id) return res.status(403).json({ error: 'Yetkisiz' });
+  if (t.status !== 'draft') return res.status(400).json({ error: 'Sadece taslak turnuvadan katılımcı çıkarılabilir' });
+  const r = db.removeEntry(t.id, +req.params.entryId);
+  if (!r.ok) return res.status(404).json({ error: 'Katılımcı bulunamadı' });
+  scheduleBroadcast();
+  res.json({ ok: true });
 });
 
 // Katılımcı sırasını yeniden düzenle — sadece draft durumunda

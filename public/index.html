@@ -553,6 +553,7 @@
       <button id="lang-tr" class="on" onclick="setLang('tr')">TR</button>
       <button id="lang-en" onclick="setLang('en')">EN</button>
     </div>
+    <a class="hp-nav-link" href="/turnuvalar.html">Turnuvalar</a>
     <a class="hp-nav-link" href="/tanitim.html" id="hp-about" onclick="return openIntroLink(event)" data-i18n="nav_about">DartCorePro Nedir?</a>
     <a id="hp-auth-link" class="hp-nav-link" href="/login.html" data-i18n="nav_login">Giriş Yap</a>
     <div class="hp-user" id="hp-user">
@@ -572,10 +573,15 @@
         <a class="hp-user-item" href="/board.html">
           <span class="ico">📲</span><span data-i18n="menu_boards">Board'lar</span>
         </a>
-        <button class="hp-user-item disabled" onclick="event.preventDefault()">
-          <span class="ico">📊</span><span data-i18n="menu_perf">Performans &amp; Başarımlar</span>
-          <span class="pill-soon" data-i18n="soon">Yakında</span>
+        <a class="hp-user-item" id="hp-admin-link" href="/admin.html" style="display:none;">
+          <span class="ico">🛡️</span><span>Yönetici Paneli</span>
+        </a>
+        <button class="hp-user-item" id="hp-organizer-apply" style="display:none;" onclick="applyOrganizer(event)">
+          <span class="ico">🎫</span><span id="hp-organizer-apply-label">Organizatör Ol</span>
         </button>
+        <a class="hp-user-item" href="/profil.html">
+          <span class="ico">📊</span><span data-i18n="menu_perf">Performans &amp; Başarımlar</span>
+        </a>
         <button class="hp-user-item disabled" onclick="event.preventDefault()">
           <span class="ico">⚙️</span><span data-i18n="menu_settings">Hesap Ayarları</span>
           <span class="pill-soon" data-i18n="soon">Yakında</span>
@@ -925,6 +931,7 @@
       cp.href = '/organizer.html';
       cb.textContent = (lang === 'tr' ? 'Panele Git' : 'Go to Panel');
       cb.href = '/organizer.html';
+      updateOrganizerMenu(user);
     } else {
       link.style.display = '';
       link.dataset.loggedIn = '0';
@@ -933,6 +940,53 @@
       cp.href = '/login.html';
       cb.textContent = dict.band_cta;
       cb.href = '/login.html';
+    }
+  }
+
+  // Organizatör başvuru menüsü — duruma göre göster/gizle (Dilim B)
+  function updateOrganizerMenu(user) {
+    const adminLink = document.getElementById('hp-admin-link');
+    if (adminLink) adminLink.style.display = (user.role === 'admin') ? '' : 'none';
+    const item = document.getElementById('hp-organizer-apply');
+    const label = document.getElementById('hp-organizer-apply-label');
+    if (!item || !user) return;
+    const status = user.organizer_status || 'none';
+    // Admin veya onaylı organizatör → öğe gizli (zaten yetkili)
+    if (user.role === 'admin' || status === 'approved') {
+      item.style.display = 'none';
+      return;
+    }
+    item.style.display = '';
+    if (status === 'pending') {
+      label.textContent = 'Başvurunuz değerlendirmede';
+      item.classList.add('disabled');
+      item.dataset.locked = '1';
+    } else {
+      label.textContent = (status === 'rejected') ? 'Tekrar Organizatör Ol' : 'Organizatör Ol';
+      item.classList.remove('disabled');
+      item.dataset.locked = '0';
+    }
+  }
+
+  async function applyOrganizer(e) {
+    e && e.preventDefault();
+    const item = document.getElementById('hp-organizer-apply');
+    if (item && item.dataset.locked === '1') return;
+    const note = prompt('İsterseniz başvurunuza kısa bir not ekleyin (kulüp/mekan, neden organizatör olmak istediğiniz vb.):', '');
+    if (note === null) return; // iptal
+    try {
+      const r = await fetch('/auth/organizer-apply', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'same-origin',
+        body: JSON.stringify({ note }),
+      });
+      const d = await r.json();
+      if (!r.ok) { alert(d.error || 'Başvuru gönderilemedi.'); return; }
+      alert(d.message || 'Başvurunuz alındı.');
+      if (currentUser) { currentUser.organizer_status = 'pending'; updateOrganizerMenu(currentUser); }
+    } catch {
+      alert('Başvuru gönderilemedi, bağlantınızı kontrol edin.');
     }
   }
 

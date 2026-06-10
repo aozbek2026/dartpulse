@@ -35,6 +35,7 @@ function init() {
       user_id INTEGER,
       name TEXT NOT NULL,
       nickname TEXT,
+      account_user_id INTEGER,  -- online kayıttan gelen oyuncunun hesabı (elle eklenende NULL)
       created_at TEXT DEFAULT CURRENT_TIMESTAMP,
       FOREIGN KEY(user_id) REFERENCES users(id) ON DELETE CASCADE
     );
@@ -73,6 +74,42 @@ function init() {
       player2_id INTEGER,  -- doubles
       seed INTEGER,        -- seri başı (null = kurayla yerleşen)
       FOREIGN KEY(tournament_id) REFERENCES tournaments(id) ON DELETE CASCADE
+    );
+
+    -- Turnuva etkinlik / kayıt ayarları (Turnuva Kayıt Sistemi — Dilim D)
+    -- 'tournaments' tablosuna dokunmadan, ayrı tabloda saklanır (1:1, opsiyonel).
+    -- Kayıt yoksa turnuva eski "elle ekleme" akışıyla aynen çalışır.
+    CREATE TABLE IF NOT EXISTS tournament_event_settings (
+      tournament_id INTEGER PRIMARY KEY,
+      reg_enabled INTEGER DEFAULT 0,       -- online kayıt açık
+      checkin_enabled INTEGER DEFAULT 0,   -- gün-içi check-in
+      stats_to_profile INTEGER DEFAULT 0,  -- istatistik katılımcı profiline işlensin
+      category TEXT,                       -- kategori (Erkekler, Kadınlar, Veteran…)
+      capacity INTEGER,                    -- kontenjan (NULL = sınırsız)
+      reg_deadline TEXT,                   -- son kayıt tarihi
+      checkin_time TEXT,                   -- check-in saati
+      event_date TEXT,                     -- etkinlik tarihi
+      description TEXT,                    -- açıklama
+      created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+      updated_at TEXT DEFAULT CURRENT_TIMESTAMP,
+      FOREIGN KEY(tournament_id) REFERENCES tournaments(id) ON DELETE CASCADE
+    );
+
+    -- Online kayıt / yedek liste (Turnuva Kayıt Sistemi — Dilim E)
+    -- status: registered | waitlisted | checked_in | confirmed | withdrawn | no_show
+    -- player_id: Confirm (Dilim F) anında players tablosuna bağlanır, başta NULL.
+    CREATE TABLE IF NOT EXISTS registrations (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      tournament_id INTEGER NOT NULL,
+      user_id INTEGER NOT NULL,
+      status TEXT NOT NULL DEFAULT 'registered',
+      reg_order INTEGER NOT NULL DEFAULT 0,
+      player_id INTEGER,
+      created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+      updated_at TEXT DEFAULT CURRENT_TIMESTAMP,
+      UNIQUE(tournament_id, user_id),
+      FOREIGN KEY(tournament_id) REFERENCES tournaments(id) ON DELETE CASCADE,
+      FOREIGN KEY(user_id) REFERENCES users(id) ON DELETE CASCADE
     );
 
     CREATE TABLE IF NOT EXISTS stages (
@@ -442,6 +479,22 @@ function init() {
   if (!userCols.includes('reset_token_expires')) {
     try { db.exec("ALTER TABLE users ADD COLUMN reset_token_expires INTEGER"); } catch {}
   }
+  // Rol & organizatör başvuru altyapısı (Turnuva Kayıt Sistemi — Dilim A)
+  if (!userCols.includes('role')) {
+    try { db.exec("ALTER TABLE users ADD COLUMN role TEXT DEFAULT 'player'"); } catch {}
+  }
+  if (!userCols.includes('organizer_status')) {
+    // none | pending | approved | rejected
+    try { db.exec("ALTER TABLE users ADD COLUMN organizer_status TEXT DEFAULT 'none'"); } catch {}
+  }
+  if (!userCols.includes('organizer_note')) {
+    try { db.exec("ALTER TABLE users ADD COLUMN organizer_note TEXT"); } catch {}
+  }
+  // Players: online kayıt hesap bağı (Dilim F)
+  const playerCols2 = db.prepare("PRAGMA table_info(players)").all().map(c => c.name);
+  if (!playerCols2.includes('account_user_id')) {
+    try { db.exec("ALTER TABLE players ADD COLUMN account_user_id INTEGER"); } catch {}
+  }
 
   // --- Lig & Sezon migrasyonlari ---
   //
@@ -600,10 +653,34 @@ function userByEmail(email) {
 }
 function userById(id) {
   if (!id) return null;
-  return db.prepare('SELECT id, email, name, created_at FROM users WHERE id = ?').get(id);
+  return db.prepare('SELECT id, email, name, created_at, role, organizer_status, organizer_note FROM users WHERE id = ?').get(id);
 }
 function allUsers() {
-  return db.prepare('SELECT id, email, name, created_at FROM users ORDER BY id').all();
+  return db.prepare('SELECT id, email, name, created_at, role, organizer_status FROM users ORDER BY id').all();
+}
+
+// --- Rol & organizatör başvuru (Turnuva Kayıt Sistemi — Dilim A) ---
+function setUserRole(userId, role) {
+  db.prepare('UPDATE users SET role = ? WHERE id = ?').run(role, userId);
+  return userById(userId);
+}
+function setOrganizerStatus(userId, status, note = null) {
+  db.prepare('UPDATE users SET organizer_status = ?, organizer_note = ? WHERE id = ?')
+    .run(status, note, userId);
+  return userById(userId);
+}
+function usersByOrganizerStatus(status) {
+  return db.prepare(
+    'SELECT id, email, name, created_at, role, organizer_status, organizer_note FROM users WHERE organizer_status = ? ORDER BY id'
+  ).all(status);
+}
+function usersByRole(role) {
+  return db.prepare(
+    'SELECT id, email, name, created_at, role, organizer_status FROM users WHERE role = ? ORDER BY id'
+  ).all(role);
+}
+function countAdmins() {
+  return db.prepare("SELECT COUNT(*) AS n FROM users WHERE role = 'admin'").get().n;
 }
 
 // --- Player ---
@@ -687,6 +764,258 @@ function createTournament(data) {
   );
   return db.prepare('SELECT * FROM tournaments WHERE id = ?').get(info.lastInsertRowid);
 }
+
+// --- Turnuva etkinlik / kayıt ayarları (Dilim D) ---
+const EVENT_SETTINGS_FIELDS = [
+  'reg_enabled', 'checkin_enabled', 'stats_to_profile',
+  'category', 'capacity', 'reg_deadline', 'checkin_time', 'event_date', 'description',
+];
+function eventSettings(tournamentId) {
+  return db.prepare('SELECT * FROM tournament_event_settings WHERE tournament_id = ?').get(tournamentId) || null;
+}
+function upsertEventSettings(tournamentId, fields) {
+  const keys = EVENT_SETTINGS_FIELDS.filter(k => Object.prototype.hasOwnProperty.call(fields, k));
+  const exists = !!db.prepare('SELECT 1 FROM tournament_event_settings WHERE tournament_id = ?').get(tournamentId);
+  if (!exists) {
+    db.prepare('INSERT INTO tournament_event_settings (tournament_id) VALUES (?)').run(tournamentId);
+  }
+  if (keys.length) {
+    const setSql = keys.map(k => `${k} = ?`).join(', ');
+    const vals = keys.map(k => fields[k]);
+    db.prepare(`UPDATE tournament_event_settings SET ${setSql}, updated_at = CURRENT_TIMESTAMP WHERE tournament_id = ?`)
+      .run(...vals, tournamentId);
+  }
+  return eventSettings(tournamentId);
+}
+
+// --- Online kayıt / yedek liste (Dilim E) ---
+// Aktif = listede sayılan (iptal/no_show hariç) durumlar.
+const ACTIVE_REG_STATUSES = ['registered', 'waitlisted', 'checked_in', 'confirmed'];
+
+function registrationsForTournament(tournamentId) {
+  return db.prepare(
+    `SELECT r.*, u.email AS user_email, u.name AS user_name
+       FROM registrations r
+       LEFT JOIN users u ON u.id = r.user_id
+      WHERE r.tournament_id = ?
+      ORDER BY r.reg_order ASC, r.id ASC`
+  ).all(tournamentId);
+}
+function registrationByUser(tournamentId, userId) {
+  return db.prepare('SELECT * FROM registrations WHERE tournament_id = ? AND user_id = ?')
+    .get(tournamentId, userId);
+}
+// Belirli durumdaki kayıt sayısı (status dizisi)
+function countRegistrations(tournamentId, statuses) {
+  const ph = statuses.map(() => '?').join(',');
+  return db.prepare(
+    `SELECT COUNT(*) AS n FROM registrations WHERE tournament_id = ? AND status IN (${ph})`
+  ).get(tournamentId, ...statuses).n;
+}
+// Kayıt oluştur — kontenjan doluysa yedek listesine alır.
+// Daha önce withdrawn/no_show ise yeniden aktive eder.
+function createRegistration(tournamentId, userId, capacity) {
+  const existing = registrationByUser(tournamentId, userId);
+  const activeCount = countRegistrations(tournamentId, ['registered', 'checked_in', 'confirmed']);
+  const full = (capacity != null && capacity > 0 && activeCount >= capacity);
+  const status = full ? 'waitlisted' : 'registered';
+
+  if (existing) {
+    if (ACTIVE_REG_STATUSES.includes(existing.status)) return existing; // zaten kayıtlı
+    // withdrawn/no_show → yeniden kayıt, listenin sonuna
+    const maxOrder = db.prepare('SELECT COALESCE(MAX(reg_order),0) AS m FROM registrations WHERE tournament_id = ?').get(tournamentId).m;
+    db.prepare('UPDATE registrations SET status = ?, reg_order = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?')
+      .run(status, maxOrder + 1, existing.id);
+    return db.prepare('SELECT * FROM registrations WHERE id = ?').get(existing.id);
+  }
+  const maxOrder = db.prepare('SELECT COALESCE(MAX(reg_order),0) AS m FROM registrations WHERE tournament_id = ?').get(tournamentId).m;
+  const info = db.prepare(
+    'INSERT INTO registrations (tournament_id, user_id, status, reg_order) VALUES (?, ?, ?, ?)'
+  ).run(tournamentId, userId, status, maxOrder + 1);
+  return db.prepare('SELECT * FROM registrations WHERE id = ?').get(info.lastInsertRowid);
+}
+// Kayıt iptal — withdrawn yapar, kontenjan açıldıysa ilk yedeği otomatik terfi ettirir.
+function withdrawRegistration(tournamentId, userId, capacity) {
+  const reg = registrationByUser(tournamentId, userId);
+  if (!reg || !ACTIVE_REG_STATUSES.includes(reg.status)) return { ok: false, reason: 'not_active' };
+  const wasActive = ['registered', 'checked_in', 'confirmed'].includes(reg.status);
+  db.prepare("UPDATE registrations SET status = 'withdrawn', updated_at = CURRENT_TIMESTAMP WHERE id = ?").run(reg.id);
+
+  let promoted = null;
+  // Asıl listeden biri çıktıysa ve kontenjan varsa, en eski yedeği terfi ettir.
+  if (wasActive && capacity != null && capacity > 0) {
+    const activeCount = countRegistrations(tournamentId, ['registered', 'checked_in', 'confirmed']);
+    if (activeCount < capacity) {
+      const next = db.prepare(
+        "SELECT * FROM registrations WHERE tournament_id = ? AND status = 'waitlisted' ORDER BY reg_order ASC, id ASC LIMIT 1"
+      ).get(tournamentId);
+      if (next) {
+        db.prepare("UPDATE registrations SET status = 'registered', updated_at = CURRENT_TIMESTAMP WHERE id = ?").run(next.id);
+        promoted = db.prepare('SELECT * FROM registrations WHERE id = ?').get(next.id);
+      }
+    }
+  }
+  return { ok: true, promoted };
+}
+// Bir kullanıcının kayıtları + turnuva bilgisi (Turnuvalarım)
+function registrationsForUser(userId) {
+  return db.prepare(
+    `SELECT r.*, t.name AS tournament_name, t.status AS tournament_status,
+            es.event_date, es.category, es.reg_deadline, es.capacity, es.checkin_time
+       FROM registrations r
+       JOIN tournaments t ON t.id = r.tournament_id
+       LEFT JOIN tournament_event_settings es ON es.tournament_id = t.id
+      WHERE r.user_id = ?
+      ORDER BY r.id DESC`
+  ).all(userId);
+}
+// "Gelecek Turnuvalar" — online kayıt açık turnuvalar + sayaçlar
+function upcomingTournaments() {
+  const rows = db.prepare(
+    `SELECT t.id, t.name, t.status, t.game_mode, t.team_mode,
+            es.event_date, es.category, es.reg_deadline, es.capacity, es.checkin_time, es.description,
+            u.name AS owner_name
+       FROM tournaments t
+       JOIN tournament_event_settings es ON es.tournament_id = t.id
+       LEFT JOIN users u ON u.id = t.user_id
+      WHERE es.reg_enabled = 1 AND t.status != 'finished'
+        AND t.name NOT LIKE '__team_pool_%'
+      ORDER BY (es.event_date IS NULL), es.event_date ASC, t.id DESC`
+  ).all();
+  for (const t of rows) {
+    t.active_count = countRegistrations(t.id, ['registered', 'checked_in', 'confirmed']);
+    t.waitlist_count = countRegistrations(t.id, ['waitlisted']);
+  }
+  return rows;
+}
+
+function registrationById(id) {
+  return db.prepare('SELECT * FROM registrations WHERE id = ?').get(id);
+}
+function setRegistrationStatus(id, status) {
+  db.prepare('UPDATE registrations SET status = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?').run(status, id);
+  return registrationById(id);
+}
+// Bu kullanıcı için bu organizatörün havuzunda zaten oyuncu var mı (yeniden kullan)
+function playerByAccountUser(ownerUserId, accountUserId) {
+  return db.prepare('SELECT * FROM players WHERE user_id = ? AND account_user_id = ?')
+    .get(ownerUserId, accountUserId) || null;
+}
+// Confirm: aktif kayıtları motora aktar (player + entry). Idempotent: player_id boş
+// olanlar işlenir. checkinEnabled ise sadece checked_in aktarılır, değilse
+// registered + checked_in. Aktarılanlar 'confirmed' + player_id ile işaretlenir.
+// 'tournaments' / 'entries' ŞEMASINA dokunulmaz — sadece normal addEntry kullanılır.
+function confirmRegistrations(tournamentId, ownerUserId, checkinEnabled) {
+  const eligible = checkinEnabled ? ['checked_in'] : ['registered', 'checked_in'];
+  const ph = eligible.map(() => '?').join(',');
+  const regs = db.prepare(
+    `SELECT * FROM registrations
+      WHERE tournament_id = ? AND player_id IS NULL AND status IN (${ph})
+      ORDER BY reg_order ASC, id ASC`
+  ).all(tournamentId, ...eligible);
+
+  // Mevcut entry'lerin en yüksek slot'u (elle eklenenlerin üstüne ekle)
+  const maxSlotRow = db.prepare('SELECT COALESCE(MAX(slot),0) AS m FROM entries WHERE tournament_id = ?').get(tournamentId);
+  let slot = maxSlotRow.m;
+
+  const tx = db.transaction(() => {
+    for (const reg of regs) {
+      const u = db.prepare('SELECT id, name, email FROM users WHERE id = ?').get(reg.user_id);
+      const displayName = (u && (u.name || (u.email || '').split('@')[0])) || ('Oyuncu ' + reg.user_id);
+      // Bu hesap için oyuncu var mı? Yoksa yarat (account_user_id bağıyla)
+      let player = playerByAccountUser(ownerUserId, reg.user_id);
+      if (!player) {
+        const info = db.prepare(
+          'INSERT INTO players (user_id, name, nickname, account_user_id) VALUES (?, ?, ?, ?)'
+        ).run(ownerUserId, displayName, null, reg.user_id);
+        player = db.prepare('SELECT * FROM players WHERE id = ?').get(info.lastInsertRowid);
+      }
+      slot += 1;
+      db.prepare('INSERT INTO entries (tournament_id, slot, player1_id, player2_id, seed) VALUES (?, ?, ?, NULL, NULL)')
+        .run(tournamentId, slot, player.id);
+      db.prepare("UPDATE registrations SET status = 'confirmed', player_id = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?")
+        .run(player.id, reg.id);
+    }
+  });
+  tx();
+  return { transferred: regs.length };
+}
+
+// --- Katılımcı kariyer profili (Dilim G) ---
+// Ayrı tablo tutmaz; mevcut maç verisinden CANLI hesaplar.
+// Koşul: yalnızca online kayıt + istatistik açık (stats_to_profile=1) turnuvalar dahil.
+function playerCareerProfile(accountUserId) {
+  const players = db.prepare('SELECT id FROM players WHERE account_user_id = ?').all(accountUserId);
+  const playerIds = players.map(p => p.id);
+  const empty = {
+    tournaments: [],
+    totals: { tournaments_played: 0, matches_won: 0, matches_lost: 0, total_180: 0, best_checkout: 0, avg_3da: 0 },
+  };
+  if (!playerIds.length) return empty;
+
+  const ph = playerIds.map(() => '?').join(',');
+  // İstatistik açık turnuvalardaki entry'ler (tekli; p1 = oyuncu)
+  const entries = db.prepare(
+    `SELECT e.id AS entry_id, e.tournament_id, e.player1_id,
+            t.name AS tournament_name, t.status AS tournament_status, t.game_mode,
+            es.event_date, es.category
+       FROM entries e
+       JOIN tournaments t ON t.id = e.tournament_id
+       JOIN tournament_event_settings es ON es.tournament_id = t.id
+      WHERE es.stats_to_profile = 1 AND es.reg_enabled = 1
+        AND e.player1_id IN (${ph})`
+  ).all(...playerIds);
+  if (!entries.length) return empty;
+
+  const tournaments = [];
+  const totals = { tournaments_played: 0, matches_won: 0, matches_lost: 0, total_180: 0, best_checkout: 0,
+                   _score: 0, _darts: 0 };
+
+  for (const e of entries) {
+    const matches = db.prepare(
+      `SELECT * FROM matches WHERE tournament_id = ? AND status = 'finished'
+         AND (entry1_id = ? OR entry2_id = ?)`
+    ).all(e.tournament_id, e.entry_id, e.entry_id);
+
+    let mw = 0, ml = 0, t180 = 0, bestCo = 0, score = 0, darts = 0;
+    for (const m of matches) {
+      const slot = (m.entry1_id === e.entry_id) ? 1 : 2;
+      if (m.winner_entry_id === e.entry_id) mw++; else ml++;
+      const st = db.prepare('SELECT * FROM match_stats WHERE match_id = ? AND player_slot = ?').get(m.id, slot);
+      if (st) {
+        t180 += (st.one_eighty || 0);
+        bestCo = Math.max(bestCo, st.best_checkout || 0);
+        score += (st.total_score || 0);
+        darts += (st.darts_thrown || 0);
+      }
+    }
+    tournaments.push({
+      tournament_id: e.tournament_id,
+      name: e.tournament_name,
+      status: e.tournament_status,
+      game_mode: e.game_mode,
+      event_date: e.event_date,
+      category: e.category,
+      matches_won: mw, matches_lost: ml,
+      total_180: t180,
+      best_checkout: bestCo,
+      avg_3da: darts ? +((score / darts) * 3).toFixed(1) : 0,
+    });
+    totals.tournaments_played += 1;
+    totals.matches_won += mw;
+    totals.matches_lost += ml;
+    totals.total_180 += t180;
+    totals.best_checkout = Math.max(totals.best_checkout, bestCo);
+    totals._score += score;
+    totals._darts += darts;
+  }
+  totals.avg_3da = totals._darts ? +((totals._score / totals._darts) * 3).toFixed(1) : 0;
+  delete totals._score; delete totals._darts;
+  // En yeni turnuva üstte
+  tournaments.sort((a, b) => (b.tournament_id - a.tournament_id));
+  return { tournaments, totals };
+}
+
 function allTournaments(userId = null) {
   // __team_pool_*__ turnuvalarını gizle (organizatör listesinden)
   // Giriş yapılmamış izleyici → sadece aktif (running) turnuvalar, draft/bitmişler gizli
@@ -731,6 +1060,16 @@ function setTournamentHiddenFromPublic(id, userId) {
 function tournamentById(id) {
   return db.prepare('SELECT * FROM tournaments WHERE id = ?').get(id);
 }
+// Admin: tüm kullanıcıların turnuvaları + sahip bilgisi (Turnuva Kayıt Sistemi — Dilim C)
+function adminAllTournaments() {
+  return db.prepare(
+    `SELECT t.*, u.email AS owner_email, u.name AS owner_name
+       FROM tournaments t
+       LEFT JOIN users u ON u.id = t.user_id
+      WHERE t.name NOT LIKE '__team_pool_%'
+      ORDER BY t.id DESC`
+  ).all();
+}
 function updateTournamentStatus(id, status) {
   db.prepare('UPDATE tournaments SET status = ? WHERE id = ?').run(status, id);
 }
@@ -764,6 +1103,16 @@ function addEntry(tournamentId, slot, player1Id, player2Id = null, seed = null) 
     'INSERT INTO entries (tournament_id, slot, player1_id, player2_id, seed) VALUES (?, ?, ?, ?, ?)'
   ).run(tournamentId, slot, player1Id, player2Id, seed);
   return db.prepare('SELECT * FROM entries WHERE id = ?').get(info.lastInsertRowid);
+}
+// Draft turnuvadan bir entry'yi sil (dummy/yanlış katılımcı çıkarma).
+// Entry online kayıttan geldiyse, o kaydı 'registered'a geri al ki tekrar onaylanabilsin.
+function removeEntry(tournamentId, entryId) {
+  const e = db.prepare('SELECT * FROM entries WHERE id = ? AND tournament_id = ?').get(entryId, tournamentId);
+  if (!e) return { ok: false };
+  db.prepare("UPDATE registrations SET status = 'registered', player_id = NULL, updated_at = CURRENT_TIMESTAMP WHERE tournament_id = ? AND player_id = ?")
+    .run(tournamentId, e.player1_id);
+  db.prepare('DELETE FROM entries WHERE id = ?').run(entryId);
+  return { ok: true };
 }
 // entry sıralamasını güncelle: orderedEntryIds dizisindeki sıra → slot 1, 2, 3, ...
 function updateEntrySlots(tournamentId, orderedEntryIds) {
@@ -1883,11 +2232,18 @@ function deleteUser(userId) {
 module.exports = {
   db, init,
   createUser, userByEmail, userById, allUsers,
+  setUserRole, setOrganizerStatus, usersByOrganizerStatus, usersByRole, countAdmins,
   setVerifyToken, verifyEmailToken,
   setResetToken, getUserByResetToken, clearResetToken,
   updatePassword, deleteUser,
   createPlayer, allPlayers, playerById, deletePlayer, playerActiveTournament,
   createBoard, allBoards, boardById, deleteBoard, setBoardMatch, clearUserBoards, clearTournamentBoards, setBoardTournament,
+  adminAllTournaments,
+  eventSettings, upsertEventSettings,
+  registrationsForTournament, registrationByUser, countRegistrations,
+  createRegistration, withdrawRegistration, registrationsForUser, upcomingTournaments,
+  registrationById, setRegistrationStatus, playerByAccountUser, confirmRegistrations,
+  playerCareerProfile, removeEntry,
   createTournament, allTournaments, publicRunningTournaments, setTournamentHiddenFromPublic, tournamentById, updateTournamentStatus, updateTournament, deleteTournament,
   addEntry, entriesForTournament, entryById, updateEntrySlots,
   createStage, stagesForTournament, stageById, updateStageStatus,
