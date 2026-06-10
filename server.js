@@ -138,6 +138,11 @@ app.use(auth.optionalAuth);
 
 app.use(express.static(path.join(__dirname, 'public')));
 
+// Tanıtım videoları galeri sayfası (kısa, paylaşılabilir URL)
+app.get('/dartcorepronedir', (req, res) => {
+  res.sendFile(path.join(__dirname, 'public', 'dartcorepronedir.html'));
+});
+
 // --- Auth routes ---
 app.post('/auth/register', auth.registerHandler);
 app.post('/auth/login', auth.loginHandler);
