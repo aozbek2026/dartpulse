@@ -62,7 +62,7 @@
 const esc = (s) => String(s == null ? '' : s).replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
 let ME = null;
 
-async function api(url, opts) {
+async function tnApi(url, opts) {
   const r = await fetch(url, Object.assign({ credentials: 'same-origin' }, opts || {}));
   const d = await r.json().catch(() => ({}));
   if (!r.ok) throw new Error(d.error || 'İşlem başarısız');
@@ -93,7 +93,7 @@ function switchTab(tab) {
 async function loadUpcoming() {
   const box = document.getElementById('tn-upcoming');
   try {
-    const { tournaments } = await api('/api/public/upcoming-tournaments');
+    const { tournaments } = await tnApi('/api/public/upcoming-tournaments');
     if (!tournaments.length) { box.innerHTML = '<div class="tn-empty">Şu an açık kayıtlı turnuva yok.</div>'; return; }
     box.innerHTML = tournaments.map(t => {
       const date = fmtDate(t.event_date);
@@ -130,14 +130,14 @@ async function loadUpcoming() {
 
 async function register(id) {
   try {
-    const d = await api(`/api/tournaments/${id}/register`, { method: 'POST' });
+    const d = await tnApi(`/api/tournaments/${id}/register`, { method: 'POST' });
     alert(d.status === 'waitlisted' ? 'Yedek listesine alındınız. Yer açılırsa otomatik kayda geçersiniz.' : 'Kaydınız alındı!');
     loadUpcoming();
   } catch (e) { alert(e.message); }
 }
 async function withdraw(id) {
   if (!confirm('Kaydınızı iptal etmek istediğinize emin misiniz?')) return;
-  try { await api(`/api/tournaments/${id}/withdraw`, { method: 'POST' }); loadUpcoming(); }
+  try { await tnApi(`/api/tournaments/${id}/withdraw`, { method: 'POST' }); loadUpcoming(); }
   catch (e) { alert(e.message); }
 }
 
@@ -145,7 +145,7 @@ async function withdraw(id) {
 async function loadMine() {
   const box = document.getElementById('tn-mine');
   try {
-    const { registrations } = await api('/api/my-registrations');
+    const { registrations } = await tnApi('/api/my-registrations');
     const active = registrations.filter(r => r.status !== 'withdrawn');
     if (!active.length) { box.innerHTML = '<div class="tn-empty">Henüz bir turnuvaya kayıt olmadınız.</div>'; return; }
     box.innerHTML = active.map(r => {
@@ -168,13 +168,13 @@ async function loadMine() {
 }
 async function withdrawMine(id) {
   if (!confirm('Kaydınızı iptal etmek istediğinize emin misiniz?')) return;
-  try { await api(`/api/tournaments/${id}/withdraw`, { method: 'POST' }); loadMine(); }
+  try { await tnApi(`/api/tournaments/${id}/withdraw`, { method: 'POST' }); loadMine(); }
   catch (e) { alert(e.message); }
 }
 
 // ── Boot ──
 (async function init() {
-  try { ME = (await api('/auth/me')).user; } catch {}
+  try { ME = (await tnApi('/auth/me')).user; } catch {}
   document.getElementById('tn-loginbar').hidden = !!ME;
   document.getElementById('tn-mine-tab').hidden = !ME;
   loadUpcoming();
