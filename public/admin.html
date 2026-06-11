@@ -65,7 +65,8 @@
 <script>
 const esc = (s) => String(s == null ? '' : s).replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
 
-async function api(url, opts) {
+// NOT: common.js window.api'yi global nesne olarak tanımlıyor — çakışmasın diye admApi.
+async function admApi(url, opts) {
   const r = await fetch(url, Object.assign({ credentials: 'same-origin' }, opts || {}));
   const d = await r.json().catch(() => ({}));
   if (!r.ok) throw new Error(d.error || 'İşlem başarısız');
@@ -76,7 +77,7 @@ async function api(url, opts) {
 async function loadRequests() {
   const box = document.getElementById('adm-requests');
   try {
-    const { requests } = await api('/api/admin/organizer-requests');
+    const { requests } = await admApi('/api/admin/organizer-requests');
     if (!requests.length) { box.innerHTML = '<div class="adm-empty">Bekleyen başvuru yok.</div>'; return; }
     box.innerHTML = requests.map(u => `
       <div class="adm-card" data-uid="${u.id}">
@@ -93,14 +94,14 @@ async function loadRequests() {
   } catch (e) { box.innerHTML = `<div class="adm-empty">Hata: ${esc(e.message)}</div>`; }
 }
 async function approveReq(uid) {
-  try { await api(`/api/admin/organizer-requests/${uid}/approve`, { method: 'POST' });
+  try { await admApi(`/api/admin/organizer-requests/${uid}/approve`, { method: 'POST' });
         await loadRequests(); await loadOrganizers(); }
   catch (e) { alert(e.message); }
 }
 async function rejectReq(uid) {
   const note = prompt('Red gerekçesi (opsiyonel, başvurana gösterilmez):', '');
   if (note === null) return;
-  try { await api(`/api/admin/organizer-requests/${uid}/reject`, {
+  try { await admApi(`/api/admin/organizer-requests/${uid}/reject`, {
           method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ note }) });
         await loadRequests(); }
   catch (e) { alert(e.message); }
@@ -110,7 +111,7 @@ async function rejectReq(uid) {
 async function loadOrganizers() {
   const box = document.getElementById('adm-organizers');
   try {
-    const { organizers } = await api('/api/admin/organizers');
+    const { organizers } = await admApi('/api/admin/organizers');
     if (!organizers.length) { box.innerHTML = '<div class="adm-empty">Henüz onaylı organizatör yok.</div>'; return; }
     box.innerHTML = organizers.map(u => `
       <div class="adm-card">
@@ -126,7 +127,7 @@ async function loadOrganizers() {
 }
 async function revokeOrg(uid) {
   if (!confirm('Bu kullanıcının organizatör yetkisi geri alınsın mı?')) return;
-  try { await api(`/api/admin/organizers/${uid}/revoke`, { method: 'POST' }); await loadOrganizers(); }
+  try { await admApi(`/api/admin/organizers/${uid}/revoke`, { method: 'POST' }); await loadOrganizers(); }
   catch (e) { alert(e.message); }
 }
 
@@ -135,7 +136,7 @@ const STATUS_TR = { draft: 'Taslak', running: 'Devam ediyor', finished: 'Bitti' 
 async function loadTournaments() {
   const box = document.getElementById('adm-tournaments');
   try {
-    const { tournaments } = await api('/api/admin/tournaments');
+    const { tournaments } = await admApi('/api/admin/tournaments');
     if (!tournaments.length) { box.innerHTML = '<div class="adm-empty">Turnuva yok.</div>'; return; }
     box.innerHTML = tournaments.map(t => `
       <div class="adm-card">
@@ -152,19 +153,19 @@ async function loadTournaments() {
 }
 async function finishT(id) {
   if (!confirm('Turnuva sonlandırılsın mı?')) return;
-  try { await api(`/api/admin/tournaments/${id}/finish`, { method: 'POST' }); await loadTournaments(); }
+  try { await admApi(`/api/admin/tournaments/${id}/finish`, { method: 'POST' }); await loadTournaments(); }
   catch (e) { alert(e.message); }
 }
 async function deleteT(id) {
   if (!confirm('Turnuva KALICI olarak silinsin mi? Bu işlem geri alınamaz.')) return;
-  try { await api(`/api/admin/tournaments/${id}`, { method: 'DELETE' }); await loadTournaments(); }
+  try { await admApi(`/api/admin/tournaments/${id}`, { method: 'DELETE' }); await loadTournaments(); }
   catch (e) { alert(e.message); }
 }
 
 // ── Boot: admin doğrula ──
 (async function init() {
   let me = null;
-  try { me = (await api('/auth/me')).user; } catch {}
+  try { me = (await admApi('/auth/me')).user; } catch {}
   if (!me) { location.href = '/login.html'; return; }
   if (me.role !== 'admin') { location.href = '/'; return; }
   document.getElementById('adm-loading').hidden = true;
