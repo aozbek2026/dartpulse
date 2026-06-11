@@ -131,6 +131,11 @@
   section.panel { scroll-margin-top: 80px; margin-bottom: 2rem; }
   section.panel h3 { margin-bottom: 1rem; font-size: 1.1rem; }
 
+  /* Mobil: geniş tablolar sayfayı yatay kaydırmasın — kendi kutusunda kaysın */
+  #standings-host, #matches-host, #recent-host, #past-host {
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+  }
   .standings-table { width: 100%; border-collapse: collapse; }
   .standings-table th, .standings-table td {
     padding: 0.55rem 0.7rem; text-align: left;
