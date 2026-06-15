@@ -109,7 +109,7 @@ function esc(s) {
   if (!s) return '';
   return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
 }
-function api(url) { return fetch(url).then(r => r.json()); }
+function apiGet(url) { return fetch(url, { credentials: 'same-origin' }).then(r => r.json()); }
 function apiPost(url, body) {
   return fetch(url, {
     method: 'POST',
@@ -147,7 +147,7 @@ async function loadAndRender() {
   try {
     const sid = STATE.sessionId;
     // Oturum
-    const ses = await api(`/api/competitions/0/sessions/${sid}/detail`);
+    const ses = await apiGet(`/api/competitions/0/sessions/${sid}/detail`);
     if (!ses || ses.error) {
       document.getElementById('page-content').innerHTML = `<p style="color:#ef4444">Oturum yüklenemedi: ${esc((ses||{}).error)}</p>`;
       return;
@@ -155,14 +155,14 @@ async function loadAndRender() {
     STATE.session = ses;
 
     // Competition
-    const comp = await api(`/api/competitions/${ses.competition_id}`);
+    const comp = await apiGet(`/api/competitions/${ses.competition_id}`);
     STATE.comp = comp;
 
     // Lig schedule + kadro (sadece lig için)
     if (comp && comp.type === 'league' && comp.plan_generated) {
       const [sr, pl] = await Promise.all([
-        api(`/api/competitions/${ses.competition_id}/schedule`),
-        api(`/api/competitions/${ses.competition_id}/players`),
+        apiGet(`/api/competitions/${ses.competition_id}/schedule`),
+        apiGet(`/api/competitions/${ses.competition_id}/players`),
       ]);
       STATE.schedule = (sr && sr.schedule) ? sr.schedule : [];
       STATE.players  = Array.isArray(pl) ? pl : [];
@@ -179,7 +179,7 @@ async function loadAndRender() {
       await Promise.all(myRounds.map(async round => {
         if (round.tournament_id) {
           try {
-            const tm = await api(`/api/matches/for-tournament/${round.tournament_id}`);
+            const tm = await apiGet(`/api/matches/for-tournament/${round.tournament_id}`);
             STATE.roundMatches[round.tournament_id] = Array.isArray(tm) ? tm : [];
           } catch (_) {
             STATE.roundMatches[round.tournament_id] = [];
@@ -189,7 +189,7 @@ async function loadAndRender() {
       STATE.matches = [];
     } else if (ses.tournament_id) {
       // Bracket oturumu: tek turnuva
-      const tm = await api(`/api/matches/for-tournament/${ses.tournament_id}`);
+      const tm = await apiGet(`/api/matches/for-tournament/${ses.tournament_id}`);
       STATE.matches = Array.isArray(tm) ? tm : [];
       STATE.roundMatches = {};
     } else {
@@ -639,7 +639,7 @@ window.moveRoundToThisDay = moveRoundToThisDay;
 async function finalizeSession(sid, compId) {
   toast('Sıralama hesaplanıyor…');
   try {
-    const preview = await api(`/api/competitions/${compId}/sessions/${sid}/preview`);
+    const preview = await apiGet(`/api/competitions/${compId}/sessions/${sid}/preview`);
     if (preview && preview.error) { toast('Hata: ' + preview.error); return; }
     if (preview.already_recorded) { toast('Zaten klasmana işlendi.'); return; }
     const standings = preview.standings || [];
