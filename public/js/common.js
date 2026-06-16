@@ -1,28 +1,63 @@
 // Ortak yardımcılar
 // credentials: 'same-origin' → session cookie'sini API istekleriyle birlikte gönder
 const CRED = { credentials: 'same-origin' };
+
+// --- Oturum sonu yönetimi (401) ---------------------------------------------
+// API çağrılarında 401 görülürse oturum kapanmış demektir. Tek seferlik uyarı
+// gösterip giriş ekranına yönlendir; aynı anda birçok çağrı 401 dönse bile
+// yalnız bir kez tetiklenir.
+let _sessionExpiredHandled = false;
+function _handleSessionExpired() {
+  if (_sessionExpiredHandled) return;
+  _sessionExpiredHandled = true;
+  try { if (window.toast) toast('Oturumunuz sona ermiş. Giriş ekranına yönlendiriliyorsunuz…', 4000); } catch (_) {}
+  const back = encodeURIComponent(location.pathname + location.search);
+  setTimeout(() => { location.href = '/login.html?next=' + back; }, 1200);
+}
+
+// Tüm api.* metodlarının ortak gövdesi:
+// - Ağ hatası      → { error: '...', _network: true }   (throw ETMEZ)
+// - 401            → giriş ekranına yönlendirir + { error, _unauthorized:true }
+// - JSON gövde     → olduğu gibi döner (önceki davranış aynen korunur)
+// - JSON olmayan   → { error: 'Sunucu hatası (HTTP n)', _httpStatus:n }
+// Böylece çağıran taraf her zaman bir nesne alır; mevcut `res.error` kontrolü
+// çalışır, `r.json()` JSON olmayan hata sayfalarında beklenmedik şekilde patlamaz.
+async function _apiFetch(url, opts) {
+  let r;
+  try {
+    r = await fetch(url, { credentials: 'same-origin', ...(opts || {}) });
+  } catch (_) {
+    return { error: 'Bağlantı hatası — internet bağlantınızı kontrol edin.', _network: true };
+  }
+  if (r.status === 401) {
+    _handleSessionExpired();
+    return { error: 'Oturumunuz sona ermiş. Yeniden giriş yapın.', _unauthorized: true };
+  }
+  let data = null;
+  const ct = r.headers.get('content-type') || '';
+  if (ct.includes('application/json')) {
+    try { data = await r.json(); } catch (_) { data = null; }
+  }
+  if (data == null) {
+    if (r.ok) return {};
+    return { error: 'Sunucu hatası (HTTP ' + r.status + '). Lütfen tekrar deneyin.', _httpStatus: r.status };
+  }
+  return data;
+}
+
+const _jsonOpts = (method, body) => ({
+  method,
+  headers: { 'Content-Type': 'application/json' },
+  body: JSON.stringify(body || {}),
+});
+
 window.api = {
-  get: (url) => fetch(url, CRED).then(r => r.json()),
-  post: (url, body) => fetch(url, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    credentials: 'same-origin',
-    body: JSON.stringify(body || {})
-  }).then(r => r.json()),
-  patch: (url, body) => fetch(url, {
-    method: 'PATCH',
-    headers: { 'Content-Type': 'application/json' },
-    credentials: 'same-origin',
-    body: JSON.stringify(body || {})
-  }).then(r => r.json()),
-  put: (url, body) => fetch(url, {
-    method: 'PUT',
-    headers: { 'Content-Type': 'application/json' },
-    credentials: 'same-origin',
-    body: JSON.stringify(body || {})
-  }).then(r => r.json()),
-  del: (url) => fetch(url, { method: 'DELETE', credentials: 'same-origin' }).then(r => r.json()),
-  request: (url, opts) => fetch(url, { credentials: 'same-origin', ...opts }).then(r => r.json()),
+  get: (url) => _apiFetch(url, {}),
+  post: (url, body) => _apiFetch(url, _jsonOpts('POST', body)),
+  patch: (url, body) => _apiFetch(url, _jsonOpts('PATCH', body)),
+  put: (url, body) => _apiFetch(url, _jsonOpts('PUT', body)),
+  del: (url) => _apiFetch(url, { method: 'DELETE' }),
+  request: (url, opts) => _apiFetch(url, opts),
 };
 
 window.toast = (msg, ms = 2500) => {

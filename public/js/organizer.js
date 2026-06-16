@@ -973,7 +973,8 @@ async function showRegistrations(id) {
   overlay.querySelectorAll('button[data-act]').forEach(btn => {
     btn.onclick = async () => {
       try {
-        await api.post(`/api/tournaments/${id}/registrations/${btn.dataset.id}/status`, { status: btn.dataset.act });
+        const r = await api.post(`/api/tournaments/${id}/registrations/${btn.dataset.id}/status`, { status: btn.dataset.act });
+        if (r && r.error) { toast('Hata: ' + r.error); return; }
         close(); showRegistrations(id); // yeniden yükle
       } catch (e) { toast(e.message || 'İşlem başarısız'); }
     };
@@ -984,6 +985,7 @@ async function showRegistrations(id) {
       if (!await showOrgConfirm(`${eligibleCount} katılımcı turnuvaya aktarılacak. Devam edilsin mi?`, 'Onayla', 'İptal')) return;
       try {
         const r = await api.post(`/api/tournaments/${id}/confirm`, {});
+        if (r && r.error) { toast('Hata: ' + r.error); return; }
         toast(`${r.transferred} katılımcı aktarıldı`);
         close();
         // state, server'ın scheduleBroadcast'i ile socket üzerinden tazelenir
