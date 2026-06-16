@@ -99,6 +99,7 @@
   </div>
 </div>
 
+<script src="/js/pdf-print.js"></script>
 <script src="/socket.io/socket.io.js"></script>
 <script>
 const socket = io();
@@ -296,6 +297,7 @@ function render() {
   }
 
   content.innerHTML = html;
+  fitBrackets(); // braketleri kutuya sığdır (varsa)
 
   // Turnuvayı Başlat butonu — draft + maç yok durumunda
   const startBtn = document.getElementById('start-tournament-btn');
@@ -554,45 +556,199 @@ function renderMatchCard(m, comp) {
   `;
 }
 
-// ── Basit bracket render (yatay round kolonları) ───────────────────
-function renderBracketSimple(matches, comp) {
-  const byRound = {};
-  for (const m of matches) {
-    const r = m.round || 1;
-    if (!byRound[r]) byRound[r] = [];
-    byRound[r].push(m);
-  }
-  const rounds = Object.keys(byRound).map(Number).sort((a, b) => a - b);
-  if (!rounds.length) return '';
+// ── Bracket render (izleyici ekranıyla aynı: SVG bağlantı çizgili,
+//    32'lik dilim sekmeli, kutuya sığan görünüm) ────────────────────
+// Kaynak: viewer.js'teki renderElimBracketSVG/renderBracketWithTabs/fitBrackets
+// motorunun bu sayfanın maç veri şekline (p1_name/p2_name) uyarlanmış kopyası.
 
-  let html = `<div style="display:flex;gap:1rem;align-items:flex-start;min-width:max-content;padding:0.5rem 0 1rem">`;
-  for (const r of rounds) {
-    const ms = byRound[r];
-    const lbl = ms[0]?.bracket === 'final' ? 'Büyük Final'
-      : ms[0]?.bracket === 'losers' ? `Losers R${r}`
-      : ms[0]?.bracket === 'rr' || ms[0]?.bracket === 'league' ? `Round ${r}`
-      : r === Math.max(...rounds) ? 'Final' : `Round ${r}`;
-    html += `<div style="display:flex;flex-direction:column;gap:0.6rem;min-width:200px">`;
-    html += `<div style="font-size:0.72rem;font-weight:700;text-transform:uppercase;letter-spacing:0.05em;color:var(--text-dim);margin-bottom:0.2rem">${esc(lbl)}</div>`;
-    for (const m of ms) {
-      const p1 = esc(m.p1_name || (m.entry1_id ? '…' : 'BYE'));
-      const p2 = esc(m.p2_name || (m.entry2_id ? '…' : 'BYE'));
-      const p1Win = m.status === 'finished' && m.winner_entry_id === m.entry1_id;
-      const p2Win = m.status === 'finished' && m.winner_entry_id === m.entry2_id;
-      const borderC = m.status === 'live' ? '#4ade80' : m.status === 'finished' ? 'rgba(245,158,11,0.4)' : 'var(--border)';
-      html += `<div style="background:var(--surface);border:1px solid ${borderC};border-radius:8px;overflow:hidden;font-size:0.88rem">
-        <div style="padding:0.35rem 0.6rem;border-bottom:1px solid var(--border);${p1Win ? 'color:#4ade80;font-weight:700' : ''}">
-          ${p1}${m.status === 'finished' ? ` <span style="float:right;font-variant-numeric:tabular-nums">${m.p1_legs || 0}</span>` : ''}
-        </div>
-        <div style="padding:0.35rem 0.6rem;${p2Win ? 'color:#4ade80;font-weight:700' : 'color:var(--text-dim)'}">
-          ${p2}${m.status === 'finished' ? ` <span style="float:right;font-variant-numeric:tabular-nums">${m.p2_legs || 0}</span>` : ''}
-        </div>
-      </div>`;
+let _btSeq = 0;
+const _btSelected = {}; // bt id → seçili dilim index'i (yeniden render'da korunur)
+function btBtnStyle(active) {
+  return 'font-size:0.8rem;padding:0.3rem 0.7rem;border-radius:6px;cursor:pointer;border:1px solid var(--border);'
+    + (active ? 'background:var(--accent);color:#000;font-weight:700;'
+              : 'background:var(--bg-2);color:var(--text-dim);font-weight:400;');
+}
+
+// Tek bir maç kutusu — board/score şekli p1_name/p2_name + p1_legs/p2_legs
+function renderBracketMatch(m) {
+  const cls = m.status === 'live' ? 'live' : m.status === 'finished' ? 'finished' : '';
+  const w1 = m.winner_entry_id === m.entry1_id;
+  const w2 = m.winner_entry_id === m.entry2_id;
+  const showScore = m.status === 'live' || m.status === 'finished';
+  const setsActive = (m.p1_sets > 0 || m.p2_sets > 0);
+  const s1 = setsActive ? `${m.p1_sets}(${m.p1_legs || 0})` : `${m.p1_legs || 0}`;
+  const s2 = setsActive ? `${m.p2_sets}(${m.p2_legs || 0})` : `${m.p2_legs || 0}`;
+  const lbl1 = m.entry1_id ? esc(m.p1_name || '…') : 'BYE';
+  const lbl2 = m.entry2_id ? esc(m.p2_name || '…') : 'BYE';
+  return `
+    <div class="bracket-match ${cls}">
+      <div class="slot ${w1 ? 'winner' : ''}">
+        <span>${lbl1}</span>
+        <span class="score">${m.entry1_id && showScore ? s1 : ''}</span>
+      </div>
+      <div class="slot ${w2 ? 'winner' : ''}">
+        <span>${lbl2}</span>
+        <span class="score">${m.entry2_id && showScore ? s2 : ''}</span>
+      </div>
+    </div>
+  `;
+}
+
+function renderElimBracketSVG(columns, matchFn) {
+  if (!columns.length) return '';
+  columns = columns.filter(c => c.matches && c.matches.length);
+  if (!columns.length) return '';
+  const MW = 180, MH = 64, CS = 225, LH = 24, UH = 72;
+  const firstCount = columns[0].matches.length;
+  const cy = (r, i) => i * UH * Math.pow(2, r) + UH * Math.pow(2, r) / 2;
+  const totalW = (columns.length - 1) * CS + MW;
+  const totalH = firstCount * UH + LH + 8;
+
+  let svgLines = '';
+  for (let r = 0; r < columns.length - 1; r++) {
+    const prevCount = columns[r].matches.length;
+    const nextCount = columns[r + 1].matches.length;
+    const xR = r * CS + MW, xN = (r + 1) * CS, xM = (xR + xN) / 2;
+    for (let i = 0; i < nextCount; i++) {
+      const p1 = i * 2, p2 = i * 2 + 1;
+      const has1 = p1 < prevCount, has2 = p2 < prevCount;
+      if (!has1 && !has2) continue;
+      const c1 = cy(r, p1), c2 = cy(r, p2), cm = (c1 + c2) / 2;
+      if (has1) svgLines += `<line x1="${xR}" y1="${c1}" x2="${xM}" y2="${c1}" stroke="var(--border)" stroke-width="1.5"/>`;
+      if (has2) svgLines += `<line x1="${xR}" y1="${c2}" x2="${xM}" y2="${c2}" stroke="var(--border)" stroke-width="1.5"/>`;
+      if (has1 && has2) svgLines += `<line x1="${xM}" y1="${c1}" x2="${xM}" y2="${c2}" stroke="var(--border)" stroke-width="1.5"/>`;
+      const yChild = (has1 && has2) ? cm : (has1 ? c1 : c2);
+      svgLines += `<line x1="${xM}" y1="${yChild}" x2="${xN}" y2="${yChild}" stroke="var(--border)" stroke-width="1.5"/>`;
     }
-    html += `</div>`;
   }
-  html += `</div>`;
-  return html;
+
+  let html = '';
+  columns.forEach((col, r) => {
+    html += `<div style="position:absolute;top:0;left:${r * CS}px;width:${MW}px;text-align:center;font-size:0.7rem;color:var(--text-dim);text-transform:uppercase;letter-spacing:0.07em;line-height:${LH}px;">${col.label}</div>`;
+    col.matches.forEach((m, i) => {
+      const top = Math.round(cy(r, i) - MH / 2 + LH);
+      html += `<div style="position:absolute;top:${top}px;left:${r * CS}px;width:${MW}px;">${matchFn(m)}</div>`;
+    });
+  });
+
+  return `<div class="bracket-fit" style="padding-bottom:0.5rem;overflow:hidden;">
+    <div class="bracket-fit-inner" style="position:relative;width:${totalW}px;height:${totalH}px;transform-origin:top left;">
+      <svg style="position:absolute;top:${LH}px;left:0;width:${totalW}px;height:${totalH - LH}px;pointer-events:none;overflow:visible;">${svgLines}</svg>
+      ${html}
+    </div>
+  </div>`;
+}
+
+// >32 oyuncu → 32'lik dilim sekmeleri (bölme mantığı pdf-print.js ile ortak)
+function renderBracketWithTabs(columns, prefix) {
+  const split = window.splitBracketColumns
+    ? window.splitBracketColumns(columns, prefix || '')
+    : [{ label: '', cols: columns }];
+  if (split.length <= 1) return renderElimBracketSVG(columns, renderBracketMatch);
+  const id = 'bt' + (++_btSeq);
+  let active = _btSelected[id] ?? 0;
+  if (active >= split.length) active = 0;
+  _btSelected[id] = active;
+  const bar = split.map((p, i) =>
+    `<button class="bt-btn" data-bt="${id}" data-i="${i}" onclick="selectBracketTab('${id}',${i})" style="${btBtnStyle(i === active)}">${esc(p.label)}</button>`
+  ).join('');
+  const panes = split.map((p, i) =>
+    `<div class="bt-pane" data-bt="${id}" data-i="${i}" ${i === active ? '' : 'hidden'}>${renderElimBracketSVG(p.cols, renderBracketMatch)}</div>`
+  ).join('');
+  return `<div class="bracket-tabs" data-bt="${id}">
+    <div style="display:flex;flex-wrap:wrap;gap:0.4rem;margin-bottom:0.6rem;">${bar}</div>
+    ${panes}</div>`;
+}
+window.selectBracketTab = function (id, idx) {
+  _btSelected[id] = idx;
+  document.querySelectorAll('.bt-btn[data-bt="' + id + '"]').forEach(b => {
+    b.style.cssText = btBtnStyle(+b.dataset.i === idx);
+  });
+  document.querySelectorAll('.bt-pane[data-bt="' + id + '"]').forEach(p => {
+    p.hidden = +p.dataset.i !== idx;
+  });
+  fitBrackets();
+};
+
+// Braketi içinde bulunduğu kutuya yatayda sığacak şekilde ölçekler.
+function fitBrackets() {
+  document.querySelectorAll('#bracket-wrap .bracket-fit').forEach(wrap => {
+    const inner = wrap.querySelector('.bracket-fit-inner');
+    if (!inner) return;
+    inner.style.transform = 'none';
+    wrap.style.height = '';
+    const avail = wrap.clientWidth;
+    const contentW = inner.scrollWidth;
+    if (!avail || !contentW) return;
+    const scale = Math.min(1, avail / contentW);
+    inner.style.transform = `scale(${scale})`;
+    wrap.style.height = (inner.scrollHeight * scale) + 'px';
+  });
+}
+window.addEventListener('resize', () => {
+  clearTimeout(window.__fitBracketsTO);
+  window.__fitBracketsTO = setTimeout(fitBrackets, 150);
+});
+
+// Maçlardan braket kolonlarını kurar; tek/çift eleme ayrımı yapar.
+function renderBracketSimple(matches, comp) {
+  const rounds = {};
+  for (const m of matches) {
+    const key = `${m.bracket || 'winners'}-${m.round || 1}`;
+    (rounds[key] = rounds[key] || []).push(m);
+  }
+  const order = { winners: 0, losers: 1, final: 2 };
+  const sortKeys = (keys) => keys.sort((a, b) => {
+    const [ba, ra] = a.split('-'); const [bb, rb] = b.split('-');
+    // `?? 99` — winners=0 falsy olduğu için `||` kullanma (Final sola kaçar)
+    return ((order[ba] ?? 99) - (order[bb] ?? 99)) || (+ra - +rb);
+  });
+  const allKeys = sortKeys(Object.keys(rounds));
+  if (!allKeys.length) return '';
+
+  // Round-robin / lig: tek kolon liste
+  const firstBracket = (matches[0] && matches[0].bracket) || '';
+  if (firstBracket === 'rr' || firstBracket === 'league') {
+    return `<div class="bracket"><div class="bracket-round"><h4>Round Robin</h4>${
+      matches.map(m => renderBracketMatch(m)).join('')}</div></div>`;
+  }
+
+  const isDouble = allKeys.some(k => k.startsWith('losers-') || k.startsWith('final-'));
+
+  if (isDouble) {
+    const wbKeys = allKeys.filter(k => k.startsWith('winners-'));
+    const lbKeys = allKeys.filter(k => k.startsWith('losers-'));
+    const fKeys  = allKeys.filter(k => k.startsWith('final-'));
+    const wbCols = wbKeys.map(k => {
+      const [, round] = k.split('-'); const cnt = rounds[k].length;
+      const label = cnt === 1 ? 'WB Final' : cnt === 2 ? 'WB Yarı Final' : `WB R${round}`;
+      return { label, matches: rounds[k] };
+    });
+    const lbHtml = lbKeys.length ? `<div class="bracket">${lbKeys.map(k => {
+      const [, round] = k.split('-');
+      return `<div class="bracket-round"><h4>LB R${round}</h4>${rounds[k].map(m => renderBracketMatch(m)).join('')}</div>`;
+    }).join('')}</div>` : '';
+    const fHtml = fKeys.length ? `<div class="bracket">${fKeys.map(k =>
+      `<div class="bracket-round"><h4>Büyük Final</h4>${rounds[k].map(m => renderBracketMatch(m)).join('')}</div>`
+    ).join('')}</div>` : '';
+    const section = (lbl, body) => body ? `<div style="margin-bottom:0.6rem;">
+      <div style="font-size:0.7rem;color:var(--text-dim);text-transform:uppercase;letter-spacing:0.06em;margin-bottom:0.3rem;padding:0.15rem 0.4rem;background:var(--bg-2);border-radius:4px;display:inline-block;">${lbl}</div>
+      ${body}</div>` : '';
+    return section('🏆 Üst Taraf', renderBracketWithTabs(wbCols, 'Üst Taraf'))
+         + section('🔁 Alt Taraf', lbHtml)
+         + section('🎯 Büyük Final', fHtml);
+  }
+
+  // Tek eleme
+  const columns = allKeys.map(k => {
+    const [, round] = k.split('-');
+    const cnt = rounds[k].length;
+    const label = cnt === 1 ? 'Final' : cnt === 2 ? 'Yarı Final' :
+      cnt === 4 ? 'Çeyrek Final' : cnt === 8 ? 'Son 16' :
+      cnt === 16 ? 'Son 32' : `R${round}`;
+    return { label, matches: rounds[k] };
+  });
+  return renderBracketWithTabs(columns, '');
 }
 
 // ── Round başlat ──────────────────────────────────────────────────

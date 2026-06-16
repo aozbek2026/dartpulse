@@ -430,6 +430,7 @@ function renderBracket() {
   const host = document.getElementById('bracket-host');
   const tourns = getVisibleTournaments(state.tournaments.filter(t => t.status !== 'draft'));
   if (!tourns.length) { host.innerHTML = ''; return; }
+  _btSeq = 0; // braket sekme id'leri her render'da aynı sırayla üretilsin (seçim hatırlansın)
   host.innerHTML = tourns.map(t => `
     <div class="card">
       <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom: 0.85rem;">
@@ -624,6 +625,7 @@ function renderElim(stage, matches) {
 // Büyük braketi (>32 oyuncu) ekranda 32'lik dilim sekmelerine böler.
 // ≤32 oyuncu ise normal tek görünüm döner.
 let _btSeq = 0;
+const _btSelected = {}; // bt id → seçili dilim index'i (state yenilenince korunur)
 function btBtnStyle(active) {
   return 'font-size:0.8rem;padding:0.3rem 0.7rem;border-radius:6px;cursor:pointer;border:1px solid var(--border);'
     + (active ? 'background:var(--accent);color:#000;font-weight:700;'
@@ -635,17 +637,21 @@ function renderBracketWithTabs(columns, prefix) {
     : [{ label: '', cols: columns }];
   if (split.length <= 1) return renderElimBracketSVG(columns, renderBracketMatch);
   const id = 'bt' + (++_btSeq);
+  let active = _btSelected[id] ?? 0;
+  if (active >= split.length) active = 0; // dilim sayısı azaldıysa güvenli düş
+  _btSelected[id] = active;
   const bar = split.map((p, i) =>
-    `<button class="bt-btn" data-bt="${id}" data-i="${i}" onclick="selectBracketTab('${id}',${i})" style="${btBtnStyle(i === 0)}">${p.label}</button>`
+    `<button class="bt-btn" data-bt="${id}" data-i="${i}" onclick="selectBracketTab('${id}',${i})" style="${btBtnStyle(i === active)}">${p.label}</button>`
   ).join('');
   const panes = split.map((p, i) =>
-    `<div class="bt-pane" data-bt="${id}" data-i="${i}" ${i ? 'hidden' : ''}>${renderElimBracketSVG(p.cols, renderBracketMatch)}</div>`
+    `<div class="bt-pane" data-bt="${id}" data-i="${i}" ${i === active ? '' : 'hidden'}>${renderElimBracketSVG(p.cols, renderBracketMatch)}</div>`
   ).join('');
   return `<div class="bracket-tabs" data-bt="${id}">
     <div style="display:flex;flex-wrap:wrap;gap:0.4rem;margin-bottom:0.6rem;">${bar}</div>
     ${panes}</div>`;
 }
 window.selectBracketTab = function (id, idx) {
+  _btSelected[id] = idx; // seçimi hatırla — state yenilenince geri dönmesin
   document.querySelectorAll('.bt-btn[data-bt="' + id + '"]').forEach(b => {
     b.style.cssText = btBtnStyle(+b.dataset.i === idx);
   });
