@@ -1283,6 +1283,12 @@ function renderPlayers() {
     return;
   }
   if (bulkBar) bulkBar.style.display = 'flex';
+  // Canlı turnuva yayını (socket 'state') her atışta render() tetikler; aşağıdaki
+  // innerHTML yeniden çizimi seçili kutuları siler. Çizimden önce seçimi sakla,
+  // sonra geri işaretle ki ikinci turnuva kurarken tikler kaybolmasın.
+  const prevSelected = new Set(
+    [...document.querySelectorAll('.player-check:checked')].map(c => c.value)
+  );
   list.innerHTML = state.players.map(p => {
     const warn = playerDeleteWarnings[p.id];
     return `
@@ -1295,6 +1301,12 @@ function renderPlayers() {
       <button class="icon danger" onclick="deletePlayer(${p.id})">Sil</button>
     </li>`;
   }).join('');
+  // Yeniden çizimden sonra önceki seçimi geri yükle
+  if (prevSelected.size) {
+    document.querySelectorAll('.player-check').forEach(c => {
+      if (prevSelected.has(c.value)) c.checked = true;
+    });
+  }
   updatePlayerSelection();
 }
 
