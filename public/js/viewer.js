@@ -55,6 +55,44 @@ function onTourChange(val) {
 }
 window.onTourChange = onTourChange;
 
+// İzleyici linkini panoya kopyala. Bir turnuva seçiliyse o turnuvanın
+// doğrudan linki (?t=ID), değilse genel izleyici sayfası kopyalanır.
+function shareViewerLink() {
+  const base = window.location.origin + window.location.pathname;
+  const url = selectedTourId == null ? base : `${base}?t=${selectedTourId}`;
+  const btn = document.getElementById('share-btn');
+  const done = (ok) => {
+    if (!btn) return;
+    const orig = btn.innerHTML;
+    btn.innerHTML = ok ? '✓ Kopyalandı' : '⚠ Kopyalanamadı';
+    setTimeout(() => { btn.innerHTML = orig; }, 1600);
+  };
+  if (navigator.clipboard && navigator.clipboard.writeText) {
+    navigator.clipboard.writeText(url).then(() => done(true)).catch(() => fallbackCopy(url, done));
+  } else {
+    fallbackCopy(url, done);
+  }
+}
+window.shareViewerLink = shareViewerLink;
+
+// HTTPS olmayan/clipboard API'siz ortamlar için yedek kopyalama
+function fallbackCopy(text, done) {
+  try {
+    const ta = document.createElement('textarea');
+    ta.value = text;
+    ta.style.position = 'fixed';
+    ta.style.opacity = '0';
+    document.body.appendChild(ta);
+    ta.select();
+    const ok = document.execCommand('copy');
+    ta.remove();
+    done(ok);
+  } catch {
+    done(false);
+    window.prompt('Linki kopyalayın:', text);
+  }
+}
+
 // Görünür turnuvaları döndüren ortak helper.
 // base verilmezse state.tournaments kullanılır.
 function getVisibleTournaments(base) {
