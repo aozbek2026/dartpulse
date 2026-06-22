@@ -5,7 +5,7 @@
   "start_url": "/board.html",
   "scope": "/",
   "display": "standalone",
-  "orientation": "landscape",
+  "orientation": "any",
   "background_color": "#0b0d14",
   "theme_color": "#0b0d14",
   "icons": [
