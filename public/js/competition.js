@@ -102,6 +102,7 @@ function renderHeader() {
       </div>
       <div style="display:flex;align-items:center;gap:0.5rem;flex-wrap:wrap">
         <button class="secondary" onclick="downloadReport()" title="Klasman + oturum sonuçları + maç istatistikleri (4 sekme)" style="font-size:0.85rem;padding:0.4rem 0.75rem">📊 Excel İndir</button>
+        ${c.status !== 'draft' ? `<button class="secondary" onclick="openShareModal()" title="Üyelik gerektirmeyen izleyici linki — klasman ve braketler paylaşılır" style="font-size:0.85rem;padding:0.4rem 0.75rem">🔗 İzleyici Linki</button>` : ''}
         <span class="comp-status-pill ${c.status}">${sLabel}</span>
       </div>
     </div>
@@ -1680,6 +1681,71 @@ function downloadReport() {
   setTimeout(() => a.remove(), 1500);
 }
 window.downloadReport = downloadReport;
+
+// ── İzleyici paylaşım linki (gizli token) ─────────────────────────
+async function openShareModal() {
+  const c = STATE.comp;
+  if (!c || !c.id) { toast('Yarışma yüklenmedi'); return; }
+  // Modal iskeleti
+  const overlay = document.createElement('div');
+  overlay.className = 'share-modal-overlay';
+  overlay.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,0.6);display:flex;align-items:center;justify-content:center;z-index:9999;padding:1rem';
+  overlay.innerHTML = `
+    <div style="background:var(--surface);border:1px solid var(--border);border-radius:14px;max-width:520px;width:100%;padding:1.4rem 1.5rem">
+      <h3 style="margin:0 0 0.4rem">🔗 İzleyici Linki</h3>
+      <p style="color:var(--text-dim);font-size:0.88rem;margin:0 0 1rem;line-height:1.5">
+        Bu gizli link ile <strong>üyelik gerektirmeden</strong> klasman ve braketler izlenebilir.
+        Sadece linki bilenler görür. İstediğin zaman kapatabilirsin — eski link çalışmaz.
+      </p>
+      <div id="share-body"><p style="color:var(--text-dim)">Yükleniyor…</p></div>
+      <div style="text-align:right;margin-top:1rem">
+        <button class="secondary" id="share-close" style="font-size:0.85rem;padding:0.4rem 0.9rem">Kapat</button>
+      </div>
+    </div>`;
+  document.body.appendChild(overlay);
+  const close = () => overlay.remove();
+  overlay.addEventListener('click', (e) => { if (e.target === overlay) close(); });
+  overlay.querySelector('#share-close').onclick = close;
+
+  // Mevcut token'ı al (varsa) — share endpoint idempotent token döndürür
+  await renderShareBody(c.id, overlay);
+}
+window.openShareModal = openShareModal;
+
+async function renderShareBody(compId, overlay) {
+  const body = overlay.querySelector('#share-body');
+  // Token üret/getir
+  const res = await api.post(`/api/competitions/${compId}/share`, {});
+  if (res && res.error) { body.innerHTML = `<p style="color:#ef4444">Hata: ${escapeHtml(res.error)}</p>`; return; }
+  const link = `${window.location.origin}/sezon.html?t=${res.token}`;
+  body.innerHTML = `
+    <label style="font-size:0.78rem;color:var(--text-dim);text-transform:uppercase;letter-spacing:0.05em">Paylaşım Linki</label>
+    <div style="display:flex;gap:0.5rem;margin-top:0.35rem">
+      <input id="share-link-input" type="text" readonly value="${escapeHtml(link)}"
+        style="flex:1;min-width:0;padding:0.55rem 0.7rem;background:var(--bg);border:1px solid var(--border);border-radius:8px;color:var(--text);font-size:0.85rem" />
+      <button class="primary" id="share-copy" style="font-size:0.85rem;padding:0.5rem 0.9rem;white-space:nowrap">Kopyala</button>
+    </div>
+    <div style="display:flex;gap:0.6rem;margin-top:1rem;align-items:center;flex-wrap:wrap">
+      <a href="${escapeHtml(link)}" target="_blank" rel="noopener" style="color:var(--accent-2);font-size:0.85rem;text-decoration:none">↗ Önizle</a>
+      <button id="share-revoke" style="margin-left:auto;font-size:0.82rem;padding:0.4rem 0.8rem;background:rgba(239,68,68,0.12);border:1px solid rgba(239,68,68,0.35);color:#f87171;border-radius:7px;cursor:pointer">Paylaşımı Kapat</button>
+    </div>`;
+  const input = body.querySelector('#share-link-input');
+  body.querySelector('#share-copy').onclick = () => {
+    const done = (ok) => toast(ok ? 'Link kopyalandı ✓' : 'Kopyalanamadı');
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      navigator.clipboard.writeText(link).then(() => done(true)).catch(() => { input.select(); done(document.execCommand && document.execCommand('copy')); });
+    } else { input.select(); done(document.execCommand && document.execCommand('copy')); }
+  };
+  body.querySelector('#share-revoke').onclick = async () => {
+    if (!confirm('Paylaşımı kapat? Mevcut link artık çalışmaz.')) return;
+    const r = await api.del(`/api/competitions/${compId}/share`);
+    if (r && r.error) { toast('Hata: ' + r.error); return; }
+    toast('Paylaşım kapatıldı');
+    body.innerHTML = `<p style="color:var(--text-dim);font-size:0.9rem">Paylaşım kapalı. Yeniden açmak için aşağıdaki butona bas.</p>
+      <button class="primary" id="share-reopen" style="font-size:0.85rem;padding:0.5rem 0.9rem;margin-top:0.5rem">🔗 Yeni Link Oluştur</button>`;
+    body.querySelector('#share-reopen').onclick = () => renderShareBody(compId, overlay);
+  };
+}
 
 // ── Klasman PDF (dikey A4, çok sayfa) ──────────────────────────────
 function printCompetitionStandings() {

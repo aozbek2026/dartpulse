@@ -272,6 +272,7 @@ function init() {
       points_json TEXT,                        -- {"1":10,"2":7,"3":5,"default":1}
       status TEXT DEFAULT 'draft',             -- draft | running | finished
       config_json TEXT,                        -- ek opsiyonel ayarlar
+      public_token TEXT,                       -- izleyici paylasim token'i (gizli link); NULL = paylasim kapali
       created_at TEXT DEFAULT CURRENT_TIMESTAMP,
       FOREIGN KEY(user_id) REFERENCES users(id) ON DELETE CASCADE
     );
@@ -623,6 +624,9 @@ function init() {
   const compCols2 = db.prepare("PRAGMA table_info(competitions)").all().map(c => c.name);
   if (!compCols2.includes('plan_generated')) {
     try { db.exec('ALTER TABLE competitions ADD COLUMN plan_generated INTEGER DEFAULT 0'); } catch {}
+  }
+  if (!compCols2.includes('public_token')) {
+    try { db.exec('ALTER TABLE competitions ADD COLUMN public_token TEXT'); } catch {}
   }
   // league_schedule kolonlari: eski DB'lerde session_id/tournament_id/meeting_number
   // hic eklenmemis olabilir. Her birini eksikse ekle (geriye donuk uyumlu).
@@ -1725,6 +1729,29 @@ function competitionById(id, userId = null) {
   ).get(id, userId);
 }
 
+// --- Izleyici paylasim token'i (gizli link) ---
+// Token uretir (varsa mevcut token'i dondurur), sadece sahibi degistirir.
+function setCompetitionPublicToken(id, userId, token) {
+  const info = db.prepare(
+    'UPDATE competitions SET public_token = ? WHERE id = ? AND user_id = ?'
+  ).run(token, id, userId);
+  return info.changes > 0;
+}
+// Token'i kaldirir (paylasimi kapatir).
+function clearCompetitionPublicToken(id, userId) {
+  const info = db.prepare(
+    'UPDATE competitions SET public_token = NULL WHERE id = ? AND user_id = ?'
+  ).run(id, userId);
+  return info.changes > 0;
+}
+// Token ile competition bul (auth'suz public erisim). userId scope'u YOK — token'in
+// kendisi yetki. draft sezonlar paylasilsa bile token tutuldugu surece erisilir;
+// endpoint tarafinda istenirse status filtrelenir.
+function competitionByPublicToken(token) {
+  if (!token) return null;
+  return db.prepare('SELECT * FROM competitions WHERE public_token = ?').get(token);
+}
+
 function updateCompetition(id, userId, fields) {
   const allowed = ['name', 'category', 'planned_sessions', 'meet_count',
                    'game_mode', 'team_mode', 'legs_to_win', 'sets_to_win',
@@ -2437,6 +2464,7 @@ module.exports = {
   getOrCreateTeamPool, getOrCreatePlayerByName, teamPhaseMatchByMatchId,
   // Lig & Sezon
   createCompetition, allCompetitions, competitionById, updateCompetition, deleteCompetition,
+  setCompetitionPublicToken, clearCompetitionPublicToken, competitionByPublicToken,
   addCompetitionPlayer, competitionPlayers, removeCompetitionPlayer,
   createSession, sessionsForCompetition, sessionById, updateSession, deleteSession,
   sessionRegistrations, sessionRegistrationByUser, countSessionRegistrations,

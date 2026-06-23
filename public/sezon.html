@@ -1,0 +1,380 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Sezon / Lig İzleyici · Dart Core Pro</title>
+<link rel="stylesheet" href="/css/style.css" />
+<style>
+  body { padding: 0; }
+  .top-bar {
+    position: sticky; top: 0; z-index: 50;
+    background: var(--bg);
+    border-bottom: 1px solid var(--border);
+    padding: 0.85rem 1.5rem;
+    display: flex; align-items: center; gap: 0.8rem; flex-wrap: wrap;
+  }
+  .top-bar h2 { margin: 0; font-size: 1.1rem; flex: 1; min-width: 0; }
+  .top-bar .sub { font-size: 0.8rem; color: var(--text-dim); }
+  .ro-badge {
+    font-size: 0.72rem; font-weight: 700; padding: 0.2rem 0.55rem; border-radius: 999px;
+    background: rgba(99,102,241,0.2); color: #a5b4fc; text-transform: uppercase; letter-spacing: 0.04em;
+  }
+  .page-body { max-width: 1100px; margin: 0 auto; padding: 1.4rem 1.2rem 3rem; }
+  .section-title {
+    font-size: 0.78rem; font-weight: 700; text-transform: uppercase;
+    letter-spacing: 0.06em; color: var(--text-dim); margin: 1.4rem 0 0.6rem;
+  }
+  /* Klasman (yatay taşma kendi kutusunda kalsın — CLAUDE.md mobil kuralı) */
+  #standings-host { overflow-x: auto; -webkit-overflow-scrolling: touch; }
+  table.standings-table { width: 100%; border-collapse: collapse; font-size: 0.88rem; }
+  table.standings-table th, table.standings-table td {
+    padding: 0.5rem 0.6rem; text-align: center; border-bottom: 1px solid var(--border); white-space: nowrap;
+  }
+  table.standings-table th { color: var(--text-dim); font-size: 0.74rem; text-transform: uppercase; letter-spacing: 0.04em; }
+  table.standings-table td.name { text-align: left; font-weight: 600; }
+  table.standings-table tr.r1 td.pos { color: #f59e0b; font-weight: 800; }
+  table.standings-table tr.r2 td.pos { color: #cbd5e1; font-weight: 800; }
+  table.standings-table tr.r3 td.pos { color: #d97706; font-weight: 800; }
+  /* Braket seçim listesi */
+  .bracket-list { display: flex; flex-wrap: wrap; gap: 0.5rem; margin-bottom: 0.8rem; }
+  .bracket-pill {
+    padding: 0.35rem 0.8rem; border-radius: 8px; font-size: 0.85rem; font-weight: 600;
+    background: var(--surface); color: var(--text); border: 1px solid var(--border); cursor: pointer;
+  }
+  .bracket-pill:hover { border-color: var(--accent-2); }
+  .bracket-pill.active { background: var(--accent); color: #000; border-color: var(--accent); }
+  .bracket-pill .st { font-size: 0.72rem; font-weight: 500; opacity: 0.8; }
+  #bracket-wrap { overflow-x: auto; margin-bottom: 1.2rem; min-height: 40px; }
+  .bracket-match { /* style.css'teki .bracket-match yapısıyla uyumlu */ }
+  .match-card {
+    background: var(--surface); border: 1px solid var(--border);
+    border-radius: 10px; padding: 0.8rem 1rem; display: flex;
+    align-items: center; justify-content: space-between; gap: 0.8rem; flex-wrap: wrap;
+  }
+  .match-card + .match-card { margin-top: 0.5rem; }
+  .match-players { display: flex; align-items: center; gap: 0.5rem; flex: 1; min-width: 0; }
+  .match-player { font-weight: 600; font-size: 0.95rem; }
+  .match-player.winner { color: #4ade80; }
+  .match-vs { color: var(--text-dim); font-size: 0.82rem; }
+  .match-score { font-size: 1.05rem; font-weight: 800; font-variant-numeric: tabular-nums; color: var(--accent, #f59e0b); }
+  .match-status-pill { font-size: 0.72rem; font-weight: 700; padding: 0.1rem 0.45rem; border-radius: 999px; text-transform: uppercase; letter-spacing: 0.03em; }
+  .match-status-pill.ready { background: rgba(99,102,241,0.2); color: #a5b4fc; }
+  .match-status-pill.live { background: rgba(74,222,128,0.2); color: #4ade80; }
+  .match-status-pill.finished { background: rgba(245,158,11,0.15); color: var(--accent, #f59e0b); }
+  .match-status-pill.pending { background: rgba(255,255,255,0.05); color: var(--text-dim); }
+</style>
+</head>
+<body>
+<div class="top-bar">
+  <h2 id="comp-title">Yükleniyor…</h2>
+  <span class="sub" id="comp-sub"></span>
+  <span class="ro-badge">📺 İzleyici</span>
+</div>
+
+<div class="page-body">
+  <div id="page-content"><p style="color:var(--text-dim)">Yükleniyor…</p></div>
+</div>
+
+<script src="/js/pdf-print.js"></script>
+<script>
+function esc(s){ if(s==null) return ''; return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;'); }
+function apiGet(url){ return fetch(url,{credentials:'same-origin'}).then(r=>r.json()); }
+
+function getToken(){
+  try { return new URL(window.location.href).searchParams.get('t'); } catch(_) { return null; }
+}
+
+let STATE = { token:null, comp:null, standings:[], sessions:[], schedule:[], viewables:[], activeTid:null, matches:[] };
+
+async function load(){
+  const token = STATE.token;
+  const data = await apiGet(`/api/public/competition/${encodeURIComponent(token)}`);
+  if(!data || data.error){
+    document.getElementById('page-content').innerHTML =
+      `<div style="text-align:center;padding:3rem 1rem;color:var(--text-dim)">
+        <p style="font-size:1.1rem;color:var(--text)">Paylaşım bulunamadı</p>
+        <p>Bu izleyici linki geçersiz veya organizatör paylaşımı kapatmış olabilir.</p>
+      </div>`;
+    document.getElementById('comp-title').textContent = 'İzleyici';
+    return;
+  }
+  STATE.comp = data.competition;
+  STATE.standings = data.standings || [];
+  STATE.sessions = data.sessions || [];
+  STATE.schedule = data.schedule || [];
+  buildViewables();
+  render();
+}
+
+// İzlenebilir braketleri (turnuva_id'si olanları) topla
+function buildViewables(){
+  const list = [];
+  const c = STATE.comp;
+  if(c.type === 'league'){
+    // Lig: her round'un kendi mini turnuvası
+    for(const r of STATE.schedule){
+      if(r.tournament_id){
+        list.push({ tid:r.tournament_id, label:`Round ${r.round_number}`, status:r.session_status||r.tournament_status });
+      }
+    }
+  } else {
+    // Sezon: her oturumun braketi
+    for(const s of STATE.sessions){
+      if(s.tournament_id && s.session_type !== 'league_day'){
+        list.push({ tid:s.tournament_id, label:s.name || `${s.session_number}. Oturum`, status:s.tournament_status });
+      }
+    }
+  }
+  STATE.viewables = list;
+  // Aktif seçim koru, yoksa canlı olan ya da ilk
+  if(!STATE.activeTid || !list.some(v=>v.tid===STATE.activeTid)){
+    const live = list.find(v=>v.status==='running');
+    STATE.activeTid = live ? live.tid : (list.length ? list[list.length-1].tid : null);
+  }
+}
+
+function render(){
+  const c = STATE.comp;
+  const typeLbl = c.type === 'league' ? 'Lig' : 'Sezon';
+  document.getElementById('comp-title').textContent = c.name;
+  document.getElementById('comp-sub').textContent =
+    `${typeLbl}${c.category ? ' · ' + c.category : ''}${c.status==='finished' ? ' · Tamamlandı' : ''}`;
+
+  let html = '';
+  // Klasman
+  html += `<div class="section-title">🏅 Genel Klasman</div>`;
+  html += `<div id="standings-host">${renderStandings(STATE.standings)}</div>`;
+
+  // Braketler
+  html += `<div class="section-title">🎯 Braketler & Maçlar</div>`;
+  if(STATE.viewables.length === 0){
+    html += `<p style="color:var(--text-dim)">Henüz başlatılmış bir braket/round yok. Maçlar başlayınca burada görünür.</p>`;
+  } else {
+    html += `<div class="bracket-list">`;
+    for(const v of STATE.viewables){
+      const stLbl = v.status==='running' ? '▶ Canlı' : v.status==='finished' ? '✓ Bitti' : 'Hazır';
+      html += `<button class="bracket-pill ${v.tid===STATE.activeTid?'active':''}" onclick="selectBracket(${v.tid})">
+        ${esc(v.label)} <span class="st">${stLbl}</span></button>`;
+    }
+    html += `</div>`;
+    html += `<div id="bracket-host"><p style="color:var(--text-dim)">Yükleniyor…</p></div>`;
+  }
+  document.getElementById('page-content').innerHTML = html;
+
+  if(STATE.activeTid) loadBracket(STATE.activeTid);
+}
+
+function renderStandings(rows){
+  if(!rows || !rows.length) return '<p style="color:var(--text-dim)">Henüz klasman verisi yok.</p>';
+  // Sıralama: puan DESC → maç G DESC → leg farkı DESC → isim
+  const sorted = [...rows].sort((a,b)=>
+    (b.total_points-a.total_points)
+    || (b.matches_won-a.matches_won)
+    || ((b.legs_won-b.legs_lost)-(a.legs_won-a.legs_lost))
+    || String(a.player_name||'').localeCompare(String(b.player_name||''),'tr')
+  );
+  let h = `<table class="standings-table"><thead><tr>
+    <th>#</th><th style="text-align:left">Oyuncu</th><th>Puan</th><th>Oturum</th>
+    <th>Podyum</th><th>Maç G-M</th><th>Leg G-M</th></tr></thead><tbody>`;
+  sorted.forEach((r,i)=>{
+    const pos = i+1;
+    const podium = `${r.first_place?('🥇'+r.first_place+' '):''}${r.second_place?('🥈'+r.second_place+' '):''}${r.third_place?('🥉'+r.third_place):''}`.trim() || '–';
+    h += `<tr class="r${pos<=3?pos:''}">
+      <td class="pos">${pos}</td>
+      <td class="name">${esc(r.player_name)}${r.player_nickname?` <span style="color:var(--text-dim);font-weight:400">(${esc(r.player_nickname)})</span>`:''}</td>
+      <td><strong>${(+r.total_points||0).toLocaleString('tr')}</strong></td>
+      <td>${r.sessions_played||0}</td>
+      <td>${podium}</td>
+      <td>${r.matches_won||0}-${r.matches_lost||0}</td>
+      <td>${r.legs_won||0}-${r.legs_lost||0}</td>
+    </tr>`;
+  });
+  h += `</tbody></table>`;
+  return h;
+}
+
+function selectBracket(tid){
+  STATE.activeTid = tid;
+  // pill aktifliklerini güncelle
+  document.querySelectorAll('.bracket-pill').forEach(b=>b.classList.remove('active'));
+  render(); // basit: yeniden çiz (seçim korunur)
+}
+window.selectBracket = selectBracket;
+
+async function loadBracket(tid){
+  const host = document.getElementById('bracket-host');
+  if(!host) return;
+  _btSeq = 0; // kararlı dilim id'leri — yenilemede seçim korunur
+  try {
+    const matches = await apiGet(`/api/public/competition/${encodeURIComponent(STATE.token)}/tournament/${tid}/matches`);
+    if(!Array.isArray(matches) || matches.length===0){
+      host.innerHTML = '<p style="color:var(--text-dim)">Bu turnuvada henüz maç yok.</p>';
+      return;
+    }
+    let html = `<div id="bracket-wrap">${renderBracketSimple(matches)}</div>`;
+    html += `<div class="section-title">Maç Listesi</div>${renderMatchList(matches)}`;
+    host.innerHTML = html;
+    fitBrackets();
+  } catch(e){
+    host.innerHTML = `<p style="color:#ef4444">Yüklenemedi.</p>`;
+  }
+}
+
+// ── Maç listesi ───────────────────────────────────────────────
+function renderMatchList(matches){
+  if(!matches.length) return '<p style="color:var(--text-dim)">Maç yok.</p>';
+  const sorted = [...matches].sort((a,b)=>{
+    const order = { live:0, ready:1, pending:2, finished:3 };
+    return (order[a.status]??4)-(order[b.status]??4) || (a.round||0)-(b.round||0);
+  });
+  return sorted.map(renderMatchCard).join('');
+}
+function renderMatchCard(m){
+  const p1 = esc(m.p1_name||'?'), p2 = esc(m.p2_name||'?');
+  const fin = m.status==='finished';
+  const p1Win = fin && m.winner_entry_id===m.entry1_id;
+  const p2Win = fin && m.winner_entry_id===m.entry2_id;
+  const score = (fin||m.status==='live')
+    ? `<div class="match-score" style="${m.status==='live'?'color:#4ade80':''}">${m.p1_legs||0} – ${m.p2_legs||0}</div>` : '';
+  const pill = `<span class="match-status-pill ${m.status==='live'?'live':m.status==='finished'?'finished':m.status==='ready'?'ready':'pending'}">${
+    m.status==='live'?'Canlı':m.status==='finished'?'Bitti':m.status==='ready'?'Hazır':'Bekliyor'}</span>`;
+  return `<div class="match-card">
+    <div class="match-players">
+      <div class="match-player ${p1Win?'winner':''}">${p1}</div>
+      <span class="match-vs">vs</span>
+      <div class="match-player ${p2Win?'winner':''}">${p2}</div>
+    </div>${score}${pill}</div>`;
+}
+
+// ── Braket render (session.html motorunun kopyası) ─────────────
+let _btSeq = 0; const _btSelected = {};
+function btBtnStyle(active){
+  return 'font-size:0.8rem;padding:0.3rem 0.7rem;border-radius:6px;cursor:pointer;border:1px solid var(--border);'
+    + (active?'background:var(--accent);color:#000;font-weight:700;':'background:var(--bg-2);color:var(--text-dim);font-weight:400;');
+}
+function renderBracketMatch(m){
+  const cls = m.status==='live'?'live':m.status==='finished'?'finished':'';
+  const w1 = m.winner_entry_id===m.entry1_id, w2 = m.winner_entry_id===m.entry2_id;
+  const showScore = m.status==='live'||m.status==='finished';
+  const setsActive = (m.p1_sets>0||m.p2_sets>0);
+  const s1 = setsActive?`${m.p1_sets}(${m.p1_legs||0})`:`${m.p1_legs||0}`;
+  const s2 = setsActive?`${m.p2_sets}(${m.p2_legs||0})`:`${m.p2_legs||0}`;
+  const lbl1 = m.entry1_id?esc(m.p1_name||'…'):'BYE';
+  const lbl2 = m.entry2_id?esc(m.p2_name||'…'):'BYE';
+  return `<div class="bracket-match ${cls}">
+    <div class="slot ${w1?'winner':''}"><span>${lbl1}</span><span class="score">${m.entry1_id&&showScore?s1:''}</span></div>
+    <div class="slot ${w2?'winner':''}"><span>${lbl2}</span><span class="score">${m.entry2_id&&showScore?s2:''}</span></div>
+  </div>`;
+}
+function renderElimBracketSVG(columns, matchFn){
+  if(!columns.length) return '';
+  columns = columns.filter(c=>c.matches&&c.matches.length);
+  if(!columns.length) return '';
+  const MW=180,MH=64,CS=225,LH=24,UH=72;
+  const firstCount = columns[0].matches.length;
+  const cy=(r,i)=>i*UH*Math.pow(2,r)+UH*Math.pow(2,r)/2;
+  const totalW=(columns.length-1)*CS+MW;
+  const totalH=firstCount*UH+LH+8;
+  let svgLines='';
+  for(let r=0;r<columns.length-1;r++){
+    const prevCount=columns[r].matches.length, nextCount=columns[r+1].matches.length;
+    const xR=r*CS+MW, xN=(r+1)*CS, xM=(xR+xN)/2;
+    for(let i=0;i<nextCount;i++){
+      const p1=i*2,p2=i*2+1, has1=p1<prevCount, has2=p2<prevCount;
+      if(!has1&&!has2) continue;
+      const c1=cy(r,p1),c2=cy(r,p2),cm=(c1+c2)/2;
+      if(has1) svgLines+=`<line x1="${xR}" y1="${c1}" x2="${xM}" y2="${c1}" stroke="var(--border)" stroke-width="1.5"/>`;
+      if(has2) svgLines+=`<line x1="${xR}" y1="${c2}" x2="${xM}" y2="${c2}" stroke="var(--border)" stroke-width="1.5"/>`;
+      if(has1&&has2) svgLines+=`<line x1="${xM}" y1="${c1}" x2="${xM}" y2="${c2}" stroke="var(--border)" stroke-width="1.5"/>`;
+      const yChild=(has1&&has2)?cm:(has1?c1:c2);
+      svgLines+=`<line x1="${xM}" y1="${yChild}" x2="${xN}" y2="${yChild}" stroke="var(--border)" stroke-width="1.5"/>`;
+    }
+  }
+  let html='';
+  columns.forEach((col,r)=>{
+    html+=`<div style="position:absolute;top:0;left:${r*CS}px;width:${MW}px;text-align:center;font-size:0.7rem;color:var(--text-dim);text-transform:uppercase;letter-spacing:0.07em;line-height:${LH}px;">${col.label}</div>`;
+    col.matches.forEach((m,i)=>{
+      const top=Math.round(cy(r,i)-MH/2+LH);
+      html+=`<div style="position:absolute;top:${top}px;left:${r*CS}px;width:${MW}px;">${matchFn(m)}</div>`;
+    });
+  });
+  return `<div class="bracket-fit" style="padding-bottom:0.5rem;overflow:hidden;">
+    <div class="bracket-fit-inner" style="position:relative;width:${totalW}px;height:${totalH}px;transform-origin:top left;">
+      <svg style="position:absolute;top:${LH}px;left:0;width:${totalW}px;height:${totalH-LH}px;pointer-events:none;overflow:visible;">${svgLines}</svg>
+      ${html}
+    </div></div>`;
+}
+function renderBracketWithTabs(columns, prefix){
+  const split = window.splitBracketColumns ? window.splitBracketColumns(columns, prefix||'') : [{label:'',cols:columns}];
+  if(split.length<=1) return renderElimBracketSVG(columns, renderBracketMatch);
+  const id='bt'+(++_btSeq);
+  let active=_btSelected[id]??0; if(active>=split.length) active=0; _btSelected[id]=active;
+  const bar=split.map((p,i)=>`<button class="bt-btn" data-bt="${id}" data-i="${i}" onclick="selectBracketTab('${id}',${i})" style="${btBtnStyle(i===active)}">${esc(p.label)}</button>`).join('');
+  const panes=split.map((p,i)=>`<div class="bt-pane" data-bt="${id}" data-i="${i}" ${i===active?'':'hidden'}>${renderElimBracketSVG(p.cols, renderBracketMatch)}</div>`).join('');
+  return `<div class="bracket-tabs" data-bt="${id}"><div style="display:flex;flex-wrap:wrap;gap:0.4rem;margin-bottom:0.6rem;">${bar}</div>${panes}</div>`;
+}
+window.selectBracketTab=function(id,idx){
+  _btSelected[id]=idx;
+  document.querySelectorAll('.bt-btn[data-bt="'+id+'"]').forEach(b=>{ b.style.cssText=btBtnStyle(+b.dataset.i===idx); });
+  document.querySelectorAll('.bt-pane[data-bt="'+id+'"]').forEach(p=>{ p.hidden=+p.dataset.i!==idx; });
+  fitBrackets();
+};
+function fitBrackets(){
+  document.querySelectorAll('#bracket-wrap .bracket-fit').forEach(wrap=>{
+    const inner=wrap.querySelector('.bracket-fit-inner'); if(!inner) return;
+    inner.style.transform='none'; wrap.style.height='';
+    const avail=wrap.clientWidth, contentW=inner.scrollWidth;
+    if(!avail||!contentW) return;
+    const scale=Math.min(1, avail/contentW);
+    inner.style.transform=`scale(${scale})`;
+    wrap.style.height=(inner.scrollHeight*scale)+'px';
+  });
+}
+window.addEventListener('resize',()=>{ clearTimeout(window.__fitTO); window.__fitTO=setTimeout(fitBrackets,150); });
+
+function renderBracketSimple(matches){
+  const rounds={};
+  for(const m of matches){ const key=`${m.bracket||'winners'}-${m.round||1}`; (rounds[key]=rounds[key]||[]).push(m); }
+  const order={winners:0,losers:1,final:2};
+  const sortKeys=(keys)=>keys.sort((a,b)=>{ const[ba,ra]=a.split('-');const[bb,rb]=b.split('-'); return ((order[ba]??99)-(order[bb]??99))||(+ra-+rb); });
+  const allKeys=sortKeys(Object.keys(rounds));
+  if(!allKeys.length) return '';
+  const firstBracket=(matches[0]&&matches[0].bracket)||'';
+  if(firstBracket==='rr'||firstBracket==='league'){
+    return `<div class="bracket"><div class="bracket-round"><h4>Round Robin</h4>${matches.map(renderBracketMatch).join('')}</div></div>`;
+  }
+  const isDouble=allKeys.some(k=>k.startsWith('losers-')||k.startsWith('final-'));
+  if(isDouble){
+    const wbKeys=allKeys.filter(k=>k.startsWith('winners-'));
+    const lbKeys=allKeys.filter(k=>k.startsWith('losers-'));
+    const fKeys=allKeys.filter(k=>k.startsWith('final-'));
+    const wbCols=wbKeys.map(k=>{ const cnt=rounds[k].length; const[,round]=k.split('-');
+      const label=cnt===1?'WB Final':cnt===2?'WB Yarı Final':`WB R${round}`; return {label,matches:rounds[k]}; });
+    const lbHtml=lbKeys.length?`<div class="bracket">${lbKeys.map(k=>{const[,round]=k.split('-');
+      return `<div class="bracket-round"><h4>LB R${round}</h4>${rounds[k].map(renderBracketMatch).join('')}</div>`;}).join('')}</div>`:'';
+    const fHtml=fKeys.length?`<div class="bracket">${fKeys.map(k=>`<div class="bracket-round"><h4>Büyük Final</h4>${rounds[k].map(renderBracketMatch).join('')}</div>`).join('')}</div>`:'';
+    const section=(lbl,body)=>body?`<div style="margin-bottom:0.6rem;"><div style="font-size:0.7rem;color:var(--text-dim);text-transform:uppercase;letter-spacing:0.06em;margin-bottom:0.3rem;padding:0.15rem 0.4rem;background:var(--bg-2);border-radius:4px;display:inline-block;">${lbl}</div>${body}</div>`:'';
+    return section('🏆 Üst Taraf',renderBracketWithTabs(wbCols,'Üst Taraf'))+section('🔁 Alt Taraf',lbHtml)+section('🎯 Büyük Final',fHtml);
+  }
+  const columns=allKeys.map(k=>{ const cnt=rounds[k].length; const[,round]=k.split('-');
+    const label=cnt===1?'Final':cnt===2?'Yarı Final':cnt===4?'Çeyrek Final':cnt===8?'Son 16':cnt===16?'Son 32':`R${round}`;
+    return {label,matches:rounds[k]}; });
+  return renderBracketWithTabs(columns,'');
+}
+
+// ── Boot + otomatik yenileme ──────────────────────────────────
+(function(){
+  STATE.token = getToken();
+  if(!STATE.token){
+    document.getElementById('page-content').innerHTML = '<p style="color:#ef4444">URL\'de paylaşım kodu (t) eksik.</p>';
+    document.getElementById('comp-title').textContent = 'İzleyici';
+    return;
+  }
+  load();
+  // 15 sn'de bir canlı yenile (klasman + seçili braket)
+  setInterval(load, 15000);
+})();
+</script>
+</body>
+</html>

@@ -1390,6 +1390,95 @@ app.get('/api/competitions/:id', auth.requireAuth, (req, res) => {
   }
 });
 
+// --- Izleyici paylasim linki (gizli token) ---
+// Token uret/yenile — sahip organizator. Mevcut token varsa onu dondurur (idempotent).
+app.post('/api/competitions/:id/share', auth.requireOrganizer, (req, res) => {
+  try {
+    const userId = req.session.userId;
+    const c = db.competitionById(+req.params.id, userId);
+    if (!c) return res.status(404).json({ error: 'Bulunamadi' });
+    let token = c.public_token;
+    if (!token) {
+      token = require('crypto').randomBytes(9).toString('base64url'); // ~12 karakter, tahmin edilemez
+      db.setCompetitionPublicToken(c.id, userId, token);
+    }
+    res.json({ token });
+  } catch (e) {
+    console.error('POST /api/competitions/:id/share:', e);
+    res.status(500).json({ error: e.message });
+  }
+});
+
+// Paylasimi kapat — token'i sil. Eski link artik calismaz.
+app.delete('/api/competitions/:id/share', auth.requireOrganizer, (req, res) => {
+  try {
+    const userId = req.session.userId;
+    const c = db.competitionById(+req.params.id, userId);
+    if (!c) return res.status(404).json({ error: 'Bulunamadi' });
+    db.clearCompetitionPublicToken(c.id, userId);
+    res.json({ ok: true });
+  } catch (e) {
+    console.error('DELETE /api/competitions/:id/share:', e);
+    res.status(500).json({ error: e.message });
+  }
+});
+
+// --- PUBLIC (auth'suz) izleyici endpoint'leri ---
+// Token ile competition klasman + oturum/round listesi. Login GEREKMEZ.
+app.get('/api/public/competition/:token', (req, res) => {
+  try {
+    const c = db.competitionByPublicToken(req.params.token);
+    if (!c) return res.status(404).json({ error: 'Paylasim bulunamadi' });
+    if (c.status === 'draft') return res.status(404).json({ error: 'Henuz baslamadi' });
+    const sessions = db.sessionsForCompetition(c.id).map(s => {
+      let tournament_status = null;
+      if (s.tournament_id) {
+        const t = db.tournamentById(s.tournament_id);
+        if (t) tournament_status = t.status;
+      }
+      return { ...s, tournament_status };
+    });
+    const schedule = c.type === 'league' ? db.leagueSchedule(c.id) : [];
+    res.json({
+      competition: {
+        id: c.id, name: c.name, type: c.type, category: c.category,
+        status: c.status, game_mode: c.game_mode,
+        points_json: c.points_json ? safeParse(c.points_json) : null,
+      },
+      standings: db.competitionPlayers(c.id),
+      sessions,
+      schedule,
+    });
+  } catch (e) {
+    console.error('GET /api/public/competition/:token:', e);
+    res.status(500).json({ error: e.message });
+  }
+});
+
+// Token + tournament_id ile o turnuvanin (oturum/round) maclari — braket icin.
+// tid'in bu competition'a ait oldugu dogrulanir (baska turnuvalar sizmaz).
+app.get('/api/public/competition/:token/tournament/:tid/matches', (req, res) => {
+  try {
+    const c = db.competitionByPublicToken(req.params.token);
+    if (!c) return res.status(404).json({ error: 'Paylasim bulunamadi' });
+    if (c.status === 'draft') return res.status(404).json({ error: 'Henuz baslamadi' });
+    const tid = +req.params.tid;
+    // Izin verilen turnuva id'leri: oturumlardan + lig planindan
+    const allowed = new Set();
+    for (const s of db.sessionsForCompetition(c.id)) {
+      if (s.tournament_id) allowed.add(s.tournament_id);
+    }
+    for (const r of db.leagueSchedule(c.id)) {
+      if (r.tournament_id) allowed.add(r.tournament_id);
+    }
+    if (!allowed.has(tid)) return res.status(403).json({ error: 'Bu turnuva paylasimda degil' });
+    res.json(enrichTournamentMatches(tid));
+  } catch (e) {
+    console.error('GET /api/public/competition/:token/tournament/:tid/matches:', e);
+    res.status(500).json({ error: e.message });
+  }
+});
+
 // Olustur
 app.post('/api/competitions', auth.requireOrganizer, (req, res) => {
   try {
@@ -2201,19 +2290,7 @@ app.get('/api/matches/for-tournament/:tid', auth.requireAuth, (req, res) => {
     const tid = +req.params.tid;
     const t = db.tournamentById(tid);
     if (!t || t.user_id !== req.session.userId) return res.status(403).json({ error: 'Erişim yok' });
-    const matches = db.matchesForTournament(tid);
-    const entries = db.entriesForTournament(tid);
-    const entryMap = {};
-    for (const e of entries) {
-      const p1 = e.player1_id ? db.playerById(e.player1_id) : null;
-      entryMap[e.id] = { player_id: e.player1_id, name: p1 ? p1.name : `#${e.player1_id}` };
-    }
-    const enriched = matches.map(m => ({
-      ...m,
-      p1_name: m.entry1_id ? (entryMap[m.entry1_id]?.name || '?') : null,
-      p2_name: m.entry2_id ? (entryMap[m.entry2_id]?.name || '?') : null,
-    }));
-    res.json(enriched);
+    res.json(enrichTournamentMatches(tid));
   } catch (e) {
     console.error('GET /api/matches/for-tournament:', e);
     res.status(500).json({ error: e.message });
@@ -2483,6 +2560,23 @@ function safeParse(s) {
   if (!s) return null;
   if (typeof s !== 'string') return s;
   try { return JSON.parse(s); } catch { return null; }
+}
+
+// Turnuva maclarini oyuncu isimleriyle zenginlestir (braket render icin) — session.html
+// ve public izleyici sayfasi ayni veriyi kullanir.
+function enrichTournamentMatches(tid) {
+  const matches = db.matchesForTournament(tid);
+  const entries = db.entriesForTournament(tid);
+  const entryMap = {};
+  for (const e of entries) {
+    const p1 = e.player1_id ? db.playerById(e.player1_id) : null;
+    entryMap[e.id] = { player_id: e.player1_id, name: p1 ? p1.name : `#${e.player1_id}` };
+  }
+  return matches.map(m => ({
+    ...m,
+    p1_name: m.entry1_id ? (entryMap[m.entry1_id]?.name || '?') : null,
+    p2_name: m.entry2_id ? (entryMap[m.entry2_id]?.name || '?') : null,
+  }));
 }
 
 // Pozisyon → ulasilan tur (stage) anahtari.
