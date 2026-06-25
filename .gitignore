@@ -6,6 +6,14 @@ data.db
 data.db-shm
 data.db-wal
 
+# Yerel veritabanı yedekleri (test sırasında alınan kopyalar — repoya girmesin)
+*.yedek
+data.db.bak
+data.db.backup
+
+# FUSE mount geçici/çöp dosyaları (Cowork klasör bağlama artığı)
+.fuse_hidden*
+
 # Ortam değişkenleri
 .env
 .env.local

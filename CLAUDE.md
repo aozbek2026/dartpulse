@@ -1146,6 +1146,29 @@ Not: Deploy repo'su `aozbek2026/dartpulse` (branch `main`); env değişkenleri d
 - Premium altyapısı: Stripe Checkout, $3-5/yıl, ek özellikler (turnuva arşivi, custom branding, daha fazla oyuncu sınırı)
 - Kullanıcı modelinde `tier: 'free' | 'premium'` kolonu — şimdiden ekleyebiliriz
 
+## Git / Deploy — kilit (.lock) sorununu önleme (KALICI KURAL, Haz 2026)
+
+**Belirti:** Her deploy denemesinde `fatal: Unable to create '.git/index.lock' (veya HEAD.lock): File exists` → commit oluşmaz, `git push` "Everything up-to-date" der.
+
+**Kök neden:** Bu proje klasörü Cowork'e **FUSE ile bağlı**. Cowork ajanı (sandbox) klasör
+üzerinde `git add/commit/reset/checkout` gibi **yazma** komutu çalıştırırsa, yarıda kalan işlem
+`.git/index.lock` / `.git/HEAD.lock` bırakır ve sandbox bunları **silemez** ("Operation not
+permitted" — FUSE izni). Sonra kullanıcının Mac'indeki git bu artıklara takılır. Stale lock'lar
+gün/tarih olarak eskidir (ör. hepsi aynı eski tarih).
+
+**KALICI KURALLAR:**
+1. **Ajan (Claude) bu repoda git YAZMA komutu ÇALIŞTIRMAZ.** Sadece dosyaları düzenler
+   (Read/Write/Edit). `git add/commit/reset/checkout/merge/rebase` → **yalnız kullanıcı, kendi
+   Mac'inde.** Ajan en fazla **salt-okuma** git komutu kullanabilir: `git --no-optional-locks status/diff/log`.
+   (Salt-okuma için bile `--no-optional-locks` ile çalış ki index.lock yaratma riski olmasın.)
+2. **Kilit hatası çıkarsa** kullanıcı Mac'te, proje kökünde: `find .git -name "*.lock" -print -delete`.
+   (Sadece `index.lock` silmek YETMEZ — `commit` ardından `HEAD.lock`'a takılır; ikisini de sil.)
+3. **`git add -A` KULLANMA.** FUSE klasöründe `.fuse_hidden*` çöp dosyaları + test sırasında
+   alınan `data.db.yedek` gibi dosyalar staged olur. Dosyaları **tek tek** ekle. (Bunlar artık
+   `.gitignore`'da, ama yine de açık liste güvenli.)
+4. Tipik temiz deploy dizisi (kullanıcı, Mac):
+   `find .git -name "*.lock" -delete` → `git add <değişen dosyalar>` → `git commit -m "..."` → `git push`.
+
 ## Yerel geliştirme notları
 
 - **`resend` paketi opsiyoneldir.** `src/mailer.js` içinde `require('resend')` try/catch ile sarmalanmış — paket yoksa server sessizce email göndermeden kalkıyor. Email göndermek gerekirse: `npm install resend` + `RESEND_API_KEY` env var. Yerel LAN testlerinde gerek yok.
