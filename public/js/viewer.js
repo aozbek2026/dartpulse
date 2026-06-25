@@ -10,16 +10,25 @@ let watchLastThrows = {}; // Son atılan skor { fk: score }
 // ── Turnuva seçim filtresi ───────────────────────────────────────
 // null  → tüm turnuvalar görünür (varsayılan)
 // <id>  → sadece o turnuva görünür
+// Token tabanlı paylaşım: ?t=<token> (sayısal değil) → public uçtan turnuva id'sine
+// çözülür. Çözülen turnuva nesnesi (bitmiş turnuvalar socket'te olmadığı için) state'e
+// kalıcı enjekte edilir.
+let shareToken = null;        // URL'deki token string'i (varsa)
+let tokenTournament = null;   // public uçtan gelen turnuva nesnesi (state'e merge'lenir)
+
 let selectedTourId = readInitialTourSelection();
 
 function readInitialTourSelection() {
-  // 1) URL ?t=ID önceliklidir (paylaşılabilir link)
+  // 1) URL ?t= önceliklidir (paylaşılabilir link). Sayısal → id, değilse → token.
   try {
     const sp = new URLSearchParams(window.location.search);
     const v = sp.get('t');
     if (v != null && v !== '') {
       const n = +v;
-      if (!isNaN(n)) return n;
+      if (!isNaN(n) && /^\d+$/.test(v.trim())) return n;
+      // Sayısal değil → gizli paylaşım token'i; id sonradan async çözülür
+      shareToken = v.trim();
+      return null;
     }
   } catch {}
   // 2) Sonra localStorage
@@ -34,6 +43,8 @@ function readInitialTourSelection() {
 }
 
 function persistTourSelection() {
+  // Token linkiyle gelindiyse URL'deki token'i koru (id ile ezme) — paylaşım linki bozulmasın
+  if (shareToken) return;
   // URL ve localStorage'ı senkron tut
   try {
     const url = new URL(window.location.href);
@@ -59,7 +70,9 @@ window.onTourChange = onTourChange;
 // doğrudan linki (?t=ID), değilse genel izleyici sayfası kopyalanır.
 function shareViewerLink() {
   const base = window.location.origin + window.location.pathname;
-  const url = selectedTourId == null ? base : `${base}?t=${selectedTourId}`;
+  let url;
+  if (shareToken) url = `${base}?t=${shareToken}`;
+  else url = selectedTourId == null ? base : `${base}?t=${selectedTourId}`;
   const btn = document.getElementById('share-btn');
   const done = (ok) => {
     if (!btn) return;
@@ -153,8 +166,35 @@ function parseCfg(json) {
 
 socket.on('state', (s) => {
   state = s;
+  mergeTokenTournament();
   render();
 });
+
+// Token'la çözülen turnuvayı state'e ekle (socket'te yoksa — örn. bitmiş turnuva).
+// Socket'te varsa (canlı/running) socket'in güncel hali kalır.
+function mergeTokenTournament() {
+  if (!tokenTournament) return;
+  state.tournaments = state.tournaments || [];
+  if (!state.tournaments.some(t => t.id === tokenTournament.id)) {
+    state.tournaments.push(tokenTournament);
+  }
+}
+
+// Sayfa açılışında token varsa public uçtan turnuvayı çöz.
+function resolveShareToken() {
+  if (!shareToken) return Promise.resolve();
+  return fetch('/api/public/tournament/' + encodeURIComponent(shareToken))
+    .then(r => r.ok ? r.json() : null)
+    .then(data => {
+      if (!data || data.id == null) return;
+      tokenTournament = data.tournament;
+      selectedTourId = data.id;
+      mergeTokenTournament();
+      render();
+    })
+    .catch(() => {});
+}
+resolveShareToken();
 
 // Aynalanan maç güncellenince modalı yenile
 socket.on('match:update', (data) => {

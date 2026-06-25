@@ -95,6 +95,16 @@ function init() {
       FOREIGN KEY(tournament_id) REFERENCES tournaments(id) ON DELETE CASCADE
     );
 
+    -- İzleyici paylaşım token'i (gizli link) — 'tournaments' şemasına dokunmadan
+    -- ayrı tabloda saklanır (1:1, opsiyonel). Kayıt yoksa paylaşım kapalı demektir.
+    -- Lig/sezondaki competitions.public_token ile aynı mantık.
+    CREATE TABLE IF NOT EXISTS tournament_share (
+      tournament_id INTEGER PRIMARY KEY,
+      public_token TEXT,
+      created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+      FOREIGN KEY(tournament_id) REFERENCES tournaments(id) ON DELETE CASCADE
+    );
+
     -- Online kayıt / yedek liste (Turnuva Kayıt Sistemi — Dilim E)
     -- status: registered | waitlisted | checked_in | confirmed | withdrawn | no_show
     -- player_id: Confirm (Dilim F) anında players tablosuna bağlanır, başta NULL.
@@ -1759,6 +1769,42 @@ function competitionByPublicToken(token) {
   return db.prepare('SELECT * FROM competitions WHERE public_token = ?').get(token);
 }
 
+// --- Turnuva izleyici paylasim token'i (gizli link) — ayri tablo (tournament_share) ---
+// Mevcut token'i dondurur; yoksa verilen token'i yazar. Sadece sahibi degistirir.
+function tournamentShareToken(tournamentId, userId) {
+  // Sahiplik kontrolu (userId verilirse): turnuva bu kullaniciya ait mi?
+  if (userId != null) {
+    const t = db.prepare('SELECT user_id FROM tournaments WHERE id = ?').get(tournamentId);
+    if (!t || (t.user_id != null && t.user_id !== userId)) return null;
+  }
+  const row = db.prepare('SELECT public_token FROM tournament_share WHERE tournament_id = ?').get(tournamentId);
+  return row ? row.public_token : null;
+}
+function setTournamentPublicToken(tournamentId, userId, token) {
+  const t = db.prepare('SELECT user_id FROM tournaments WHERE id = ?').get(tournamentId);
+  if (!t || (t.user_id != null && t.user_id !== userId)) return false;
+  const exists = !!db.prepare('SELECT 1 FROM tournament_share WHERE tournament_id = ?').get(tournamentId);
+  if (exists) {
+    db.prepare('UPDATE tournament_share SET public_token = ? WHERE tournament_id = ?').run(token, tournamentId);
+  } else {
+    db.prepare('INSERT INTO tournament_share (tournament_id, public_token) VALUES (?, ?)').run(tournamentId, token);
+  }
+  return true;
+}
+function clearTournamentPublicToken(tournamentId, userId) {
+  const t = db.prepare('SELECT user_id FROM tournaments WHERE id = ?').get(tournamentId);
+  if (!t || (t.user_id != null && t.user_id !== userId)) return false;
+  db.prepare('UPDATE tournament_share SET public_token = NULL WHERE tournament_id = ?').run(tournamentId);
+  return true;
+}
+// Token ile turnuva bul (auth'suz public erisim). userId scope'u YOK — token yetki.
+function tournamentByPublicToken(token) {
+  if (!token) return null;
+  const row = db.prepare('SELECT tournament_id FROM tournament_share WHERE public_token = ?').get(token);
+  if (!row) return null;
+  return db.prepare('SELECT * FROM tournaments WHERE id = ?').get(row.tournament_id);
+}
+
 function updateCompetition(id, userId, fields) {
   const allowed = ['name', 'category', 'planned_sessions', 'meet_count',
                    'game_mode', 'team_mode', 'legs_to_win', 'sets_to_win',
@@ -2472,6 +2518,7 @@ module.exports = {
   // Lig & Sezon
   createCompetition, allCompetitions, competitionById, updateCompetition, deleteCompetition,
   setCompetitionPublicToken, clearCompetitionPublicToken, competitionByPublicToken,
+  tournamentShareToken, setTournamentPublicToken, clearTournamentPublicToken, tournamentByPublicToken,
   addCompetitionPlayer, competitionPlayers, removeCompetitionPlayer,
   createSession, sessionsForCompetition, sessionById, updateSession, deleteSession,
   sessionRegistrations, sessionRegistrationByUser, countSessionRegistrations,

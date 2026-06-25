@@ -1502,6 +1502,7 @@ function renderTournament(t) {
           ${t.status === 'draft' ? `<button class="primary" onclick="startTournament(${t.id})">Başlat</button>` : ''}
           ${t.status !== 'draft' ? `<button class="secondary" onclick="toggleReport(${t.id})">📊 Rapor</button>` : ''}
           ${t.status !== 'draft' ? `<button class="secondary" title="Braketi A4 (yatay) PDF olarak yazdır" onclick="printTournamentBracket(${t.id})">🖨️ Braket PDF</button>` : ''}
+          ${t.status !== 'draft' ? `<button class="secondary" title="Üyelik gerektirmeyen izleyici linki — braket ve klasman paylaşılır" onclick="openTournamentShareModal(${t.id})">🔗 İzleyici Linki</button>` : ''}
           ${canFinishTournament(t) ? `<button class="btn" style="background: #22c55e; color: #000; font-weight: 700;" onclick="showTournamentStats(${t.id})">🏆 Turnuvayı Bitir</button>` : ''}
           ${t.status === 'finished' && !t.hidden_from_public ? `<button class="secondary" title="İzleyici listesinden kaldır" onclick="hideFromPublic(${t.id}, this)">👁 Listeden Kaldır</button>` : ''}
           <button class="secondary" title="Online kayıt, check-in ve etkinlik ayarları" onclick="showEventSettings(${t.id})">🎫 Etkinlik</button>
@@ -1554,6 +1555,67 @@ function printTournamentBracket(tid) {
     matches);
 }
 window.printTournamentBracket = printTournamentBracket;
+
+// ── İzleyici paylaşım linki (gizli token) — lig/sezondaki ile aynı mantık ──
+async function openTournamentShareModal(tid) {
+  const t = state.tournaments.find(x => x.id === tid);
+  if (!t) { toast('Turnuva bulunamadı'); return; }
+  const overlay = document.createElement('div');
+  overlay.className = 'share-modal-overlay';
+  overlay.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,0.6);display:flex;align-items:center;justify-content:center;z-index:9999;padding:1rem';
+  overlay.innerHTML = `
+    <div style="background:var(--surface);border:1px solid var(--border);border-radius:14px;max-width:520px;width:100%;padding:1.4rem 1.5rem">
+      <h3 style="margin:0 0 0.4rem">🔗 İzleyici Linki</h3>
+      <p style="color:var(--text-dim);font-size:0.88rem;margin:0 0 1rem;line-height:1.5">
+        Bu gizli link ile <strong>üyelik gerektirmeden</strong> braket ve klasman izlenebilir.
+        Sadece linki bilenler görür. İstediğin zaman kapatabilirsin — eski link çalışmaz.
+      </p>
+      <div id="tshare-body"><p style="color:var(--text-dim)">Yükleniyor…</p></div>
+      <div style="text-align:right;margin-top:1rem">
+        <button class="secondary" id="tshare-close" style="font-size:0.85rem;padding:0.4rem 0.9rem">Kapat</button>
+      </div>
+    </div>`;
+  document.body.appendChild(overlay);
+  const close = () => overlay.remove();
+  overlay.addEventListener('click', (e) => { if (e.target === overlay) close(); });
+  overlay.querySelector('#tshare-close').onclick = close;
+  await renderTournamentShareBody(tid, overlay);
+}
+window.openTournamentShareModal = openTournamentShareModal;
+
+async function renderTournamentShareBody(tid, overlay) {
+  const body = overlay.querySelector('#tshare-body');
+  const res = await api.post(`/api/tournaments/${tid}/share`, {});
+  if (res && res.error) { body.innerHTML = `<p style="color:#ef4444">Hata: ${escapeHtml(res.error)}</p>`; return; }
+  const link = `${window.location.origin}/viewer.html?t=${res.token}`;
+  body.innerHTML = `
+    <label style="font-size:0.78rem;color:var(--text-dim);text-transform:uppercase;letter-spacing:0.05em">Paylaşım Linki</label>
+    <div style="display:flex;gap:0.5rem;margin-top:0.35rem">
+      <input id="tshare-link-input" type="text" readonly value="${escapeHtml(link)}"
+        style="flex:1;min-width:0;padding:0.55rem 0.7rem;background:var(--bg);border:1px solid var(--border);border-radius:8px;color:var(--text);font-size:0.85rem" />
+      <button class="primary" id="tshare-copy" style="font-size:0.85rem;padding:0.5rem 0.9rem;white-space:nowrap">Kopyala</button>
+    </div>
+    <div style="display:flex;gap:0.6rem;margin-top:1rem;align-items:center;flex-wrap:wrap">
+      <a href="${escapeHtml(link)}" target="_blank" rel="noopener" style="color:var(--accent-2);font-size:0.85rem;text-decoration:none">↗ Önizle</a>
+      <button id="tshare-revoke" style="margin-left:auto;font-size:0.82rem;padding:0.4rem 0.8rem;background:rgba(239,68,68,0.12);border:1px solid rgba(239,68,68,0.35);color:#f87171;border-radius:7px;cursor:pointer">Paylaşımı Kapat</button>
+    </div>`;
+  const input = body.querySelector('#tshare-link-input');
+  body.querySelector('#tshare-copy').onclick = () => {
+    const done = (ok) => toast(ok ? 'Link kopyalandı ✓' : 'Kopyalanamadı');
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      navigator.clipboard.writeText(link).then(() => done(true)).catch(() => { input.select(); done(document.execCommand && document.execCommand('copy')); });
+    } else { input.select(); done(document.execCommand && document.execCommand('copy')); }
+  };
+  body.querySelector('#tshare-revoke').onclick = async () => {
+    if (!confirm('Paylaşımı kapat? Mevcut link artık çalışmaz.')) return;
+    const r = await api.del(`/api/tournaments/${tid}/share`);
+    if (r && r.error) { toast('Hata: ' + r.error); return; }
+    toast('Paylaşım kapatıldı');
+    body.innerHTML = `<p style="color:var(--text-dim);font-size:0.9rem">Paylaşım kapalı. Yeniden açmak için aşağıdaki butona bas.</p>
+      <button class="primary" id="tshare-reopen" style="font-size:0.85rem;padding:0.5rem 0.9rem;margin-top:0.5rem">🔗 Yeni Link Oluştur</button>`;
+    body.querySelector('#tshare-reopen').onclick = () => renderTournamentShareBody(tid, overlay);
+  };
+}
 
 function renderStage(t, stage, index) {
   const stageMatches = t.matches.filter(m => m.stage_id === stage.id);

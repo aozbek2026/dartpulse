@@ -1493,7 +1493,65 @@ app.delete('/api/competitions/:id/share', auth.requireOrganizer, (req, res) => {
   }
 });
 
+// --- Turnuva izleyici paylasim linki (gizli token) ---
+// Lig/sezondaki competition share ile ayni mantik. Token uret/yenile — sahip organizator.
+app.post('/api/tournaments/:id/share', auth.requireOrganizer, (req, res) => {
+  try {
+    const userId = req.session.userId;
+    const t = db.tournamentById(+req.params.id);
+    if (!t) return res.status(404).json({ error: 'Bulunamadi' });
+    if (t.user_id != null && t.user_id !== userId) return res.status(403).json({ error: 'Yetkiniz yok' });
+    let token = db.tournamentShareToken(t.id, userId);
+    if (!token) {
+      token = require('crypto').randomBytes(9).toString('base64url'); // ~12 karakter
+      db.setTournamentPublicToken(t.id, userId, token);
+    }
+    res.json({ token });
+  } catch (e) {
+    console.error('POST /api/tournaments/:id/share:', e);
+    res.status(500).json({ error: e.message });
+  }
+});
+
+// Paylasimi kapat — token'i sil. Eski link artik calismaz.
+app.delete('/api/tournaments/:id/share', auth.requireOrganizer, (req, res) => {
+  try {
+    const userId = req.session.userId;
+    const t = db.tournamentById(+req.params.id);
+    if (!t) return res.status(404).json({ error: 'Bulunamadi' });
+    if (t.user_id != null && t.user_id !== userId) return res.status(403).json({ error: 'Yetkiniz yok' });
+    db.clearTournamentPublicToken(t.id, userId);
+    res.json({ ok: true });
+  } catch (e) {
+    console.error('DELETE /api/tournaments/:id/share:', e);
+    res.status(500).json({ error: e.message });
+  }
+});
+
 // --- PUBLIC (auth'suz) izleyici endpoint'leri ---
+// Token ile turnuva verisi (braket + maclar + klasman). Login GEREKMEZ.
+// Bitmis turnuva da bu uctan gorunur (socket'te yalniz running oldugu icin).
+app.get('/api/public/tournament/:token', (req, res) => {
+  try {
+    const t = db.tournamentByPublicToken(req.params.token);
+    if (!t) return res.status(404).json({ error: 'Paylasim bulunamadi' });
+    if (t.status === 'draft') return res.status(404).json({ error: 'Henuz baslamadi' });
+    res.json({
+      id: t.id,
+      tournament: {
+        ...t,
+        stages: db.stagesForTournament(t.id),
+        matches: db.matchesForTournament(t.id),
+        entries: db.entriesForTournament(t.id),
+        report: cachedReport(t.id),
+      },
+    });
+  } catch (e) {
+    console.error('GET /api/public/tournament/:token:', e);
+    res.status(500).json({ error: e.message });
+  }
+});
+
 // Token ile competition klasman + oturum/round listesi. Login GEREKMEZ.
 app.get('/api/public/competition/:token', (req, res) => {
   try {
