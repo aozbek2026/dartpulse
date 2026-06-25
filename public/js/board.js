@@ -230,8 +230,80 @@ function renderIdle() {
       <div style="font-size: clamp(2.5rem, 9vmin, 6rem); font-weight: 900; line-height: 1.1; color: var(--accent);">${currentBoard.name}</div>
       <div style="font-size: clamp(1.2rem, 4vmin, 2.2rem); font-weight: 700; margin-top: 0.25rem;">Maç bekleniyor</div>
       <p style="color: var(--text-dim); font-size: clamp(0.85rem, 2.5vmin, 1.1rem); margin-top: 0.25rem;">Organizatör sıradaki maçı atadığında otomatik başlayacak.</p>
+      <button class="btn secondary" style="font-size: clamp(0.9rem, 2.6vmin, 1.2rem); padding: 0.7rem 1.4rem; margin-top: 0.5rem;"
+        onclick="openMatchSwap()">
+        🔄 Başka maç seç
+      </button>
     </div>
   `;
+}
+
+// ---- Başka maç seç (takas) ----
+// Geç kalan oyuncu vb. durumlarda, bu tablette duran/bekleyen maç yerine
+// aynı turnuvanın başka bir hazır maçını seçip oynatmayı sağlar.
+async function openMatchSwap() {
+  if (!currentBoard) return;
+  let matches = [];
+  try {
+    const r = await fetch('/api/boards/' + currentBoard.id + '/available-matches');
+    const data = await r.json();
+    if (!r.ok) throw new Error(data.error || 'Liste alınamadı');
+    matches = data.matches || [];
+  } catch (e) {
+    toast('Maç listesi alınamadı: ' + e.message);
+    return;
+  }
+
+  const overlay = document.createElement('div');
+  overlay.className = 'swap-modal';
+  overlay.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,0.72);z-index:9999;display:flex;align-items:center;justify-content:center;padding:1rem;';
+
+  const rows = matches.length ? matches.map(m => `
+    <button class="card swap-row" data-mid="${m.id}"
+      style="width:100%;text-align:left;padding:1rem 1.1rem;margin-bottom:0.6rem;background:var(--surface-2);border:1px solid var(--surface-3,#2a2f3a);cursor:pointer;display:flex;justify-content:space-between;align-items:center;gap:1rem;">
+      <span style="font-size:1.15rem;font-weight:700;">${entryLabel(m.entry1)} <span style="color:var(--text-dim);font-weight:500;">vs</span> ${entryLabel(m.entry2)}</span>
+      <span style="font-size:0.85rem;color:var(--text-dim);white-space:nowrap;">Round ${m.round}</span>
+    </button>
+  `).join('') : `<div style="text-align:center;color:var(--text-dim);padding:1.5rem 0;">Şu an oynatılabilecek başka hazır maç yok.</div>`;
+
+  overlay.innerHTML = `
+    <div class="card" style="max-width:560px;width:100%;max-height:85vh;overflow-y:auto;background:var(--surface,#11151c);padding:1.25rem;">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:1rem;">
+        <h3 style="margin:0;font-size:1.3rem;">🔄 Başka maç seç</h3>
+        <button class="btn secondary swap-close" style="padding:0.4rem 0.9rem;">Kapat</button>
+      </div>
+      <p style="color:var(--text-dim);font-size:0.85rem;margin:0 0 1rem;">
+        Seçtiğin maç bu tablete gelir. Şu an bekleyen maç havuza geri döner.
+      </p>
+      ${rows}
+    </div>
+  `;
+  document.body.appendChild(overlay);
+
+  const close = () => overlay.remove();
+  overlay.querySelector('.swap-close').onclick = close;
+  overlay.onclick = (e) => { if (e.target === overlay) close(); };
+  overlay.querySelectorAll('.swap-row').forEach(btn => {
+    btn.onclick = async () => {
+      const mid = +btn.getAttribute('data-mid');
+      btn.disabled = true;
+      try {
+        const r = await fetch('/api/boards/' + currentBoard.id + '/swap-match', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ match_id: mid }),
+        });
+        const data = await r.json();
+        if (!r.ok) throw new Error(data.error || 'Takas başarısız');
+        close();
+        // board:state socket olayı ekranı zaten yenileyecek; garanti için fetch
+        refreshMatch(mid);
+      } catch (e) {
+        btn.disabled = false;
+        toast('Takas başarısız: ' + e.message);
+      }
+    };
+  });
 }
 
 // ---- Pre-match ekranı (status === 'ready') ----
@@ -384,7 +456,7 @@ function renderPreMatch() {
         `;
       })()}
 
-      <div style="display: flex; gap: 1rem; margin-top: 0.5rem;">
+      <div style="display: flex; gap: 1rem; margin-top: 0.5rem; flex-wrap: wrap; justify-content: center;">
         <button class="btn secondary" style="font-size: 0.9rem; padding: 0.6rem 1.2rem; border-color: var(--danger, #ef4444); color: var(--danger, #ef4444);"
           onclick="declareWalkover(1, '${e2.replace(/'/g, "\\'")}')">
           ${e2} gelmedi
@@ -392,6 +464,10 @@ function renderPreMatch() {
         <button class="btn secondary" style="font-size: 0.9rem; padding: 0.6rem 1.2rem; border-color: var(--danger, #ef4444); color: var(--danger, #ef4444);"
           onclick="declareWalkover(2, '${e1.replace(/'/g, "\\'")}')">
           ${e1} gelmedi
+        </button>
+        <button class="btn secondary" style="font-size: 0.9rem; padding: 0.6rem 1.2rem;"
+          onclick="openMatchSwap()">
+          🔄 Başka maç seç
         </button>
       </div>
     </div>

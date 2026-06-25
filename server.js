@@ -895,6 +895,76 @@ app.post('/api/boards/:id/next', (req, res) => {
   }
 });
 
+// Bu board'a takas edilebilecek bekleyen (hazır) maçları listele.
+// Geç kalan oyuncu yüzünden atanmış maç başlamazsa, organizatör tablet
+// üzerinden aynı turnuvanın başka bir hazır maçını seçip oynatabilir.
+app.get('/api/boards/:id/available-matches', (req, res) => {
+  try {
+    const board = db.boardById(+req.params.id);
+    if (!board) return res.status(404).json({ error: 'Board bulunamadı' });
+    if (!board.tournament_id) return res.json({ matches: [] });
+    const userId = board.user_id || null;
+    // Bekleyen TÜM hazır maçlar listelenir. Meşgul oyuncu/hakem filtresi
+    // uygulanmaz — organizatör hakemi (yazıcı) ekrandan serbestçe
+    // değiştirebildiği için aday listeyi daraltmaya gerek yok.
+    const out = db.pendingReadyMatches(userId)
+      .filter(m => m.tournament_id === board.tournament_id)
+      .filter(m => m.id !== board.current_match_id)
+      .filter(m => !m.board_id)               // başka tablete atanmamış
+      .filter(m => m.entry1_id && m.entry2_id) // iki oyuncusu da belli
+      .map(m => {
+        const full = db.matchById(m.id);
+        return { id: m.id, round: m.round, match_index: m.match_index,
+          entry1: full.entry1, entry2: full.entry2 };
+      });
+    res.json({ matches: out });
+  } catch (e) {
+    res.status(400).json({ error: e.message });
+  }
+});
+
+// Bu board'da duran maçı seçilen başka bir hazır maçla takas et.
+// Eski maç havuza geri döner (board_id=NULL, status 'ready' kalır) ve
+// scheduler tarafından başka boş tablete dağıtılabilir.
+app.post('/api/boards/:id/swap-match', (req, res) => {
+  try {
+    const boardId = +req.params.id;
+    const board = db.boardById(boardId);
+    if (!board) return res.status(404).json({ error: 'Board bulunamadı' });
+    const targetId = +req.body.match_id;
+    const target = db.matchById(targetId);
+    if (!target) return res.status(404).json({ error: 'Maç bulunamadı' });
+    if (target.status !== 'ready') return res.status(400).json({ error: 'Maç başlatılabilir durumda değil' });
+    if (target.tournament_id !== board.tournament_id) return res.status(400).json({ error: 'Maç bu tabletin turnuvasına ait değil' });
+    if (target.board_id && target.board_id !== boardId) return res.status(400).json({ error: 'Maç başka bir tablete atanmış' });
+
+    // Mevcut maçı havuza geri ver (devam eden maç takas edilemez)
+    const curId = board.current_match_id;
+    if (curId && curId !== targetId) {
+      const cur = db.matchById(curId);
+      if (cur && cur.status === 'live') return res.status(400).json({ error: 'Devam eden maç takas edilemez' });
+      if (cur) db.updateMatch(curId, { board_id: null });
+    }
+    // Hedef maçı bu board'a ata
+    db.updateMatch(targetId, { board_id: boardId });
+    db.setBoardMatch(boardId, targetId);
+
+    // Boşalan maçı (varsa) başka boş tablete dağıt
+    try { scheduler.assignPendingMatches(io, board.user_id || null); } catch (e) { console.warn('[swap-match] scheduler:', e.message); }
+
+    const refreshed = db.boardById(boardId);
+    io.to(`board:${boardId}`).emit('board:state', {
+      board: refreshed,
+      match: refreshed.current_match_id ? db.matchById(refreshed.current_match_id) : null,
+    });
+    io.emit('match:assigned', { matchId: targetId, boardId });
+    scheduleBroadcast();
+    res.json({ ok: true });
+  } catch (e) {
+    res.status(400).json({ error: e.message });
+  }
+});
+
 // Maçın yazıcı-hakemini değiştir (organizer override)
 app.patch('/api/matches/:id/scorer', (req, res) => {
   try {
