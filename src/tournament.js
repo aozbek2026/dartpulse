@@ -312,12 +312,16 @@ function buildDoubleElim(common, entryIds) {
       const slot = (i % 2) + 1;
       db.updateMatch(mid, { next_loser_match_id: target, next_loser_slot: slot });
     });
-    // WB-r losers (r>=2) drop into LB-(2r-2) slot 2 typically
+    // WB-r losers (r>=2) drop into LB-(2r-2) slot 2.
+    // ÇAPRAZ DÜŞÜRME: WB kaybedenlerini LB turuna TERS sırayla yerleştir.
+    // Böylece üst turdan düşen oyuncu, kendisini eleyenle/aynı koldakilerle hemen
+    // tekrar eşleşmez (standart çift-eleme "loser seeding" davranışı).
     for (let r = 2; r <= wbRounds; r++) {
       const lbRound = 2 * (r - 1);
-      if (!L[lbRound]) continue;
+      const lbr = L[lbRound];
+      if (!lbr) continue;
       W[r].forEach((mid, i) => {
-        const target = L[lbRound][i];
+        const target = lbr[lbr.length - 1 - i];
         if (!target) return;
         db.updateMatch(mid, { next_loser_match_id: target, next_loser_slot: 2 });
       });
@@ -362,6 +366,53 @@ function buildDoubleElim(common, entryIds) {
     }
   });
   propagateFills(common.stage_id);
+  // Bye'lı kadrolarda (oyuncu sayısı 2'nin kuvveti değilse) WB-1 bye maçlarının
+  // kaybedeni olmadığı için ilgili LB kutuları boş kalır. Bu kutuları "şeffaf"
+  // yapıp tek gerçek oyuncuyu bir sonraki LB turuna geçir.
+  resolveLbByes(common.stage_id);
+}
+
+// Çift elemede bye nedeniyle oluşan eksik-besleyicili losers-braket kutularını çözer.
+// "Ölü kaynak": WB'de bye ile bitmiş (tek oyunculu, kaybedeni olmayan) maç.
+// Bir LB kutusunun bir slotu ölü/eksik besleyiciden geliyorsa:
+//   - diğer slot canlıysa → kutuyu kaldır, tek gerçek besleyiciyi LB'nin hedefine bağla (şeffaf geçiş)
+//   - her iki slot da ölü/eksikse → kutuyu kaldır (cascade bir sonraki turda çözülür)
+function resolveLbByes(stageId) {
+  for (let guard = 0; guard < 100; guard++) {
+    const all = db.matchesForStage(stageId);
+    // WB'de bye ile bitmiş maç (tek slot dolu) → kaybedeni yok → ölü kaynak.
+    const isDeadSource = (m) =>
+      m.bracket === 'winners' && m.status === 'finished' &&
+      ((!!m.entry1_id) !== (!!m.entry2_id));
+
+    let acted = false;
+    for (const lm of all) {
+      if (lm.bracket !== 'losers') continue;
+      // Bu LB kutusuna işaret eden besleyiciler (WB drop'u veya LB kazananı).
+      const feeders = [];
+      for (const s of all) {
+        if (s.next_loser_match_id === lm.id) feeders.push({ src: s, via: 'loser', slot: s.next_loser_slot });
+        if (s.next_winner_match_id === lm.id) feeders.push({ src: s, via: 'winner', slot: s.next_winner_slot });
+      }
+      const live = feeders.filter(f => !isDeadSource(f.src));
+      if (live.length === 2) continue; // her iki slot da gerçek oyuncu alacak — normal kutu
+      if (live.length === 1) {
+        // Şeffaf geçiş: tek gerçek besleyiciyi bu kutunun çıkış hedefine yönlendir.
+        const f = live[0];
+        const upd = f.via === 'loser'
+          ? { next_loser_match_id: lm.next_winner_match_id || null, next_loser_slot: lm.next_winner_slot || null }
+          : { next_winner_match_id: lm.next_winner_match_id || null, next_winner_slot: lm.next_winner_slot || null };
+        db.updateMatch(f.src.id, upd);
+        db.deleteMatch(lm.id);
+      } else {
+        // Hiç canlı besleyici yok → tamamen ölü kutu.
+        db.deleteMatch(lm.id);
+      }
+      acted = true;
+      break; // listeyi tazelemek için yeniden tara
+    }
+    if (!acted) break;
+  }
 }
 
 // Round robin -------------------------------------------------------

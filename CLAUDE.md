@@ -32,6 +32,17 @@ Aşağıdaki dosyalar canlı turnuvada kullanılıyor ve regresyon affetmiyor. K
 
 **Açık onay sayılır:** Kullanıcı mesajında bu dosyalardan birinin adını/yolunu yazıp "değiştir / düzelt / ekle / refactor et" derse onay alınmış sayılır, ayrıca sormaya gerek yok.
 
+## 🔁 TUTARLILIK KURALI — bir değişiklik = HER yerde aynı (kullanıcı talebi, Haz 2026)
+
+Kullanıcı net olarak şunu istedi: **"Bir bileşenin/davranışın nasıl olacağını söylediğimde, o bileşenin geçtiği BÜTÜN yerlerde aynı şekilde uygula."** Kullanıcı geliştirici değil ve kod tabanı artık büyük — her modülü tek tek kontrol edemez. Bu yüzden tutarlılığı sağlamak **ajanın sorumluluğu**.
+
+Kurallar:
+- **"Braket şöyle olsun" → istisnasız tüm braket görünümleri aynı olur.** ✅ **Braket layout motoru artık TEK dosya:** `public/js/bracket-shared.js` (`renderElimBracketSVG`, `renderLinkedBracketSVG`, `renderBracketWithTabs`, `fitBrackets`, `selectBracketTab`, `btBtnStyle`, `bracketResetTabs` — hepsi `window.*`). `viewer.js` ve `organizer.js` (bireysel turnuva sayfaları) bu motoru kullanır; sadece kendi `renderBracketMatch(m)` kutu-içeriğini sağlarlar (entry tabanlı). Braket **görünümünü/çizgisini/hizasını** değiştirmek istersen **yalnız `bracket-shared.js`'i düzenle** — bu iki sayfa otomatik güncellenir. İSTİSNALAR (kasıtlı, ayrı renderer): (a) `public/session.html` ve `public/sezon.html` (LİG/SEZON sayfaları) **kendi bağımsız braket kopyalarını** taşır — kullanıcı isteğiyle, **canlı/devam eden sezon sürerken lig/sezon koduna dokunulmuyor** (veri/akış riski olmasın diye). Bu iki sayfa **orijinal/HEAD haliyle aynen duruyor** (loser-braket SVG düzeltmesi bile uygulanmadı — canlı sezona dokunmamak için), `bracket-shared.js`'e BAĞLI DEĞİL. Sezon bittikten sonra bunlar da ortak motora bağlanabilir + loser düzeltmesi uygulanabilir. (b) `public/js/tv.js` kendi CSS-kolon kiosk renderer'ı (farklı paradigma). (c) `pdf-print.js` kendi bağımsız SVG'si. Yani braket görseli değişiminde sıra: **bracket-shared.js → (lig/sezon sürmüyorsa) session.html + sezon.html → (gerekirse) tv.js → (gerekirse) pdf-print.js**. Kutu-içeriği (isim/skor/renk) değişiminde ilgili sayfaların `renderBracketMatch`'ini gözden geçir.
+- **Genelleme — sadece braket değil.** Aynı mantık tüm tekrarlı bileşenler için geçerli: skor ekranı (`board.js` ↔ `scorer.html`, bkz. Konvansiyon #0 cricket duplikasyonu), klasman tabloları, modallar, flash'lar, leg/set override panelleri, vb. Bir davranış/görünüm birden fazla dosyada yaşıyorsa, değişiklik hepsine uygulanır.
+- **Bu, "söylenmeyen modülü değiştir" demek DEĞİL.** Kullanıcı bir şeyi açıkça istemediyse veya aklına gelmediyse, o ayrı/ilgisiz modülü kendiliğinden değiştirme. Kural yalnızca: *istenen değişikliğin kapsadığı* tüm kopyalar/varyantlar tutarlı olsun. Yani "kapsam içindeki her yere uygula", "her yere dokun" değil.
+- **Pratik yöntem:** Bir bileşeni değiştirmeden önce kod tabanında o bileşenin/fonksiyonun diğer kopyalarını ara (grep). Bittiğinde kısa bir "şu dosyalarda aynı değişikliği yaptım" özeti ver ki kullanıcı tek tek kontrol etmek zorunda kalmasın.
+- Yeni bir tekrarlı bileşen eklerken bunu bu dosyada **not düş** (hangi dosyalarda duplike olduğunu yaz) ki gelecekteki ajanlar bilsin. İleride paylaşımlı modül (`bracket-shared.js`, `cricket-shared.js`) refactor'ı bu duplikasyonları azaltacak.
+
 ## Proje özeti
 
 Dart Core Pro, Türkçe bir dart turnuvası yönetim sistemidir. Tek elemeli, çift elemeli ve round-robin formatlarını destekler; tablet üzerinden skor girişi yapılır, TV ekranında bracket gösterilir, organizatör tarayıcıdan kontrol eder.
@@ -585,6 +596,7 @@ Görev numaralarıyla birlikte (TaskList sisteminde): #1-#46. Önemli olanlar:
 - **Production deploy (26 Mayıs 2026)**: Lig & Sezon sistemi (Dilim 1-5b) + board PWA + Excel raporu altyapısı `dartcorepro.com` üzerinde canlıya alındı. Render Starter ($7/ay) + 1GB kalıcı disk (`/data/data.db`) + auto-deploy from `main`. Faz 1 (Render deploy) tamamlandı; sıradaki yol haritası Faz 2 hardening.
 - **Tanıtım videosu / "DartCorePro Nedir?" (Haziran 2026)**: Anasayfaya gömülü, otomatik oynayan animasyonlu tanıtım — ayrı bölüme bak.
 - **Klasman/Braket PDF + 32'lik braket dilimleri (Haziran 2026)**: `pdf-print.js` ortak motoru; tarayıcı "PDF kaydet" ile dikey A4 klasman + yatay A4 braket (32'lik bölme), viewer ekranında 32'lik sekmeler, TV'de rotasyonla dilim geçişi; viewer maç listesi sıralaması (canlı → board'a atanmış → bitmiş → sırası gelecek) — ayrı bölüme bak.
+- **Braket motoru tekilleştirme + çift eleme loser düzeltmeleri (Haziran 2026)**: bye'lı kadrolarda loser braket ilerleme bug'ı (`resolveLbByes`), WB üst-tur kaybedeni çapraz düşürme, loser/GF görünümü winners ile aynı SVG'ye geçti, ve tüm braket layout motoru tek dosyaya toplandı (`public/js/bracket-shared.js`) — ayrı bölüme bak.
 
 ## Tanıtım videosu — "DartCorePro Nedir?" (Haziran 2026)
 
@@ -607,6 +619,39 @@ Anasayfaya (`public/index.html`) gömülü, kendi başına çalışan animasyonl
 
 ### Yan deliverable'lar (repoya dahil DEĞİL, `promo/` klasöründe)
 `dartcorepro-senaryo-storyboard.docx` (sahne planı + seslendirme metni), `dartcorepro-sosyal-medya.md` (Instagram/TikTok/YouTube metinleri). `public/tanitim.html` bunların güncel sürümüyle eşit.
+
+## Mobil (telefon) — izleyici klasman tablosu yatay taşması (Haziran 2026)
+
+Telefondan siteye girenler izleyici sayfasında **yatay kayma + bölümlerin üst üste binmiş
+görünmesi** bildirdi. Tarayıcıda 390px genişlikte iframe ile reprodüksiyon yapıldı (window
+resize uzak Chrome'da viewport'u küçültmüyor; media query'ler iframe genişliğine göre
+tetiklendiği için **390px iframe** güvenilir mobil test yöntemi oldu).
+
+**Kök neden:** `viewer.html` Genel Klasman bölümündeki `.standings-table` 12 sütunlu
+(O/G/M/LEG/±/3-OK ORT/100+/140+/180/En Yük. Çıkış…). Tablo telefon ekranından geniş olduğu
+için **tüm sayfayı** yatay kaydırıyordu (384px ekranda içerik ~733px → 349px taşma). Yatay
+kayınca diğer bölümler kaymış/üst üste binmiş görünüyordu — iki belirti de tek kaynaktan.
+
+**Çözüm (additive, tek dosya):** `public/viewer.html` `<style>` içine, tabloları **sayfa
+yerine kendi kutusunda** kaydıran kural eklendi:
+```css
+#standings-host, #matches-host, #recent-host, #past-host {
+  overflow-x: auto; -webkit-overflow-scrolling: touch;
+}
+```
+Bu, `competition.html`'in klasman tablosunda zaten kullandığı pattern'in aynısı
+(`<div class="card" style="overflow-x:auto">`). İframe testinde sayfa taşması 349px → 0
+(`-15` scrollbar) düştü; tablo artık parmakla kendi içinde yatay kayıyor.
+
+**Taranan ama temiz çıkan sayfalar:** anasayfa (`index.html`), `turnuvalar.html`,
+`profil.html`, `login.html`, `organizer.html`, `competition.html` — 390px'te yatay taşma
+yok. Sorun yalnızca izleyiciydi.
+
+**Bilinmesi gereken:** Geniş veri tablosu eklerken (klasman, maç dökümü vb.) tabloyu daima
+`overflow-x:auto` bir kapsayıcıya koy; aksi halde mobilde **tüm sayfa** yatay kayar. Mobil
+test için: masaüstü Chrome'da `width:390px` bir iframe'e sayfayı yükleyip
+`documentElement.scrollWidth - innerWidth` ölç (window resize yöntemi bu kurulumda
+çalışmıyor).
 
 ## Braket görünümü düzeltmeleri — izleyici/TV/organizatör (Haziran 2026)
 
@@ -638,6 +683,100 @@ Final kutusu solda çıkıyor ve ilk tur (R1) kutularının sol tarafında sarka
 
 Not: `organizer.js` korumalı modül listesinde DEĞİL; bu yüzden bug-fix doğrudan yapıldı.
 `board.js`/`scorer.html` braket göstermiyor, etkilenmedi.
+
+## Braket 32'lik dilim seçimi + sezon/lig oturum braketi (Haziran 2026)
+
+Canlı turnuvada üç görsel sorun kapatıldı. Hiçbir korumalı modüle dokunulmadı; tamamı
+additive (sadece `viewer.js`, `organizer.js`, `session.html`). Commit `812cc65`, `main`'e
+push'landı.
+
+### 1. İzleyici braketi — seçilen 32'lik dilim sıfırlanıyordu
+**Bug:** >32 oyunculu braket 32'lik sekmelere bölünüyor. Kullanıcı 2. dilimi seçince, bir
+sonraki canlı atış geldiğinde `socket.on('state')` → `render()` → `renderBracket()` tüm
+braketi sıfırdan çiziyor, sekme id'leri (`bt1`, `bt2`…) `_btSeq`'in artmasıyla değiştiği
+için seçim **varsayılan 0. dilime** dönüyordu.
+**Fix (`viewer.js`):** (a) `renderBracket()` başında `_btSeq = 0` — sekme id'leri her
+render'da aynı sırayla üretilsin (kararlı). (b) Yeni `_btSelected` map'i `bt id → seçili
+index`; `renderBracketWithTabs` aktif dilimi `_btSelected[id] ?? 0`'dan okur, `selectBracketTab`
+seçimi map'e yazar. Dilim sayısı azalırsa güvenli 0'a düşer.
+
+### 2. Organizatör braketi — aynı sorun, aynı düzeltme
+Organizatör ekranı zaten aynı sekme yapısına sahipti ama aynı sıfırlanma bug'ını taşıyordu.
+`organizer.js`'e birebir aynı düzeltme uygulandı: `render()` başında `_btSeq = 0`, `_btSelected`
+map'i, `renderBracketWithTabs` + `selectBracketTab` güncellemesi.
+
+> **Kural:** Sekme/state hatırlamalı bir liste DOM'u her `state` yayınında yeniden çiziliyorsa,
+> id üretimini render başında sıfırla (kararlı id) + seçimi modül-seviye map'te sakla. Aksi
+> halde her canlı güncellemede kullanıcının seçimi kaybolur.
+
+### 3. Sezon/lig oturum braketi (`session.html`) izleyici görünümüne geçirildi
+**Önceki durum:** `session.html` kendi basit braketini çiziyordu (`renderBracketSimple` — düz
+CSS kolonlar, bağlantı çizgisi yok, 32'lik dilim yok, kutuya sığma yok, yatay scroll).
+**Fix:** `viewer.js`'teki SVG braket motoru (`renderElimBracketSVG`, `renderBracketMatch`,
+`renderBracketWithTabs`, `selectBracketTab`, `fitBrackets`, `btBtnStyle`, `_btSeq`/`_btSelected`)
+bu sayfanın maç veri şekline uyarlanmış kopyası olarak `session.html` içine taşındı. **Tek
+fark:** session maçları `entry1`/`entry2` objesi yerine `p1_name`/`p2_name` taşıyor
+(`/api/matches/for-tournament/:tid` enrich'i), bu yüzden `renderBracketMatch` `entryLabel`
+yerine `p1_name`/`p2_name` kullanır. `renderBracketSimple` artık maçlardan kolonları kurup
+tek/çift eleme ayrımı yapan ince bir sarmalayıcı (RR → tek kolon liste, çift eleme → üst/alt
+taraf/büyük final bölümleri). `splitBracketColumns` için `<script src="/js/pdf-print.js">`
+eklendi; `content.innerHTML` sonrası `fitBrackets()` çağrısı eklendi.
+
+**GÜNCELLEME (Haziran 2026):** Yukarıdaki duplikasyon **giderildi** — braket layout motoru artık
+tek dosya: `public/js/bracket-shared.js`. Aşağıdaki "Braket motoru tekilleştirme + çift eleme
+loser düzeltmeleri" bölümüne bak.
+
+## Braket motoru tekilleştirme + çift eleme loser düzeltmeleri (Haziran 2026)
+
+Canlı bir çift eleme turnuvasında iki sorun çıktı, kapatıldı; ardından braket render motoru
+tek paylaşımlı dosyaya toplandı. Korumalı modüllerden yalnız `tournament.js` + `db.js`
+değişti (kullanıcı onayıyla — loser bug + çapraz); görünüm/refactor tarafı korumasız dosyalarda.
+
+### 1. Loser braket ilerlemiyordu — bye'lı kadrolar (`src/tournament.js`, `src/db.js`)
+Kök neden: oyuncu sayısı 2'nin kuvveti değilse (5/6/7…) WB-1'deki **bye** maçlarının kaybedeni
+yok; ama kod o "olmayan kaybedeni" düşürmeye çalıştığı için LB kutuları tek-oyunculu kalıyor,
+eşleşme oluşmuyor, LB hiç ilerlemiyordu. Çözüm: `buildDoubleElim` sonunda yeni `resolveLbByes()`
+adımı — bye yüzünden boş kalacak LB kutularını "şeffaf" yapar (tek gerçek oyuncuyu bir sonraki
+LB turuna doğrudan bağlar, ölü kutuyu `db.deleteMatch` ile siler). Yeni helper: `db.deleteMatch(id)`
+(throws + match_stats + match satırını temizler). 4–16 kişi (bye'lı dahil) yapı + tam oynanış
+simülasyonunda temiz.
+
+### 2. WB üst-tur kaybedenleri çapraz düşüyor (`src/tournament.js`)
+Standart çift-eleme davranışı: WB R≥2 kaybedenleri LB turuna **ters/çapraz** sırayla yerleştirilir
+(erken rövanşı önler). `next_loser` hedef indeksi `lbr.length - 1 - i` ile ters çevrildi.
+8 kişide PrintYourBrackets referansıyla birebir eşleşir.
+
+### 3. Loser/Grand Final görünümü artık winners ile aynı + TEK motor
+**Önceki tutarsızlık:** winners braketi yeni SVG (bağlantı-çizgili, hizalı) ile, losers braketi
+eski `div.bracket` CSS-kolon ("acayip kutular") ile çiziliyordu. Düzeltildi + tüm layout motoru
+`public/js/bracket-shared.js`'e taşındı (bkz. TUTARLILIK KURALI bölümü). LB/GF için bağlantı
+çizgileri gerçek `next_winner_match_id`'ye göre çizen `renderLinkedBracketSVG` kullanılır.
+`viewer.js`, `organizer.js` yerel kopyalarını bıraktı; sadece kendi `renderBracketMatch`'lerini
+sağlıyor. `bracket-shared.js` script include'u `viewer.html` + `organizer.html`'e eklendi
+(`pdf-print.js`'ten sonra). **`session.html` + `sezon.html` (lig/sezon) BİLEREK ortak motora
+bağlanmadı** — kullanıcının devam eden, oynanmış oturumları olan canlı sezonu olduğu için
+lig/sezon koduna dokunulmadı; ikisi de kendi bağımsız braket kopyalarını (loser-SVG düzeltmesi
+dahil) korur. `tv.js` (kiosk) + `pdf-print.js` ayrı renderer'larını korur.
+
+### Etkilenen dosyalar
+`src/tournament.js`, `src/db.js`, `public/js/bracket-shared.js` (yeni), `public/js/viewer.js`,
+`public/js/organizer.js`, `public/viewer.html`, `public/organizer.html`.
+(`session.html` refactor sırasında geçici bağlandı, sonra kullanıcı isteğiyle TAMAMEN orijinal
+HEAD haline döndürüldü — loser-SVG düzeltmesi dahil hiçbir değişiklik kalmadı, lig/sezon
+sayfaları sıfır değişiklikle korundu.)
+Doğrulama: `node --check` tüm JS temiz; session inline script parse; bye/çapraz/oynanış
+in-process simülasyonla doğrulandı. Henüz commit/deploy edilmedi.
+
+### 4. Bracket reset için yedek buton (`public/js/organizer.js`)
+Motor, GF'i LB oyuncusu kazanınca `onMatchFinished` → server `tournament:reset_needed` socket
+olayı zaten doğru üretiyor (simülasyonla doğrulandı: 4/5/6/7/8 kişi, hep LB→GF slot 2, sinyal
+geliyor). **Ama** modal yalnız canlı socket olayıyla açılıyordu; GF board/tablet'ten bitirilip
+organizatör ekranı o an açık değilse olay kaçıyor ve geri dönüş yolu yoktu — turnuva "GF bitti,
+LB kazanan görünüyor ama reset yok" halinde takılı kalıyordu. Çözüm (additive): `pendingResetFinal(t)`
+helper'ı + `renderTournament` içinde yedek buton. Koşul: turnuva `running` + reset maçı yok +
+GF (`bracket='final'`, `!is_reset_final`) `finished` ve `winner_entry_id === entry2_id` (LB slotu).
+Buton mevcut `showResetFinalModal()` → `/api/tournament/:id/create-reset-final` akışını çağırır.
+Kaçan olayı kurtarır; sayfa yenilenince görünür.
 
 ## Skor board görsel iyileştirmeleri — aktif yarı + atış flash (Haziran 2026)
 

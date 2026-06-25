@@ -1299,6 +1299,13 @@ function setMatchEntry(id, slot, entryId) {
     db.prepare("UPDATE matches SET status = 'ready' WHERE id = ?").run(id);
   }
 }
+// Bir maçı (ve bağlı throws/match_stats satırlarını) tamamen kaldır.
+// Çift elemede bye nedeniyle oluşan "ölü" loser-braket kutularını temizlemek için.
+function deleteMatch(id) {
+  db.prepare('DELETE FROM throws WHERE match_id = ?').run(id);
+  db.prepare('DELETE FROM match_stats WHERE match_id = ?').run(id);
+  db.prepare('DELETE FROM matches WHERE id = ?').run(id);
+}
 
 // --- Throws ---
 function addThrow(t) {
@@ -2453,7 +2460,7 @@ module.exports = {
   addEntry, entriesForTournament, entryById, updateEntrySlots,
   createStage, stagesForTournament, stageById, updateStageStatus,
   createMatch, matchById, matchesForTournament, matchesForStage,
-  activeMatches, pendingReadyMatches, updateMatch, setMatchEntry, walkoverMatch,
+  activeMatches, pendingReadyMatches, updateMatch, setMatchEntry, deleteMatch, walkoverMatch,
   addThrow, throwsForMatch, lastThrow, deleteThrow,
   getStats, updateStats, statsForMatch, tournamentPlayerReport,
   resetAll,
