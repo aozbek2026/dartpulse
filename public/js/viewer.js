@@ -168,6 +168,8 @@ socket.on('state', (s) => {
   state = s;
   mergeTokenTournament();
   render();
+  // Sayısal id linki state'te yoksa (başka kullanıcının turnuvası) public uçtan çek
+  resolveNumericTourFallback();
 });
 
 // Token'la çözülen turnuvayı state'e ekle (socket'te yoksa — örn. bitmiş turnuva).
@@ -195,6 +197,28 @@ function resolveShareToken() {
     .catch(() => {});
 }
 resolveShareToken();
+
+// Sayısal ?t=<id> paylaşım linki: turnuva, giriş yapmış (farklı) kullanıcının
+// socket snapshot'ında kendi user_id'sine kilitli olduğu için gelmeyebilir.
+// Bu durumda girişten bağımsız public uçtan çekip state'e merge et.
+let _numericFallbackTried = false;
+function resolveNumericTourFallback() {
+  if (shareToken) return;                 // token akışı ayrı hallediyor
+  if (selectedTourId == null) return;     // "Hepsi" seçili — gerek yok
+  if (_numericFallbackTried) return;
+  // Turnuva zaten state'te varsa yedek çözüme gerek yok
+  if ((state.tournaments || []).some(t => t.id === selectedTourId)) return;
+  _numericFallbackTried = true;
+  fetch('/api/public/tournament-by-id/' + encodeURIComponent(selectedTourId))
+    .then(r => r.ok ? r.json() : null)
+    .then(data => {
+      if (!data || data.id == null) return;
+      tokenTournament = data.tournament;  // mergeTokenTournament ile state'te kalıcı kalır
+      mergeTokenTournament();
+      render();
+    })
+    .catch(() => {});
+}
 
 // Aynalanan maç güncellenince modalı yenile
 socket.on('match:update', (data) => {

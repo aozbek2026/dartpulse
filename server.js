@@ -1552,6 +1552,33 @@ app.get('/api/public/tournament/:token', (req, res) => {
   }
 });
 
+// Sayısal id ile girişten bağımsız public turnuva verisi.
+// Paylaşılan ?t=<id> linki, giriş yapmış (farklı) bir kullanıcının socket
+// snapshot'ı kendi user_id'sine kilitli olduğu için çalışmıyordu — bu uç,
+// running/finished (gizlenmemiş) turnuvaları herkese açık döndürür. Salt-okuma.
+app.get('/api/public/tournament-by-id/:id', (req, res) => {
+  try {
+    const t = db.tournamentById(+req.params.id);
+    if (!t) return res.status(404).json({ error: 'Turnuva bulunamadi' });
+    if (t.status === 'draft') return res.status(404).json({ error: 'Henuz baslamadi' });
+    if (t.hidden_from_public) return res.status(404).json({ error: 'Gizli' });
+    if (/^__team_pool_/.test(t.name || '')) return res.status(404).json({ error: 'Bulunamadi' });
+    res.json({
+      id: t.id,
+      tournament: {
+        ...t,
+        stages: db.stagesForTournament(t.id),
+        matches: db.matchesForTournament(t.id),
+        entries: db.entriesForTournament(t.id),
+        report: cachedReport(t.id),
+      },
+    });
+  } catch (e) {
+    console.error('GET /api/public/tournament-by-id/:id:', e);
+    res.status(500).json({ error: e.message });
+  }
+});
+
 // Token ile competition klasman + oturum/round listesi. Login GEREKMEZ.
 app.get('/api/public/competition/:token', (req, res) => {
   try {
