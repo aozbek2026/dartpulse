@@ -28,6 +28,32 @@ function verifyPassword(password, stored) {
   return crypto.timingSafeEqual(got, expected);
 }
 
+// --- Captcha (Cloudflare Turnstile) ---
+// Anahtar (TURNSTILE_SECRET) YOKSA doğrulama ATLANIR — yerel geliştirme + anahtar
+// girilmeden önce sistem aynen çalışır (graceful). Anahtar set edilince login/register
+// formundan gelen token Cloudflare'e doğrulatılır. Bot/otomasyon kaydını engeller.
+async function verifyTurnstile(token, ip) {
+  const secret = process.env.TURNSTILE_SECRET;
+  if (!secret) return true; // anahtar yok → doğrulama devre dışı
+  if (!token) return false;
+  try {
+    const params = new URLSearchParams();
+    params.append('secret', secret);
+    params.append('response', token);
+    if (ip) params.append('remoteip', ip);
+    const r = await fetch('https://challenges.cloudflare.com/turnstile/v0/siteverify', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+      body: params,
+    });
+    const data = await r.json();
+    return !!data.success;
+  } catch (e) {
+    console.error('[turnstile] doğrulama hatası:', e.message);
+    return false; // ağ hatasında güvenli tarafta kal (reddet)
+  }
+}
+
 // Middleware: auth gerekir
 function requireAuth(req, res, next) {
   if (!req.session || !req.session.userId) {
@@ -89,11 +115,13 @@ function optionalAuth(req, res, next) {
 }
 
 // --- Route handlers ---
-function registerHandler(req, res) {
-  const { email, password, name } = req.body || {};
+async function registerHandler(req, res) {
+  const { email, password, name, captcha } = req.body || {};
   if (!email || !password) {
     return res.status(400).json({ error: 'Email ve şifre gerekli' });
   }
+  const ok = await verifyTurnstile(captcha, req.ip);
+  if (!ok) return res.status(400).json({ error: 'Güvenlik doğrulaması başarısız. Lütfen tekrar deneyin.' });
   const normEmail = String(email).trim().toLowerCase();
   if (!/^\S+@\S+\.\S+$/.test(normEmail)) {
     return res.status(400).json({ error: 'Geçersiz email' });
@@ -113,11 +141,13 @@ function registerHandler(req, res) {
   res.json({ user: u, emailSent: true });
 }
 
-function loginHandler(req, res) {
-  const { email, password } = req.body || {};
+async function loginHandler(req, res) {
+  const { email, password, captcha } = req.body || {};
   if (!email || !password) {
     return res.status(400).json({ error: 'Email ve şifre gerekli' });
   }
+  const ok = await verifyTurnstile(captcha, req.ip);
+  if (!ok) return res.status(400).json({ error: 'Güvenlik doğrulaması başarısız. Lütfen tekrar deneyin.' });
   const normEmail = String(email).trim().toLowerCase();
   const row = db.userByEmail(normEmail);
   if (!row || !verifyPassword(password, row.password_hash)) {

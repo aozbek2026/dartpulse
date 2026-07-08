@@ -17,7 +17,9 @@
     "better-sqlite3": "^11.3.0",
     "compression": "^1.7.4",
     "express": "^4.21.0",
+    "express-rate-limit": "^7.4.0",
     "express-session": "^1.18.0",
+    "helmet": "^7.1.0",
     "socket.io": "^4.8.0",
     "resend": "^4.0.0",
     "xlsx": "^0.18.5"

@@ -96,6 +96,9 @@
         Şifre
         <input type="password" id="password" required minlength="6" placeholder="En az 6 karakter" />
       </label>
+      <div id="captcha-container" style="display:none; margin-top:0.3rem;">
+        <div id="turnstile-widget"></div>
+      </div>
       <button type="submit" class="submit" id="submit-btn">Giriş Yap</button>
     </form>
 
@@ -105,6 +108,37 @@
 
 <script>
 let mode = 'login';
+
+// --- Captcha (Cloudflare Turnstile) ---
+// Site key SADECE server'da tanımlıysa (TURNSTILE_SITE_KEY) yüklenir. Yoksa
+// widget hiç görünmez, form eskisi gibi çalışır (geriye dönük uyumlu).
+let turnstileWidgetId = null;
+function getCaptchaToken() {
+  if (window.turnstile && turnstileWidgetId !== null) {
+    return window.turnstile.getResponse(turnstileWidgetId) || '';
+  }
+  return '';
+}
+function resetCaptcha() {
+  try { if (window.turnstile && turnstileWidgetId !== null) window.turnstile.reset(turnstileWidgetId); } catch {}
+}
+fetch('/api/config', { credentials: 'same-origin' })
+  .then(r => r.json())
+  .then(cfg => {
+    if (!cfg.turnstileSiteKey) return;
+    const s = document.createElement('script');
+    s.src = 'https://challenges.cloudflare.com/turnstile/v0/api.js?onload=onTurnstileLoad';
+    s.async = true; s.defer = true;
+    window.onTurnstileLoad = () => {
+      document.getElementById('captcha-container').style.display = 'block';
+      turnstileWidgetId = window.turnstile.render('#turnstile-widget', {
+        sitekey: cfg.turnstileSiteKey,
+        theme: 'dark',
+      });
+    };
+    document.head.appendChild(s);
+  })
+  .catch(() => {});
 
 const tabs = document.querySelectorAll('.tab');
 const submitBtn = document.getElementById('submit-btn');
@@ -128,8 +162,9 @@ document.getElementById('auth-form').addEventListener('submit', async (e) => {
   const password = document.getElementById('password').value;
   const name = document.getElementById('name').value.trim();
 
+  const captcha = getCaptchaToken();
   const url = mode === 'login' ? '/auth/login' : '/auth/register';
-  const body = mode === 'login' ? { email, password } : { email, password, name };
+  const body = mode === 'login' ? { email, password, captcha } : { email, password, name, captcha };
 
   try {
     const r = await fetch(url, {
@@ -142,6 +177,7 @@ document.getElementById('auth-form').addEventListener('submit', async (e) => {
     if (!r.ok) {
       errEl.textContent = data.error || 'Bir hata oluştu';
       errEl.classList.add('show');
+      resetCaptcha();
       return;
     }
     // Başarılı → ?next varsa oraya, yoksa organizatör paneline gönder
@@ -150,6 +186,7 @@ document.getElementById('auth-form').addEventListener('submit', async (e) => {
   } catch (err) {
     errEl.textContent = 'Bağlantı hatası: ' + err.message;
     errEl.classList.add('show');
+    resetCaptcha();
   }
 });
 

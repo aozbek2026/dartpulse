@@ -47,6 +47,23 @@ try {
   console.warn('[compression] paket yok, sıkıştırma devre dışı:', e.message);
 }
 
+// Güvenlik header'ları — Helmet. 'helmet' paketi opsiyonel (compression gibi):
+// yoksa server sessizce header'sız devam eder, çökmez.
+// NOT: Content-Security-Policy KAPALI — uygulama çok sayıda inline <script>/<style>
+// ve dış CDN (Socket.IO, cdnjs) kullandığı için CSP açılırsa sayfalar kırılır.
+// CSP ileride nonce/hash altyapısıyla ayrıca açılabilir. Diğer tüm header'lar aktif
+// (X-Frame-Options, HSTS, X-Content-Type-Options, Referrer-Policy, vb.).
+try {
+  const helmet = require('helmet');
+  app.use(helmet({
+    contentSecurityPolicy: false,
+    // Tanıtım iframe'leri (tanitim.html anasayfaya gömülü) aynı origin — engellenmesin
+    crossOriginEmbedderPolicy: false,
+  }));
+} catch (e) {
+  console.warn('[helmet] paket yok, güvenlik header\'ları devre dışı:', e.message);
+}
+
 // Prod'da HTTP ile gelen istekleri HTTPS'e yönlendir
 app.use((req, res, next) => {
   if (process.env.NODE_ENV === 'production' && req.headers['x-forwarded-proto'] !== 'https') {
@@ -143,15 +160,43 @@ app.get('/dartcorepronedir', (req, res) => {
   res.sendFile(path.join(__dirname, 'public', 'dartcorepronedir.html'));
 });
 
+// --- Rate limiting — brute-force / spam koruması ---
+// 'express-rate-limit' paketi opsiyonel (helmet/compression gibi): yoksa limiter
+// no-op (geçirgen) olur, server çökmez. Kimlik uçlarına (login/register/şifre) uygulanır.
+// Diğer uçlara (skor girişi, socket) DOKUNULMAZ — canlı turnuva hızını etkilemesin.
+let authLimiter = (req, res, next) => next();      // login/register: 15 dk'da 20 deneme
+let passwordLimiter = (req, res, next) => next();  // şifre/mail: 1 saatte 5 deneme
+try {
+  const rateLimit = require('express-rate-limit');
+  const opts = {
+    standardHeaders: true,
+    legacyHeaders: false,
+    // Render proxy arkasında gerçek IP için — trust proxy zaten 1 olarak set
+    handler: (req, res) => res.status(429).json({
+      error: 'Çok fazla deneme yaptınız. Lütfen bir süre sonra tekrar deneyin.',
+    }),
+  };
+  authLimiter = rateLimit({ ...opts, windowMs: 15 * 60 * 1000, max: 20 });
+  passwordLimiter = rateLimit({ ...opts, windowMs: 60 * 60 * 1000, max: 5 });
+} catch (e) {
+  console.warn('[rate-limit] paket yok, hız sınırı devre dışı:', e.message);
+}
+
+// Public istemci yapılandırması — captcha site key gibi gizli olmayan değerler.
+// Turnstile site key'i açık (public) bir değerdir; secret ayrıdır (sadece server'da).
+app.get('/api/config', (req, res) => {
+  res.json({ turnstileSiteKey: process.env.TURNSTILE_SITE_KEY || null });
+});
+
 // --- Auth routes ---
-app.post('/auth/register', auth.registerHandler);
-app.post('/auth/login', auth.loginHandler);
+app.post('/auth/register', authLimiter, auth.registerHandler);
+app.post('/auth/login', authLimiter, auth.loginHandler);
 app.post('/auth/logout', auth.logoutHandler);
 app.get('/auth/me', auth.meHandler);
-app.post('/auth/forgot-password', auth.forgotPasswordHandler);
-app.post('/auth/reset-password', auth.resetPasswordHandler);
+app.post('/auth/forgot-password', passwordLimiter, auth.forgotPasswordHandler);
+app.post('/auth/reset-password', passwordLimiter, auth.resetPasswordHandler);
 app.get('/auth/verify-email', auth.verifyEmailHandler);
-app.post('/auth/resend-verify', auth.resendVerifyHandler);
+app.post('/auth/resend-verify', passwordLimiter, auth.resendVerifyHandler);
 app.post('/auth/delete-account', auth.deleteAccountHandler);
 app.post('/auth/organizer-apply', auth.requireAuth, auth.applyOrganizerHandler);
 
