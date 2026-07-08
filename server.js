@@ -198,6 +198,7 @@ app.post('/auth/reset-password', passwordLimiter, auth.resetPasswordHandler);
 app.get('/auth/verify-email', auth.verifyEmailHandler);
 app.post('/auth/resend-verify', passwordLimiter, auth.resendVerifyHandler);
 app.post('/auth/delete-account', auth.deleteAccountHandler);
+app.get('/auth/export-data', auth.exportDataHandler);
 app.post('/auth/organizer-apply', auth.requireAuth, auth.applyOrganizerHandler);
 
 // --- Admin paneli endpoint'leri (Turnuva Kayıt Sistemi — Dilim C) ---

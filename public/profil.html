@@ -42,6 +42,19 @@
     <p style="color:var(--muted,#9aa);font-size:0.8rem;margin-top:1.5rem;">
       Yalnızca organizatörün "istatistik tutulsun" seçeneğini açtığı online-kayıtlı turnuvalar burada görünür.
     </p>
+
+    <h2 class="pf-sec" style="margin-top:2.5rem;">Verilerim & Gizlilik</h2>
+    <div style="background:var(--surface,#1a1e2d);border:1px solid var(--border,#2a2f48);border-radius:12px;padding:1.1rem 1.3rem;">
+      <p style="color:#c8cee0;font-size:0.92rem;margin:0 0 1rem;line-height:1.6;">
+        KVKK kapsamında hakkınızdaki kişisel verileri istediğiniz zaman indirebilirsiniz.
+        Ayrıntılar için <a href="/gizlilik.html" style="color:var(--accent-2,#00d4ff);">Gizlilik Politikası</a>.
+      </p>
+      <a href="/auth/export-data"
+         style="display:inline-block;background:var(--accent-2,#00d4ff);color:#06121a;font-weight:700;
+                text-decoration:none;padding:0.6rem 1.3rem;border-radius:9px;font-size:0.92rem;">
+        ⬇ Verilerimi İndir (JSON)
+      </a>
+    </div>
   </div>
 </div>
 
@@ -108,5 +121,6 @@ function render(data) {
 })();
 </script>
 <script src="/js/common.js"></script>
+<script src="/js/cookie-consent.js"></script>
 </body>
 </html>

@@ -252,6 +252,34 @@ async function applyOrganizerHandler(req, res) {
 }
 
 // Hesap sil
+// Veri indirme (KVKK erişim hakkı) — kullanıcının hakkındaki kişisel verileri
+// JSON olarak indirir. Şifre hash'i gibi güvenlik alanları DIŞARIDA bırakılır.
+function exportDataHandler(req, res) {
+  if (!req.session || !req.session.userId) return res.status(401).json({ error: 'Giriş gerekli' });
+  const uid = req.session.userId;
+  const u = db.userById(uid);
+  if (!u) return res.status(404).json({ error: 'Kullanıcı bulunamadı' });
+
+  // Hassas alanları çıkar
+  const { password_hash, verify_token, reset_token, ...account } = u;
+
+  let data = {
+    aciklama: 'Dart Core Pro — kişisel verilerinizin dışa aktarımı (KVKK erişim hakkı).',
+    disa_aktarim_tarihi: new Date().toISOString(),
+    hesap: account,
+  };
+  try { data.turnuvalar = db.allTournaments(uid); } catch (e) { data.turnuvalar = []; }
+  try { data.ligler_sezonlar = db.allCompetitions(uid); } catch (e) { data.ligler_sezonlar = []; }
+  try { data.kayitlarim = db.registrationsForUser(uid); } catch (e) { data.kayitlarim = []; }
+  try { data.oyuncu_profili = db.playerCareerProfile(uid); } catch (e) { data.oyuncu_profili = null; }
+
+  const json = JSON.stringify(data, null, 2);
+  const fname = `dartcorepro-verilerim-${new Date().toISOString().slice(0, 10)}.json`;
+  res.setHeader('Content-Type', 'application/json; charset=utf-8');
+  res.setHeader('Content-Disposition', `attachment; filename="${fname}"`);
+  res.send(json);
+}
+
 function deleteAccountHandler(req, res) {
   if (!req.session || !req.session.userId) return res.status(401).json({ error: 'Giriş gerekli' });
   const { password } = req.body || {};
@@ -271,6 +299,6 @@ module.exports = {
   requireAuth, requireAdmin, requireOrganizer, optionalAuth,
   registerHandler, loginHandler, logoutHandler, meHandler,
   forgotPasswordHandler, resetPasswordHandler, verifyEmailHandler,
-  resendVerifyHandler, deleteAccountHandler,
+  resendVerifyHandler, deleteAccountHandler, exportDataHandler,
   applyOrganizerHandler,
 };
