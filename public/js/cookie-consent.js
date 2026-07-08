@@ -2,6 +2,17 @@
 // Yalnızca zorunlu oturum çerezi kullanıldığı için bu bir "rıza" değil bilgilendirmedir.
 // İlk ziyarette gösterilir; "Tamam"a basınca localStorage'da hatırlanır ve bir daha çıkmaz.
 (function () {
+  // Tablet/kiosk skor ekranlarında banner ASLA gösterilmez (kullanıcı isteği).
+  // İki savunma katmanı: (1) sayfa yolu board/tv/scorer ise, (2) PWA standalone
+  // modda çalışıyorsa (board/scorer tabletten "ana ekrana ekle" ile açılınca).
+  // Böylece ileride script yanlışlıkla bu sayfalara eklense bile çıkmaz.
+  try {
+    var p = (location.pathname || '').toLowerCase();
+    if (/(^|\/)(board|tv|scorer)\.html$/.test(p)) return;
+    if (window.matchMedia && window.matchMedia('(display-mode: standalone)').matches) return;
+    if (window.navigator && window.navigator.standalone === true) return; // iOS PWA
+  } catch (e) { /* devam et */ }
+
   try {
     if (localStorage.getItem('dcp_cookie_ok') === '1') return;
   } catch (e) { /* localStorage kapalıysa yine de göster */ }

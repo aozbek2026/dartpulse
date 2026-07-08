@@ -1124,19 +1124,27 @@ Not: Deploy repo'su `aozbek2026/dartpulse` (branch `main`); env değişkenleri d
 - Canonical host redirect (`a1ab6dc` commit): tüm istekler `dartcorepro.com`'a 301
 - Bilinmesi gereken: HOTFIX-1 (sessions tablosu DROP) ilk deploy'da tetiklendi — eski cookie'ler düştü, yeniden giriş gerekti. Bir daha tetiklenmez.
 
-### Faz 2: Production hardening (sıradaki)
-- E-posta onayı (Resend ya da SendGrid; ücretsiz tier yeterli)
-- Şifre sıfırlama akışı (token + e-posta link)
-- Captcha (hCaptcha — Cloudflare Turnstile bedava)
-- Rate limiting (`express-rate-limit` — login/register endpoint'leri)
-- Helmet.js (güvenlik header'ları)
-- `pages/terms.html`, `pages/privacy.html`, `pages/cookies.html` — KVKK + GDPR uyumlu
-- Çerez consent banner'ı
-- Hesap silme + veri indirme (KVKK gereği)
-- Otomatik yedekleme: cron + S3/Backblaze (haftalık SQLite snapshot)
+### Faz 2: Production hardening — ✅ NEREDEYSE TAMAM (8 Temmuz 2026)
+- E-posta onayı ✅ (Resend, canlıda "Delivered")
+- Şifre sıfırlama akışı ✅ (token + e-posta link)
+- Captcha ✅ (Cloudflare Turnstile — canlıda aktif, bkz. aşağıdaki bölüm)
+- Rate limiting ✅ (`express-rate-limit` — login/register/şifre uçları)
+- Helmet.js ✅ (güvenlik header'ları, CSP kapalı)
+- Yasal sayfalar ✅ (`gizlilik.html` / `kosullar.html` / `cerezler.html` — KVKK)
+- Çerez consent banner'ı ✅ (`js/cookie-consent.js`)
+- Hesap silme ✅ (`/auth/delete-account`) + veri indirme ✅ (`/auth/export-data`)
+- Otomatik yedekleme ✅ (Backblaze B2, günlük — canlıda çalışıyor, bkz. aşağıdaki bölüm)
+- **KALAN (Faz 3'e taşındı):** Cloudflare proxy — kullanıcı isteğiyle sakin bir zamana
+  (canlı turnuva yokken) bırakıldı; DNS/mail nameserver değişimi riski nedeniyle.
 
 ### Faz 3: Public launch hazırlığı
-- Cloudflare proxy (DDoS + cache + bedava)
+- **Cloudflare proxy (DDoS + cache + bant genişliği azaltma) — SIRADAKİ İŞ.** Domaini
+  Cloudflare'e ekle → nameserver'ları registrar'da değiştir → tüm DNS kayıtlarını (özellikle
+  Resend/e-posta doğrulama TXT/CNAME + Render'a işaret eden kayıtlar) birebir taşı → proxy
+  (turuncu bulut) aç → SSL modu **Full (strict)**. **Socket.IO (canlı skor) WebSocket** kullandığı
+  için proxy açılınca canlı turnuvada test et. Riskli değil ama DNS yayılması + mail kesintisi
+  ihtimali için canlı etkinlik olmayan zamanda yapılmalı. Kullanıcının Cloudflare + Backblaze
+  hesabı zaten var (aozbek@gmail.com / hesap adı "aozbek").
 - Sentry (hata izleme, ücretsiz tier)
 - Plausible ya da Google Analytics
 - Özel domain (~₺200-300/yıl)
@@ -1145,6 +1153,85 @@ Not: Deploy repo'su `aozbek2026/dartpulse` (branch `main`); env değişkenleri d
 - AdSense başvurusu (1000+ ziyaret/ay sonrası)
 - Premium altyapısı: Stripe Checkout, $3-5/yıl, ek özellikler (turnuva arşivi, custom branding, daha fazla oyuncu sınırı)
 - Kullanıcı modelinde `tier: 'free' | 'premium'` kolonu — şimdiden ekleyebiliriz
+
+## Faz 2 hardening — güvenlik + yedekleme + KVKK (8 Temmuz 2026)
+
+Faz 2'nin büyük kısmı bu oturumda tamamlandı. Hepsi **additive**, korumalı modüllere
+dokunulmadı. Opsiyonel paketler `try/require/catch` ile sarıldı (compression/resend kalıbı) —
+paket/anahtar yoksa sistem eskisi gibi çalışır (graceful degradation).
+
+### 1. Güvenlik üçlüsü (canlıda)
+- **Helmet** — `server.js` compression bloğundan sonra. `contentSecurityPolicy: false`
+  (uygulama çok inline script + dış CDN kullanıyor, CSP açılırsa sayfalar kırılır) +
+  `crossOriginEmbedderPolicy: false` (tanıtım iframe'leri için). Diğer header'lar aktif.
+- **Rate limiting** — `express-rate-limit`. `server.js`'te iki limiter: `authLimiter`
+  (login/register, 15dk/20) + `passwordLimiter` (forgot/reset/resend, 1sa/5). Paket yoksa
+  no-op geçirgen fonksiyona düşer. 429'da Türkçe mesaj. **Skor/socket uçlarına dokunulmadı.**
+- **Captcha (Cloudflare Turnstile)** — `src/auth.js` `verifyTurnstile(token, ip)` helper'ı;
+  `TURNSTILE_SECRET` env yoksa doğrulama ATLANIR (graceful). `registerHandler`/`loginHandler`
+  artık `async` ve captcha token'ını Cloudflare'e doğrulatıyor. `server.js` `GET /api/config`
+  ucu `TURNSTILE_SITE_KEY`'i (public) döndürür. `login.html` config'i çekip site key varsa
+  Turnstile widget'ını (dark tema) yükler, token'ı POST body'sine `captcha` olarak ekler,
+  hatada `resetCaptcha()`. **Render env:** `TURNSTILE_SITE_KEY` + `TURNSTILE_SECRET` girildi,
+  Cloudflare'de "Dart Core Pro" widget (Managed mod, hostname'ler: `dartcorepro.com` +
+  `www.dartcorepro.com`). Canlıda aktif.
+
+### 2. Bulut yedekleme (Backblaze B2 — canlıda)
+- Kod zaten hazırdı (`src/backup.js`, `YEDEKLEME-KURULUM.md`). Bu oturumda **Render env'e
+  anahtarlar girildi** ve aktifleştirildi. Loglarda doğrulandı: `[backup] aktif — her 24 saatte
+  bir yedek alınacak` + `[backup] OK -> backups/data-...db.gz`.
+- **Render env değişkenleri (girildi):** `BACKUP_S3_ENDPOINT=https://s3.eu-central-003.backblazeb2.com`,
+  `BACKUP_S3_REGION=eu-central-003`, `BACKUP_S3_BUCKET=dartcorepro-yedek`, `BACKUP_S3_KEY_ID`,
+  `BACKUP_S3_SECRET` (Backblaze application key — bucket'a scope'lu, Read/Write).
+- Backblaze bucket `dartcorepro-yedek` (Private, EU/Almanya). App key adı `dartcorepro-render2`.
+  `BACKUP_INTERVAL_HOURS` default 24. `@aws-sdk/client-s3` zaten dependency.
+- Not: AWS SDK "Node 22'ye geç" uyarısı verir — zararsız, işlevi etkilemez.
+
+### 3. Yasal sayfalar + KVKK (canlıya deploy edilecek)
+- Üç yeni statik sayfa (Türkçe, site stilinde, kendi inline CSS'i + `/css/style.css`):
+  `public/gizlilik.html` (KVKK aydınlatma + gizlilik politikası — **veri sorumlusu: Ahmet Özbek
+  (şahıs)**, iletişim **dartcorepro@gmail.com**, hizmet sağlayıcı tablosu: Render/Backblaze/
+  Resend/Cloudflare, KVKK m.11 hakları), `public/kosullar.html` (kullanım koşulları),
+  `public/cerezler.html` (çerez politikası). Karar: **sadece Türkçe** (site TR-öncelikli).
+- `public/index.html` footer'ına üç link eklendi (gizlilik/koşullar/çerezler).
+
+### 4. Çerez consent banner
+- `public/js/cookie-consent.js` — bağımsız, kendi HTML+CSS'ini enjekte eder. Yalnız zorunlu
+  oturum çerezi kullanıldığı için "rıza" değil **bilgilendirme** banner'ı (alt şerit + "Tamam").
+  `localStorage.dcp_cookie_ok=1` ile hatırlar. Reklam/analytics eklenirse gerçek rıza seçeneğine
+  yükseltilecek.
+- **12 sayfaya `<script src="/js/cookie-consent.js">` eklendi:** index, login, turnuvalar,
+  viewer, organizer, forgot-password, reset-password, verify-email, profil + 3 yasal sayfa.
+  **Tablet sayfalarına (board/tv/scorer) BİLİNÇLİ eklenmedi** (canlı skor ekranında rahatsız edici).
+- **Tabletlerde ASLA gösterilmez — üç katmanlı koruma (kullanıcı isteği, Tem 2026):**
+  (1) board/tv/scorer.html'e script hiç eklenmedi; (2) `cookie-consent.js` başında yol kontrolü
+  — `location.pathname` `board|tv|scorer.html` ise `return`; (3) PWA standalone kontrolü —
+  `matchMedia('(display-mode: standalone)')` veya iOS `navigator.standalone` true ise `return`
+  (board/scorer tabletten "ana ekrana ekle" ile açılınca). Yani script ileride yanlışlıkla bu
+  sayfalara eklense bile banner çıkmaz. Yeni bir tablet/kiosk sayfası eklenirse yol regex'ine
+  ekle.
+
+### 5. Veri indirme (KVKK erişim hakkı)
+- `src/auth.js` `exportDataHandler` (module.exports'a eklendi) → `server.js` `GET /auth/export-data`.
+  Kullanıcının hesap + turnuvalar + ligler/sezonlar + kayıtlar + oyuncu profilini JSON dosyası
+  olarak indirir (`Content-Disposition: attachment`). **Hassas alanlar çıkarılır** (`password_hash`,
+  `verify_token`, `reset_token`). `db.allTournaments/allCompetitions/registrationsForUser/
+  playerCareerProfile` helper'larını kullanır (hepsi userId scope'lu, try/catch'li).
+- `public/profil.html`'e "Verilerim & Gizlilik" bölümü + "⬇ Verilerimi İndir (JSON)" butonu.
+
+### Bilinmesi gereken
+- **Render env yönetimi elle** (dashboard.render.com → servis `dartcorepro`
+  (srv-d7mttbapmmbs73c6cm5g) → Environment). `render.yaml` sadece dökümantasyon.
+- Turnstile/Backblaze **secret** değerleri repoda YOK, sadece Render panelinde.
+- `package.json`'a `helmet` + `express-rate-limit` eklendi; `npm install` + `npm audit fix`
+  çalıştırıldı (qs/ws açıkları kapandı; `xlsx` açığı "no fix available" — kullanım yazma-only
+  olduğu için pratik risk yok, bırakıldı).
+- Deploy dosyaları (kullanıcı Mac'te git ekler): `server.js`, `src/auth.js`, `package.json`,
+  `package-lock.json`, `public/index.html`, `public/profil.html`, `public/login.html`,
+  `public/turnuvalar.html`, `public/viewer.html`, `public/organizer.html`,
+  `public/forgot-password.html`, `public/reset-password.html`, `public/verify-email.html`,
+  `public/gizlilik.html`, `public/kosullar.html`, `public/cerezler.html`,
+  `public/js/cookie-consent.js`.
 
 ## Git / Deploy — kilit (.lock) sorununu önleme (KALICI KURAL, Haz 2026)
 
