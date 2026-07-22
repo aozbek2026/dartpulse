@@ -684,6 +684,51 @@ Final kutusu solda çıkıyor ve ilk tur (R1) kutularının sol tarafında sarka
 Not: `organizer.js` korumalı modül listesinde DEĞİL; bu yüzden bug-fix doğrudan yapıldı.
 `board.js`/`scorer.html` braket göstermiyor, etkilenmedi.
 
+## İzleyici "Tüm Maçlar" — sıralama + biten maç istatistikleri (Temmuz 2026)
+
+Kullanıcı isteği: maç listesinde **en son oynanan en üstte** olsun, ve biten maç satırlarında
+maçın istatistikleri de görünsün — **kutu ebadını büyütmeden**. Tamamı additive; sadece
+`public/js/viewer.js` + `public/viewer.html` değişti, korumalı modüllere dokunulmadı.
+
+### Sıralama (`renderMatches` içindeki `rank`)
+Yeni sıra: **CANLI (0) → BİTEN, en yeni üstte (1) → board'a atanmış HAZIR (2) → sırası
+gelecek / atanmamış (3)**. Eskiden biten maçlar hazır maçların altındaydı (2 ↔ 1 yer
+değiştirdi). Bitmişler kendi içinde `finished_at DESC`, yoksa `id DESC`. Board ataması maç
+satırında alan olarak yok — `state.boards`'taki `current_match_id` set'inden türetiliyor
+(değişmedi).
+
+Kullanıcı kararı (Tem 2026): **tek liste kalsın**, oynanmamış maçlar ayrı bölüme
+çıkarılmasın, başlık şeritleri de eklenmesin — durum rozeti ayrım için yeterli.
+
+### Biten maç istatistik şeridi
+Bitmiş maç satırında, isimlerin altına 0.7rem'lik gri tek satır: oyuncu başına
+`<3-ok ort> · 180×N · HO <en iyi çıkış>`. Checkout 100+ ise "HO", altındaysa "Çıkış"
+etiketi. Değer yoksa parça hiç yazılmaz; hepsi boşsa `.mstat-line:empty { display:none }`
+ile satır kaybolur (kutu büyümez).
+
+**Veri kaynağı — snapshot'a EKLENMEDİ (bilinçli):** `getSnapshot` zaten büyük (bkz. "Ölçek /
+Performans — snapshot yayını"); maç başına `match_stats` eklemek her yayını şişirirdi. Bunun
+yerine mevcut **`GET /api/matches/:id`** ucu (public, `stats: db.statsForMatch(id)` döndürür)
+satır bazında çağrılıyor:
+- `matchStatsCache` (Map, matchId → stats satırları) + `matchStatsPending` (Set, çift istek
+  koruması), modül seviyesinde. **Bitmiş maçın istatistiği değişmez** → bir kez çekilir,
+  sonraki canlı güncellemelerde ağ isteği yok.
+- `hydrateMatchStats(filtered)` render sonunda çağrılır, eksik olanları çeker ve dönünce
+  **yalnız ilgili `.mstat-line[data-mid]` elementini** günceller — tam `render()` tetiklemez
+  (sonsuz döngü + braket sekme seçiminin kaybı riski).
+- `MSTAT_FETCH_LIMIT = 40` — tek renderda en fazla 40 maç çekilir (512 kişilik turnuvada
+  istek fırtınası olmasın). Kalanlar filtre/scroll ile yeniden render edilince çekilir.
+
+### İlgili fonksiyonlar/CSS
+`viewer.js`: `fmtStatChunk`, `matchStatsHtml`, `hydrateMatchStats`, `matchStatsCache`.
+`viewer.html`: `.mstat-line`, `.mstat-p` stilleri (inline `<style>` bloğunda,
+`.standings-table` kuralının hemen üstünde).
+
+**Not:** Aynı istatistik şeridi "Son Biten Maçlar" (`renderRecent`), braket kutuları,
+`tv.js` ve `organizer.js`'e **eklenmedi** — kullanıcı kapsamı yalnız "Tüm Maçlar" tablosu
+olarak seçti. Oralara da istenirse `matchStatsHtml` + `hydrateMatchStats` aynen kullanılabilir
+(entry adları için `entryLabel`, session sayfalarında `p1_name`/`p2_name` farkına dikkat).
+
 ## Braket 32'lik dilim seçimi + sezon/lig oturum braketi (Haziran 2026)
 
 Canlı turnuvada üç görsel sorun kapatıldı. Hiçbir korumalı modüle dokunulmadı; tamamı
