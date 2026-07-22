@@ -728,6 +728,58 @@ function renderRR(stage, matches) {
   `;
 }
 
+// ========== Biten maç istatistikleri (lazy fetch + cache) ==========
+// Snapshot payload'ını şişirmemek için maç istatistikleri state'e eklenmedi;
+// bitmiş maçların istatistikleri değişmediği için tek sefer çekilip cache'lenir.
+const matchStatsCache = new Map();   // matchId -> [slot1Stats, slot2Stats]
+const matchStatsPending = new Set(); // aynı maç için çift istek atmamak
+const MSTAT_FETCH_LIMIT = 40;        // tek renderda en fazla bu kadar maç çekilir
+
+function fmtStatChunk(name, st) {
+  if (!st) return '';
+  const avg = st.darts_thrown > 0
+    ? (st.total_score / st.darts_thrown * 3).toFixed(1) : null;
+  const bits = [];
+  if (avg) bits.push(`${avg} ort`);
+  if (st.one_eighty > 0) bits.push(`180×${st.one_eighty}`);
+  if (st.best_checkout >= 100) bits.push(`HO ${st.best_checkout}`);
+  else if (st.best_checkout > 0) bits.push(`Çıkış ${st.best_checkout}`);
+  if (!bits.length) return '';
+  return `<span class="mstat-p"><b>${name}</b> ${bits.join(' · ')}</span>`;
+}
+
+// Cache'te veri varsa istatistik satırını üretir, yoksa boş bırakır (sonra doldurulur).
+function matchStatsHtml(m) {
+  const rows = matchStatsCache.get(m.id);
+  if (!rows) return '';
+  const s1 = rows.find(r => r.player_slot === 1);
+  const s2 = rows.find(r => r.player_slot === 2);
+  const n1 = entryLabel(m.entry1), n2 = entryLabel(m.entry2);
+  const html = [fmtStatChunk(n1, s1), fmtStatChunk(n2, s2)].filter(Boolean).join('');
+  return html;
+}
+
+// Ekranda görünen bitmiş maçların istatistiklerini çeker ve satırları yerinde günceller
+// (tam render tetiklemez — sonsuz döngü / seçim kaybı olmasın).
+function hydrateMatchStats(matches) {
+  const need = matches
+    .filter(m => m.status === 'finished'
+      && !matchStatsCache.has(m.id) && !matchStatsPending.has(m.id))
+    .slice(0, MSTAT_FETCH_LIMIT);
+  for (const m of need) {
+    matchStatsPending.add(m.id);
+    fetch(`/api/matches/${m.id}`)
+      .then(r => r.ok ? r.json() : null)
+      .then(data => {
+        if (data && Array.isArray(data.stats)) matchStatsCache.set(m.id, data.stats);
+        const el = document.querySelector(`.mstat-line[data-mid="${m.id}"]`);
+        if (el) el.innerHTML = matchStatsHtml(m);
+      })
+      .catch(() => {})
+      .finally(() => matchStatsPending.delete(m.id));
+  }
+}
+
 // ========== Render: Tüm Maçlar ==========
 function renderMatches() {
   const host = document.getElementById('matches-host');
@@ -743,24 +795,24 @@ function renderMatches() {
   else if (matchFilter === 'ready') filtered = all.filter(m => m.status === 'ready');
   else if (matchFilter === 'finished') filtered = all.filter(m => m.status === 'finished');
 
-  // Sıralama (yukarıdan aşağı):
+  // Sıralama (yukarıdan aşağı) — kullanıcı isteği (Tem 2026): "en son oynanan en üstte".
   //   1) CANLI oynanan maçlar
-  //   2) Başlamamış ama board'a atanmış maçlar (oynanmaya hazır)
-  //   3) Oynanmış / bitmiş maçlar (en yeni üstte)
+  //   2) Oynanmış / bitmiş maçlar (en yeni üstte)
+  //   3) Başlamamış ama board'a atanmış maçlar (oynanmaya hazır)
   //   4) Sırası gelecek maçlar (board'a atanmamış bekleyenler)
   const assigned = new Set(
     (state.boards || []).filter(b => b.current_match_id).map(b => b.current_match_id));
   const rank = (m) => {
     if (m.status === 'live') return 0;
-    if (m.status === 'finished') return 2;
-    if ((m.status === 'ready' || m.status === 'pending') && assigned.has(m.id)) return 1;
+    if (m.status === 'finished') return 1;
+    if ((m.status === 'ready' || m.status === 'pending') && assigned.has(m.id)) return 2;
     return 3;  // sırası gelecek (atanmamış ready/pending)
   };
   filtered.sort((a, b) => {
     const ra = rank(a), rb = rank(b);
     if (ra !== rb) return ra - rb;
     // Bitmişler kendi içinde: en yeni üstte
-    if (ra === 2) {
+    if (ra === 1) {
       if (a.finished_at && b.finished_at) return b.finished_at.localeCompare(a.finished_at);
       return (b.id || 0) - (a.id || 0);
     }
@@ -825,6 +877,9 @@ function renderMatches() {
                   <span class="${w1 ? 'winner' : ''}">${e1}</span>
                   <span class="vs">vs</span>
                   <span class="${w2 ? 'winner' : ''}">${e2}</span>
+                  ${m.status === 'finished'
+                    ? `<div class="mstat-line" data-mid="${m.id}">${matchStatsHtml(m)}</div>`
+                    : ''}
                 </td>
                 <td style="padding: 0.55rem 0.7rem; text-align: right; font-variant-numeric: tabular-nums;">
                   <strong>${score}</strong>
@@ -836,6 +891,8 @@ function renderMatches() {
       </table>
     </div>
   `;
+
+  hydrateMatchStats(filtered);
 }
 
 // ========== Render: Son bitenler ==========

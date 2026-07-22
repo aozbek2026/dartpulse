@@ -136,6 +136,17 @@
     overflow-x: auto;
     -webkit-overflow-scrolling: touch;
   }
+  /* Biten maç satırındaki mini istatistik şeridi (3-ok ort · 180 · high out).
+     Kutu ebadını büyütmemek için küçük punto + sıkı satır aralığı. */
+  .mstat-line {
+    display: flex; flex-wrap: wrap; gap: 0.15rem 0.9rem;
+    margin-top: 0.15rem; line-height: 1.2;
+    font-size: 0.7rem; color: var(--text-dim);
+    font-variant-numeric: tabular-nums;
+  }
+  .mstat-line:empty { display: none; }
+  .mstat-p b { color: var(--text); font-weight: 600; }
+
   .standings-table { width: 100%; border-collapse: collapse; }
   .standings-table th, .standings-table td {
     padding: 0.55rem 0.7rem; text-align: left;
