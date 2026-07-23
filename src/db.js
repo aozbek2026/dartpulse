@@ -1365,6 +1365,18 @@ function updateStats(matchId, slot, delta) {
 function statsForMatch(matchId) {
   return db.prepare('SELECT * FROM match_stats WHERE match_id = ? ORDER BY player_slot').all(matchId);
 }
+// best_checkout "en yüksek çıkış" değeridir; updateStats onu Math.max ile tuttuğu için
+// bir atış geri alınınca DÜŞÜRÜLEMEZ. Geri almadan sonra kalan finish atışlarından
+// yeniden hesaplayıp doğrudan yazar (silinen yüksek çıkış hayalet kalmasın).
+function recomputeBestCheckout(matchId, slot) {
+  const row = db.prepare(
+    'SELECT MAX(score) AS mx FROM throws WHERE match_id = ? AND player_slot = ? AND is_finish = 1'
+  ).get(matchId, slot);
+  const best = (row && row.mx) ? row.mx : 0;
+  db.prepare('UPDATE match_stats SET best_checkout = ? WHERE match_id = ? AND player_slot = ?')
+    .run(best, matchId, slot);
+  return best;
+}
 
 // Turnuva boyunca bir oyuncunun tüm maçlarındaki istatistiklerini topla.
 // Doubles modunda entry'ler iki oyuncudan oluşur; istatistikler entry bazlı kalır
@@ -2508,7 +2520,7 @@ module.exports = {
   createMatch, matchById, matchesForTournament, matchesForStage,
   activeMatches, pendingReadyMatches, updateMatch, setMatchEntry, deleteMatch, walkoverMatch,
   addThrow, throwsForMatch, lastThrow, deleteThrow,
-  getStats, updateStats, statsForMatch, tournamentPlayerReport,
+  getStats, updateStats, statsForMatch, recomputeBestCheckout, tournamentPlayerReport,
   resetAll,
   createTeamEvent, allTeamEvents, teamEventById, updateTeamEvent, deleteTeamEvent,
   createTeamPhase, phasesForEvent, teamPhaseById, updateTeamPhase,

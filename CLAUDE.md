@@ -684,6 +684,35 @@ Final kutusu solda çıkıyor ve ilk tur (R1) kutularının sol tarafında sarka
 Not: `organizer.js` korumalı modül listesinde DEĞİL; bu yüzden bug-fix doğrudan yapıldı.
 `board.js`/`scorer.html` braket göstermiyor, etkilenmedi.
 
+## Geri Al — istatistik sayaç bug'ı düzeltildi (Temmuz 2026)
+
+**Bug (kullanıcı bildirdi):** X01'de yanlışlıkla girilen bir skor (ör. "180") "Geri Al" ile
+silinince atış satırı gidiyor ve total_score/darts/turns geri alınıyordu; ama **180 / 140+ /
+100+ / high_out sayaçları geri ALINMIYORDU**. Sonuç: hayalet bir 180 istatistiklerde kalıcı
+kalıyor (yeni eklenen istatistik şeridi + Excel raporu). Kök neden: `match-engine.js`
+`undoLastThrow`'daki `statDelta` yalnız üç alanı düşürüyordu.
+
+**Fix (korumalı modüller — kullanıcı onayıyla):**
+- `src/match-engine.js` `undoLastThrow`: `statDelta`'ya silinen atışın kategori sayaçları
+  eklendi — `tons`/`ton_plus`/`one_eighty` skora göre `-1`, `high_outs` finish+100 ise `-1`.
+  `throws.score` bust'ta zaten `0` saklandığı için (recordThrow) `last.score` ile kontrol
+  güvenli — busted atış hiçbir sayaca girmez, total'dan 0 düşer.
+- `best_checkout` bir "en yüksek" değeri; `db.updateStats` onu `Math.max` ile tuttuğu için
+  delta ile DÜŞÜRÜLEMEZ. Yeni `db.recomputeBestCheckout(matchId, slot)` helper'ı kalan
+  `is_finish=1` atışlardan `MAX(score)` ile yeniden hesaplayıp doğrudan yazıyor (silinen
+  yüksek çıkış hayalet kalmasın). undo bunu updateStats'tan sonra çağırır.
+- Şema değişmedi (yalnız yeni helper + export). `match_stats` korumalı şema listesinde değil.
+
+**Doğrulama:** Node yerleşik sqlite ile birebir SQL mirror'ı iki senaryoda geçti (yanlış 180 →
+one_eighty 1→0, diğerleri korunur; yanlış HO 160 → best_checkout 100'e döner). Gerçek motora
+karşı Mac smoke: `node scripts/smoke-undo-stats.js` (sandbox'ta better-sqlite3 native binary
+Mac derlemesi olduğu için çalışmaz; Mac'te sunucu kapalıyken çalıştır). `node --check` temiz.
+
+**Bilinmesi gereken sınır:** `undoLastThrow` hâlâ "son atış, mevcut leg içinde" varsayımıyla
+çalışıyor — leg/set geçişlerini geri sarmıyor (eski davranış, değişmedi). Checkout'u geri
+almak (leg bitmiş) hâlâ tam desteklenmez; kategori/best_checkout düzeltmesi bu sınırı
+genişletmez, sadece sayaç tutarlılığını sağlar.
+
 ## İzleyici "Tüm Maçlar" — sıralama + biten maç istatistikleri (Temmuz 2026)
 
 Kullanıcı isteği: maç listesinde **en son oynanan en üstte** olsun, ve biten maç satırlarında
@@ -728,6 +757,24 @@ satır bazında çağrılıyor:
 `tv.js` ve `organizer.js`'e **eklenmedi** — kullanıcı kapsamı yalnız "Tüm Maçlar" tablosu
 olarak seçti. Oralara da istenirse `matchStatsHtml` + `hydrateMatchStats` aynen kullanılabilir
 (entry adları için `entryLabel`, session sayfalarında `p1_name`/`p2_name` farkına dikkat).
+
+### session.html'e taşındı (Temmuz 2026, ikinci tur)
+Kullanıcı isteğiyle aynı iki iyileştirme lig/sezon **oturum detay** sayfasına (`session.html`)
+da uygulandı — hem tek turnuvalı oturum (`renderMatchList`) hem league_day round listeleri.
+- **Sıralama:** `renderMatchList` içindeki `order` map'i `{live:0, ready:1, pending:2,
+  finished:3}` iken **`{live:0, finished:1, ready:2, pending:3}`** oldu; bitmişler kendi
+  içinde `finished_at DESC` (yoksa `id DESC`). Eskiden biten maçlar en altta + tur sırasına
+  göre (en eski üstte) diziliyordu — kullanıcı "en yeni biten üstte" istedi.
+- **İstatistik şeridi:** `session.html`'e izleyicideki mantığın aynısı taşındı
+  (`matchStatsCache`, `matchStatsPending`, `fmtStatChunk`, `matchStatsHtml`, `hydrateMatchStats`).
+  **Tek fark:** session maçları `entry1`/`entry2` objesi yerine `p1_name`/`p2_name` taşıdığı
+  için `.mstat-line` elementine `data-p1`/`data-p2` yazılıp fetch dönüşünde oradan okunuyor
+  (viewer'da `entryLabel(m.entry1)` kullanılıyordu). CSS `.mstat-line` `flex-basis:100%` ile
+  kartın altına tam satır düşer (viewer'da tablo hücresi içindeydi). `hydrateMatchStats()`
+  iki `content.innerHTML` atamasından sonra çağrılır (bracket render + league_day render).
+- `session.html` **korumalı modül değil** — doğrudan düzenlendi. Braket motoru hâlâ kendi
+  bağımsız kopyası (bkz. TUTARLILIK KURALI: lig/sezon sayfaları ortak `bracket-shared.js`'e
+  bilinçli bağlanmadı).
 
 ## Braket 32'lik dilim seçimi + sezon/lig oturum braketi (Haziran 2026)
 

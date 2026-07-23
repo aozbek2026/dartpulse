@@ -448,15 +448,29 @@ function undoLastThrow(matchId) {
     });
   }
 
-  // Roll back stats (yaklaşık) — silinen visit'in dart'ı kadar geri al.
+  // Roll back stats — silinen visit'in dart'ı + kategori sayaçları kadar geri al.
   // Eski kayıtlarda darts_used null olabilir; bu durumda 3 varsay.
+  // NOT: throws.score bust'ta zaten 0 saklanır (recordThrow), bu yüzden sayaç
+  // kontrolleri için doğrudan last.score kullanmak güvenli — busted atış hiçbir
+  // ton/180 sayacına girmez, total_score'dan da 0 düşer.
   const removedDarts = last.darts_used || 3;
+  const s = last.score;
   const statDelta = {
-    total_score: -last.score,
+    total_score: -s,
     darts_thrown: -removedDarts,
     turns: -1,
+    // 100+/140+/180 sayaçları girişte artırılıyordu ama eski undo bunları geri
+    // ALMIYORDU → yanlış girilip geri alınan "180" hayalet olarak kalıyordu.
+    tons:       (s >= 100 && s < 140) ? -1 : 0,
+    ton_plus:   (s >= 140 && s < 180) ? -1 : 0,
+    one_eighty: (s === 180)           ? -1 : 0,
+    high_outs:  (last.is_finish && s >= 100) ? -1 : 0,
   };
   db.updateStats(matchId, last.player_slot, statDelta);
+
+  // best_checkout "en yüksek" değeri olduğu için delta ile düşürülemez; kalan
+  // finish atışlarından yeniden hesapla (silinen yüksek çıkış hayalet kalmasın).
+  db.recomputeBestCheckout(matchId, last.player_slot);
 
   return { ok: true };
 }
