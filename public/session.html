@@ -59,6 +59,16 @@
   .match-status-pill.finished { background: rgba(245,158,11,0.15); color: var(--accent, #f59e0b); }
   .match-status-pill.pending  { background: rgba(255,255,255,0.05); color: var(--text-dim); }
 
+  /* Biten maç mini istatistik şeridi (izleyiciyle aynı: 3-ok ort · 180 · high out).
+     Kutu ebadını büyütmemek için küçük punto; kartın altına tam satır olarak düşer. */
+  .mstat-line {
+    flex-basis: 100%; display: flex; flex-wrap: wrap; gap: 0.1rem 0.9rem;
+    margin-top: 0.35rem; line-height: 1.2; font-size: 0.7rem;
+    color: var(--text-dim); font-variant-numeric: tabular-nums;
+  }
+  .mstat-line:empty { display: none; }
+  .mstat-p b { color: var(--text); font-weight: 600; }
+
   /* ── Section titles ───────────────────── */
   .section-title {
     font-size: 0.78rem; font-weight: 700; text-transform: uppercase;
@@ -298,6 +308,7 @@ function render() {
 
   content.innerHTML = html;
   fitBrackets(); // braketleri kutuya sığdır (varsa)
+  hydrateMatchStats(); // biten maç istatistik şeritlerini doldur
 
   // Turnuvayı Başlat butonu — draft + maç yok durumunda
   const startBtn = document.getElementById('start-tournament-btn');
@@ -403,6 +414,7 @@ function renderLeagueDay(s, comp, schedule) {
   }
 
   content.innerHTML = html;
+  hydrateMatchStats(); // biten maç istatistik şeritlerini doldur (league_day)
 }
 
 // Tek satır: durum + eşleşmeler + BYE + uygun butonlar
@@ -522,11 +534,64 @@ function renderMovableRoundRow(round, session) {
 // ── Maç listesi render ─────────────────────────────────────────────
 function renderMatchList(matches, comp) {
   if (!matches.length) return '<p style="color:var(--text-dim)">Henüz maç yok.</p>';
+  // Sıralama izleyici ekranıyla aynı (Tem 2026): CANLI → BİTEN (en yeni üstte)
+  // → HAZIR → BEKLİYOR. Bitmişler kendi içinde finished_at DESC (yoksa id DESC).
+  const order = { live: 0, finished: 1, ready: 2, pending: 3 };
   const sorted = [...matches].sort((a, b) => {
-    const order = { live: 0, ready: 1, pending: 2, finished: 3 };
-    return (order[a.status] ?? 4) - (order[b.status] ?? 4) || (a.round || 0) - (b.round || 0);
+    const ra = order[a.status] ?? 4, rb = order[b.status] ?? 4;
+    if (ra !== rb) return ra - rb;
+    if (ra === 1) {
+      if (a.finished_at && b.finished_at) return b.finished_at.localeCompare(a.finished_at);
+      return (b.id || 0) - (a.id || 0);
+    }
+    return (a.round || 0) - (b.round || 0);
   });
   return sorted.map(m => renderMatchCard(m, comp)).join('');
+}
+
+// ── Biten maç istatistikleri (lazy fetch + cache) — izleyicideki mantığın aynısı.
+//    Snapshot'a eklenmez; bitmiş maçın istatistiği değişmediği için tek sefer çekilir.
+const matchStatsCache = new Map();   // matchId -> [slot1, slot2] stats
+const matchStatsPending = new Set();
+const MSTAT_FETCH_LIMIT = 40;
+function fmtStatChunk(name, st) {
+  if (!st) return '';
+  const avg = st.darts_thrown > 0 ? (st.total_score / st.darts_thrown * 3).toFixed(1) : null;
+  const bits = [];
+  if (avg) bits.push(`${avg} ort`);
+  if (st.one_eighty > 0) bits.push(`180×${st.one_eighty}`);
+  if (st.best_checkout >= 100) bits.push(`HO ${st.best_checkout}`);
+  else if (st.best_checkout > 0) bits.push(`Çıkış ${st.best_checkout}`);
+  if (!bits.length) return '';
+  return `<span class="mstat-p"><b>${esc(name)}</b> ${bits.join(' · ')}</span>`;
+}
+function matchStatsHtml(m) {
+  const rows = matchStatsCache.get(m.id);
+  if (!rows) return '';
+  const s1 = rows.find(r => r.player_slot === 1);
+  const s2 = rows.find(r => r.player_slot === 2);
+  return [fmtStatChunk(m.p1_name || '?', s1), fmtStatChunk(m.p2_name || '?', s2)]
+    .filter(Boolean).join('');
+}
+// DOM'daki boş .mstat-line'ları çeker ve yalnız ilgili elementi günceller (tam render yok).
+function hydrateMatchStats() {
+  const els = Array.from(document.querySelectorAll('.mstat-line[data-mid]'));
+  let n = 0;
+  for (const el of els) {
+    const id = +el.getAttribute('data-mid');
+    if (matchStatsCache.has(id) || matchStatsPending.has(id)) continue;
+    if (n++ >= MSTAT_FETCH_LIMIT) break;
+    matchStatsPending.add(id);
+    fetch('/api/matches/' + id)
+      .then(r => r.ok ? r.json() : null)
+      .then(data => {
+        if (data && Array.isArray(data.stats)) matchStatsCache.set(id, data.stats);
+        const t = document.querySelector(`.mstat-line[data-mid="${id}"]`);
+        if (t) t.innerHTML = matchStatsHtml({ id, p1_name: t.dataset.p1, p2_name: t.dataset.p2 });
+      })
+      .catch(() => {})
+      .finally(() => matchStatsPending.delete(id));
+  }
 }
 
 function renderMatchCard(m, comp) {
@@ -552,6 +617,7 @@ function renderMatchCard(m, comp) {
       </div>
       ${scoreHtml}
       <div style="display:flex;gap:0.5rem;align-items:center">${roundLbl}${statusPill}</div>
+      ${isFinished ? `<div class="mstat-line" data-mid="${m.id}" data-p1="${p1}" data-p2="${p2}">${matchStatsHtml(m)}</div>` : ''}
     </div>
   `;
 }
