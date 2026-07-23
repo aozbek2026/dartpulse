@@ -813,10 +813,13 @@ function cricketUndoSnapshot(matchId) {
 app.post('/api/matches/:id/cricket-throw', (req, res) => {
   try {
     const id = +req.params.id;
-    const { playerSlot, hits } = req.body;
+    const { playerSlot, hits, clientThrowId } = req.body;
     if (!hits || typeof hits !== 'object') return res.status(400).json({ error: 'hits gerekli' });
-    cricketUndoSnapshot(id); // önce snapshot
-    const result = engine.recordCricketVisit(id, playerSlot, hits);
+    const result = db.applyThrowIdempotent(clientThrowId, id, () => {
+      cricketUndoSnapshot(id); // önce snapshot
+      return engine.recordCricketVisit(id, playerSlot, hits);
+    });
+    if (result && result.duplicate) { io.emit('match:update', { matchId: id }); scheduleBroadcast(); return res.json({ duplicate: true }); }
     const m = db.matchById(id);
     if (m?.board_id) {
       io.to(`board:${m.board_id}`).emit('board:state', {
@@ -835,10 +838,13 @@ app.post('/api/matches/:id/cricket-throw', (req, res) => {
 app.post('/api/matches/:id/fb-cezali-throw', (req, res) => {
   try {
     const id = +req.params.id;
-    const { playerSlot, allocation } = req.body;
+    const { playerSlot, allocation, clientThrowId } = req.body;
     if (!allocation || typeof allocation !== 'object') return res.status(400).json({ error: 'allocation gerekli' });
-    cricketUndoSnapshot(id);
-    const result = engine.recordFBCezaliVisit(id, playerSlot, allocation);
+    const result = db.applyThrowIdempotent(clientThrowId, id, () => {
+      cricketUndoSnapshot(id);
+      return engine.recordFBCezaliVisit(id, playerSlot, allocation);
+    });
+    if (result && result.duplicate) { io.emit('match:update', { matchId: id }); scheduleBroadcast(); return res.json({ duplicate: true }); }
     const m = db.matchById(id);
     if (m?.board_id) {
       io.to(`board:${m.board_id}`).emit('board:state', {
@@ -857,10 +863,13 @@ app.post('/api/matches/:id/fb-cezali-throw', (req, res) => {
 app.post('/api/matches/:id/karambol-throw', (req, res) => {
   try {
     const id = +req.params.id;
-    const { playerSlot, allocation } = req.body;
+    const { playerSlot, allocation, clientThrowId } = req.body;
     if (!allocation || typeof allocation !== 'object') return res.status(400).json({ error: 'allocation gerekli' });
-    cricketUndoSnapshot(id);
-    const result = engine.recordKarambolVisit(id, playerSlot, allocation);
+    const result = db.applyThrowIdempotent(clientThrowId, id, () => {
+      cricketUndoSnapshot(id);
+      return engine.recordKarambolVisit(id, playerSlot, allocation);
+    });
+    if (result && result.duplicate) { io.emit('match:update', { matchId: id }); scheduleBroadcast(); return res.json({ duplicate: true }); }
     const m = db.matchById(id);
     if (m?.board_id) {
       io.to(`board:${m.board_id}`).emit('board:state', {
@@ -1063,9 +1072,19 @@ app.patch('/api/matches/:id/scorer', (req, res) => {
 
 app.post('/api/matches/:id/throw', (req, res) => {
   try {
-    const { playerSlot, score, finishDarts, bust } = req.body;
+    const { playerSlot, score, finishDarts, bust, clientThrowId } = req.body;
     const matchId = +req.params.id;
-    const result = engine.recordThrow(matchId, playerSlot, +score, finishDarts ? +finishDarts : null, !!bust);
+    // Tablet offline kuyruğu: aynı clientThrowId ikinci kez gelirse (cevap dönerken
+    // kopmuş olabilir) atışı TEKRAR uygulama — çift sayma engellenir. clientThrowId
+    // yoksa eski davranış (doğrudan recordThrow).
+    const result = db.applyThrowIdempotent(clientThrowId, matchId,
+      () => engine.recordThrow(matchId, playerSlot, +score, finishDarts ? +finishDarts : null, !!bust));
+    // Duplicate ise motor çalışmadı; sadece state'i tazele, tekrar yayınla.
+    if (result && result.duplicate) {
+      io.emit('match:update', { matchId });
+      scheduleBroadcast();
+      return res.json({ duplicate: true });
+    }
     io.emit('match:update', { matchId });
     if (result.matchFinished) {
       const m = db.matchById(matchId);

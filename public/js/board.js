@@ -41,6 +41,85 @@ const socket = io();
   });
 })();
 
+// ==========================================================================
+// Offline atış kuyruğu (Temmuz 2026)
+// Bağlantı koptuğunda gönderilemeyen atışlar burada bekler; bağlantı gelince
+// SIRAYLA otomatik gönderilir. Her atışa benzersiz clientThrowId eklenir —
+// sunucu aynı kimliği ikinci kez İŞLEMEZ (çift sayma engellenir, bkz.
+// applied_client_throws tablosu). Kuyruk localStorage'a yazılır: tablet/uygulama
+// kapanıp açılsa/çökse bile bekleyen atış kaybolmaz.
+// ==========================================================================
+const THROW_QUEUE_KEY = 'board.throwQueue.v1';
+let _throwQueue = _loadThrowQueue();
+let _flushingQueue = false;
+
+function _loadThrowQueue() {
+  try { const a = JSON.parse(localStorage.getItem(THROW_QUEUE_KEY) || '[]'); return Array.isArray(a) ? a : []; }
+  catch { return []; }
+}
+function _saveThrowQueue() {
+  try { localStorage.setItem(THROW_QUEUE_KEY, JSON.stringify(_throwQueue)); } catch {}
+  _updatePendingIndicator();
+}
+function _genThrowId() {
+  try { if (window.crypto && crypto.randomUUID) return crypto.randomUUID(); } catch {}
+  return 'q-' + Date.now() + '-' + Math.random().toString(36).slice(2, 10);
+}
+// Bekleyen atış sayısını üstte küçük bir rozette gösterir (board.html'e dokunmadan,
+// element dinamik oluşturulur).
+function _updatePendingIndicator() {
+  let el = document.getElementById('pending-throws');
+  if (!el) {
+    el = document.createElement('div');
+    el.id = 'pending-throws';
+    el.style.cssText = 'position:fixed;top:8px;left:50%;transform:translateX(-50%);z-index:10000;'
+      + 'background:#b45309;color:#fff;padding:6px 14px;border-radius:999px;font-size:0.85rem;'
+      + 'font-weight:700;box-shadow:0 2px 8px rgba(0,0,0,.4);pointer-events:none;';
+    document.body.appendChild(el);
+  }
+  const n = _throwQueue.length;
+  if (n > 0) { el.textContent = `⏳ Bekleyen atış: ${n}`; el.style.display = ''; }
+  else el.style.display = 'none';
+}
+
+// Bir atışı kuyruğa ekle + kuyruğu boşaltmayı dene.
+// Dönüş: sunucu cevabı (delivered) VEYA offline ise { _queued: true }.
+async function sendThrow(url, body) {
+  const item = { id: _genThrowId(), url, body: { ...body } };
+  item.body.clientThrowId = item.id;
+  _throwQueue.push(item);
+  _saveThrowQueue();
+  return await flushThrowQueue(item.id);
+}
+
+// Kuyruğu FIFO gönderir. targetId verilirse o atışın cevabını döndürür; ona
+// ulaşamadan offline olursa { _queued: true } döner.
+async function flushThrowQueue(targetId) {
+  if (_flushingQueue) return { _queued: true };
+  _flushingQueue = true;
+  let targetRes = { _queued: true };
+  try {
+    while (_throwQueue.length) {
+      const item = _throwQueue[0];
+      const res = await api.post(item.url, item.body);
+      if (res && res._network) break; // offline → dur, kuyruk kalsın
+      // delivered (başarı | duplicate | uygulama-hatası) → kuyruktan çıkar
+      _throwQueue.shift();
+      _saveThrowQueue();
+      if (item.id === targetId) targetRes = res;
+      if (res && res.error && !res.duplicate) toast('Atış hatası: ' + res.error);
+    }
+  } finally {
+    _flushingQueue = false;
+  }
+  return targetRes;
+}
+
+// Bağlantı gelince + periyodik olarak + açılışta kuyruğu boşalt.
+socket.on('connect', () => { if (_throwQueue.length) flushThrowQueue(); });
+setInterval(() => { if (_throwQueue.length && !_flushingQueue) flushThrowQueue(); }, 5000);
+window.addEventListener('load', () => { _updatePendingIndicator(); if (_throwQueue.length) flushThrowQueue(); });
+
 // ---- Tam ekran yardımcıları (board seçildikten sonra) ----
 async function requestFs(el) {
   try {
@@ -918,10 +997,12 @@ async function submitCricketDarts() {
   // Visit'i temizle (server cevabı gelmeden önce — UI takılmasın)
   const sentDarts = cricketDarts.slice();
   cricketDarts = [];
-  const res = await api.post(`/api/matches/${currentMatch.id}/cricket-throw`, {
+  const res = await sendThrow(`/api/matches/${currentMatch.id}/cricket-throw`, {
     playerSlot: slot,
     hits,
   });
+  if (res && res._queued) { showScoreFlash('✓', false); return; } // offline: kuyruğa alındı
+  if (res && res.duplicate) return; // zaten işlenmiş
   if (res.error) {
     // Hata durumunda dartları geri yükle
     cricketDarts = sentDarts;
@@ -1241,7 +1322,9 @@ async function submitFBCezaliDarts() {
   fbMetaMode = null;
   fbMetaScore = 0;
 
-  const res = await api.post(`/api/matches/${currentMatch.id}/fb-cezali-throw`, payload);
+  const res = await sendThrow(`/api/matches/${currentMatch.id}/fb-cezali-throw`, payload);
+  if (res && res._queued) { showScoreFlash('✓', false); return; }
+  if (res && res.duplicate) return;
   if (res.error) {
     fbDarts = sentDarts;
     fbMetaMode = sentMode;
@@ -1429,10 +1512,12 @@ async function submitKarambolDarts() {
   }
   const sentDarts = karambolDarts.slice();
   karambolDarts = [];
-  const res = await api.post(`/api/matches/${currentMatch.id}/karambol-throw`, {
+  const res = await sendThrow(`/api/matches/${currentMatch.id}/karambol-throw`, {
     playerSlot: slot,
     allocation: { marks: marksObj },
   });
+  if (res && res._queued) { showScoreFlash('✓', false); return; }
+  if (res && res.duplicate) return;
   if (res.error) {
     karambolDarts = sentDarts;
     renderMatch();
@@ -1605,7 +1690,15 @@ async function submitScore() {
   const body = { playerSlot: slot, score };
   if (finishDarts) body.finishDarts = finishDarts;
 
-  const res = await api.post(`/api/matches/${currentMatch.id}/throw`, body);
+  const res = await sendThrow(`/api/matches/${currentMatch.id}/throw`, body);
+  // Offline → atış kuyruğa alındı; kalan/sıra bağlantı gelince güncellenecek.
+  if (res && res._queued) {
+    currentInput = '';
+    showScoreFlash(String(score), false);
+    return;
+  }
+  // Aynı atış zaten işlenmiş (yeniden gönderim) → çift sayma yok; state tazelenir.
+  if (res && res.duplicate) { currentInput = ''; return; }
   if (res.error) return toast('Hata: ' + res.error);
   currentInput = '';
   // Flash efekti — kalan skor kutusuna kısa parıltı
@@ -1658,7 +1751,9 @@ async function submitBust() {
   const m = currentMatch;
   if (m.game_mode === 'cricket') return;
   const slot = m.current_turn;
-  const res = await api.post(`/api/matches/${currentMatch.id}/throw`, { playerSlot: slot, score: 0, bust: true });
+  const res = await sendThrow(`/api/matches/${currentMatch.id}/throw`, { playerSlot: slot, score: 0, bust: true });
+  if (res && res._queued) { currentInput = ''; showScoreFlash('Bust', true); return; }
+  if (res && res.duplicate) { currentInput = ''; return; }
   if (res.error) return toast('Hata: ' + res.error);
   currentInput = '';
   const inputEl = document.getElementById('keypad-input');

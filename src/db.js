@@ -262,6 +262,16 @@ function init() {
       FOREIGN KEY(match_id) REFERENCES matches(id) ON DELETE CASCADE
     );
 
+    -- Tablet offline kuyruğu için idempotency: her atışın tablet tarafında ürettiği
+    -- benzersiz client_id burada tutulur. Bağlantı koptuğunda yeniden gönderilen aynı
+    -- atış (cevap dönerken kopmuş olabilir) çift işlenmesin diye endpoint önce buraya
+    -- bakar. Yeni tablo — mevcut şemaya dokunmaz (bkz. Kod konvansiyonu #8).
+    CREATE TABLE IF NOT EXISTS applied_client_throws (
+      client_id TEXT PRIMARY KEY,
+      match_id INTEGER,
+      created_at TEXT DEFAULT CURRENT_TIMESTAMP
+    );
+
     -- =========================================================
     --  LIG & SEZON SISTEMI (Dilim 1: temel tablolar)
     -- =========================================================
@@ -1368,6 +1378,24 @@ function statsForMatch(matchId) {
 // best_checkout "en yüksek çıkış" değeridir; updateStats onu Math.max ile tuttuğu için
 // bir atış geri alınınca DÜŞÜRÜLEMEZ. Geri almadan sonra kalan finish atışlarından
 // yeniden hesaplayıp doğrudan yazar (silinen yüksek çıkış hayalet kalmasın).
+// Tablet offline kuyruğu için idempotent atış uygulama.
+// clientId verilmişse: daha önce işlenmiş mi diye bakar; işlenmişse fn'i ÇALIŞTIRMADAN
+// { duplicate: true } döner. Değilse fn'i (engine.recordThrow) çalıştırır, clientId'yi
+// işaretler ve fn sonucunu döner — hepsi tek transaction'da (atomik).
+// clientId yoksa: eski davranış — sadece fn çalıştırılır (geriye dönük uyumlu).
+function applyThrowIdempotent(clientId, matchId, fn) {
+  if (!clientId) return fn();
+  const tx = db.transaction(() => {
+    const seen = db.prepare('SELECT 1 FROM applied_client_throws WHERE client_id = ?').get(clientId);
+    if (seen) return { duplicate: true };
+    const result = fn();
+    db.prepare('INSERT INTO applied_client_throws (client_id, match_id) VALUES (?, ?)')
+      .run(clientId, matchId || null);
+    return result;
+  });
+  return tx();
+}
+
 function recomputeBestCheckout(matchId, slot) {
   const row = db.prepare(
     'SELECT MAX(score) AS mx FROM throws WHERE match_id = ? AND player_slot = ? AND is_finish = 1'
@@ -2520,7 +2548,7 @@ module.exports = {
   createMatch, matchById, matchesForTournament, matchesForStage,
   activeMatches, pendingReadyMatches, updateMatch, setMatchEntry, deleteMatch, walkoverMatch,
   addThrow, throwsForMatch, lastThrow, deleteThrow,
-  getStats, updateStats, statsForMatch, recomputeBestCheckout, tournamentPlayerReport,
+  getStats, updateStats, statsForMatch, recomputeBestCheckout, applyThrowIdempotent, tournamentPlayerReport,
   resetAll,
   createTeamEvent, allTeamEvents, teamEventById, updateTeamEvent, deleteTeamEvent,
   createTeamPhase, phasesForEvent, teamPhaseById, updateTeamPhase,

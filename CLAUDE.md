@@ -1361,6 +1361,48 @@ gün/tarih olarak eskidir (ör. hepsi aynı eski tarih).
   ```
   Bu komutu çalıştırmadan ÖNCE `npm start`'ı durdur (Ctrl+C), sonra çalıştır, sonra tekrar başlat — aksi halde foreground sunucu öldürür.
 
+## Tablet offline atış kuyruğu + idempotency (Temmuz 2026)
+
+Kullanıcı isteği: internet dalgalanmasında gönderilemeyen atış kaybolmasın; ama **çift sayma
+kesinlikle olmasın**. İki katmanlı çözüm — sunucu idempotency + tablet kuyruğu.
+
+### Sunucu tarafı (korumasız — `server.js` + `db.js`)
+- Yeni tablo `applied_client_throws(client_id TEXT PK, match_id, created_at)` (CREATE IF NOT
+  EXISTS; şema değişikliği değil, yeni tablo — Kod konvansiyonu #8'e uygun).
+- Yeni helper `db.applyThrowIdempotent(clientId, matchId, fn)`: clientId varsa **tek
+  transaction** içinde — daha önce işlenmişse `fn`'i ÇALIŞTIRMADAN `{duplicate:true}` döner;
+  değilse `fn()` (engine.recordThrow / recordCricketVisit / recordFBCezaliVisit /
+  recordKarambolVisit) çalışır, clientId işaretlenir, sonuç döner. clientId yoksa eski
+  davranış (sadece `fn()`). **match-engine.js'e DOKUNULMADI** — kontrol endpoint'te.
+- **Dört atış ucu da idempotent:** `/throw`, `/cricket-throw`, `/fb-cezali-throw`,
+  `/karambol-throw`. Hepsi `clientThrowId`'yi body'den okur; duplicate ise `{duplicate:true}`
+  döner + `match:update` yayınlar (state tazelensin).
+
+### Tablet tarafı (KORUMALI — `board.js`, kullanıcı onayıyla)
+- Offline kuyruk: `_throwQueue` (localStorage `board.throwQueue.v1` — kalıcı, tablet/uygulama
+  kapanıp açılsa bile kaybolmaz). Her atışa `_genThrowId()` (crypto.randomUUID, fallback'li)
+  ile benzersiz `clientThrowId` eklenir.
+- `sendThrow(url, body)`: atışı kuyruğa ekler + `flushThrowQueue(id)` çağırır. Dönüş: sunucu
+  cevabı (delivered) veya offline ise `{_queued:true}`.
+- `flushThrowQueue`: kuyruğu **FIFO** gönderir; `_network` hatası → durur (kuyruk kalır),
+  diğer durumda (başarı/duplicate/uygulama-hatası) kuyruktan çıkar. `_flushingQueue` kilidi
+  eşzamanlı akışı önler.
+- Otomatik boşaltma: `socket.on('connect')` + her 5 sn timer + `window load`.
+- Bekleyen atış rozeti (`#pending-throws`) dinamik oluşturulur — **board.html'e dokunulmadı**.
+- **Dört submit yolu da kuyruğa bağlı:** `submitScore`, `submitBust` (X01, `/throw`),
+  `submitCricketDarts`, `submitFBCezaliDarts`, `submitKarambolDarts`. Her biri: `res._queued`
+  → offline flash + return; `res.duplicate` → sessiz return (zaten sayıldı); değilse eski akış.
+- **Offline sınırı:** yerel skor motoru yok → kopukken kalan/sıra ekranda güncellenmez (atış
+  kuyrukta, bağlantı gelince uygulanır ve socket ile ekran oturur). Kısa blip'lerde saniyeler
+  içinde çözülür; conn-banner + rozet kullanıcıyı uyarır.
+- `scorer.html` (Hızlı Skor) sunucusuz/local olduğu için **etkilenmez** — kuyruk ağ katmanı.
+
+### Doğrulama
+İzole node:sqlite shim'iyle (bkz. Doğrulama tarzı) gerçek `db.js`+`match-engine.js`'e karşı:
+idempotency (aynı clientThrowId 2. kez uygulanmaz, farklı normal, clientId yok=eski davranış)
++ kuyruk (online normal, offline bekleme, reconnect otomatik boşaltma, **ACK-kayıp → yeniden
+gönderim çift saymaz**, localStorage kalıcılık) — hepsi geçti. `node --check` temiz.
+
 ## Tabletlere hafif snapshot — büyük paketi kesme (Temmuz 2026)
 
 Kullanıcı isteği: "büyük paketi tablete göndermeyi keselim." Tabletler `state` yayınındaki
@@ -1438,6 +1480,21 @@ Her büyük değişiklikten sonra:
 3. Mümkünse 1-2 satırlık integration smoke testi (`scripts/` altında örnek var)
 
 Mevcut DB dosyası test verisiyle dolu (`data.db`) — silmek istemiyorsan migrasyon yazarken `ALTER TABLE` ile geriye dönük uyumlu git.
+
+### Cowork sandbox'ta gerçek motoru koşturma (better-sqlite3 native binary sorunu)
+Cowork/Linux sandbox'taki `node_modules/better-sqlite3` **Mac derlemesi** olduğu için
+`require('./src/db')` sandbox'ta "invalid ELF header" ile patlar; kaynaktan yeniden derleme
+de ağ kısıtı (node headers 403) yüzünden olmaz. Bu yüzden ajan, gerçek `db.js`/`match-engine.js`
+kodunu doğrulamak için **izole bir kopyada node:sqlite shim'i** kullanır (kullanıcının
+klasörüne / node_modules'ına DOKUNMADAN):
+1. `src/`'yi `/tmp/...`'a kopyala.
+2. `node_modules/better-sqlite3/index.js` olarak ince bir shim yaz: `node:sqlite`'ın
+   `DatabaseSync`'ini better-sqlite3 API'sine (`prepare().run/get/all`, `.pluck()`, `exec`,
+   `pragma`, `transaction(fn)`) sarmalar. `run()` `lastInsertRowid`'i Number'a çevirmeli.
+3. Geçici `DB_PATH` ile gerçek `db.init()` + `tournament`/`engine` fonksiyonlarını çağırıp
+   assert et. (Örnek: Temmuz 2026 Geri Al düzeltmesi bu yöntemle iki senaryoda doğrulandı.)
+Bu, Mac'te `scripts/smoke-*.js` çalıştırmanın yerine geçer; yine de kritik işlerde kullanıcının
+Mac'te de koşturması önerilir. node:sqlite "experimental" uyarısı verir — zararsız.
 
 ## Tarz tercihleri
 
