@@ -268,12 +268,17 @@ app.delete('/api/admin/tournaments/:id', auth.requireAdmin, (req, res) => {
 //     match:update ile anlık güncelleniyor; bu debounce yalnızca izleyici/TV/
 //     organizatör dashboard'unu etkiler (~300ms fark, hissedilmez).
 function flushBroadcast() {
-  const snapByKey = new Map(); // uid (veya '__public__') -> snapshot (tek sefer kur)
+  const snapByKey = new Map(); // (mod + uid) -> snapshot (tek sefer kur)
   for (const [, socket] of io.sockets.sockets) {
     const uid = socket.data && socket.data.userId ? socket.data.userId : null;
-    const key = uid == null ? '__public__' : uid;
+    // Belirli bir board'a abone tablet → hafif snapshot (büyük paket gönderilmez).
+    const boardMode = !!(socket.data && socket.data.boardId);
+    const key = (boardMode ? 'b:' : 'f:') + (uid == null ? '__public__' : uid);
     let snap = snapByKey.get(key);
-    if (!snap) { snap = getSnapshot(uid); snapByKey.set(key, snap); }
+    if (!snap) {
+      snap = boardMode ? getBoardSnapshot(uid) : getSnapshot(uid);
+      snapByKey.set(key, snap);
+    }
     socket.emit('state', snap);
   }
 }
@@ -325,6 +330,30 @@ function getSnapshot(userId = null) {
       currentMatch: b.current_match_id ? db.matchById(b.current_match_id) : null,
     })),
     activeMatches: db.activeMatches(userId),
+  };
+}
+
+// TABLET (board) için HAFİF snapshot — büyük paketi tablete göndermemek için.
+// board.js `state` yayınından yalnız `boards` + turnuvaların (isim/durum/game_mode/
+// entries) alanlarını kullanıyor; `matches`, `report`, `stages`, `players` HİÇ
+// kullanılmıyor — bunlar 512 kişilik turnuvada paketin ağır kısmı (511 maç + entry
+// başı rapor). Bir tablet belirli bir board'a abone olunca (board:subscribe) her
+// atışta bu şişkin paketi indirip çöpe atıyordu; artık ona sadece bu ince sürüm gider.
+// Skoru giren tablet zaten `board:state` + `match:update` ile anlık güncelleniyor,
+// bu değişiklikten etkilenmez. NOT: `entries` korunuyor — skorer dropdown'ı (board.js
+// renderMatch) için gerekli. Tam snapshot (organizatör/izleyici/TV) değişmedi.
+function getBoardSnapshot(userId = null) {
+  return {
+    players: [],
+    tournaments: db.allTournaments(userId).map(t => ({
+      ...t,
+      entries: db.entriesForTournament(t.id),
+    })),
+    boards: db.allBoards(userId).map(b => ({
+      ...b,
+      currentMatch: b.current_match_id ? db.matchById(b.current_match_id) : null,
+    })),
+    activeMatches: [],
   };
 }
 
@@ -1176,6 +1205,9 @@ io.on('connection', (socket) => {
 
   socket.on('board:subscribe', (boardId) => {
     socket.join(`board:${boardId}`);
+    // Bu socket bir tablet: bundan sonra genel yayında hafif snapshot alsın.
+    socket.data = socket.data || {};
+    socket.data.boardId = +boardId;
     const board = db.boardById(+boardId);
     if (board) socket.emit('board:state', {
       board,

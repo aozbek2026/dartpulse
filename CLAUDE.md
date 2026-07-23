@@ -1314,6 +1314,32 @@ gün/tarih olarak eskidir (ör. hepsi aynı eski tarih).
   ```
   Bu komutu çalıştırmadan ÖNCE `npm start`'ı durdur (Ctrl+C), sonra çalıştır, sonra tekrar başlat — aksi halde foreground sunucu öldürür.
 
+## Tabletlere hafif snapshot — büyük paketi kesme (Temmuz 2026)
+
+Kullanıcı isteği: "büyük paketi tablete göndermeyi keselim." Tabletler `state` yayınındaki
+dev snapshot'ı (512 kişilik turnuvada 511 maç + entry başı `report`) her atışta indirip
+çöpe atıyordu; `board.js` bu paketten yalnız `boards` + turnuvaların `name`/`status`/
+`game_mode`/`entries` alanlarını kullanıyor (`matches`/`report`/`stages`/`players` HİÇ
+kullanılmıyor — grep'le doğrulandı).
+
+**Çözüm (sadece `server.js` — korumasız; `board.js`'e DOKUNULMADI):**
+- Yeni `getBoardSnapshot(userId)` — `matches`, `report`, `stages` ve `players`'ı atlar;
+  `boards` + hafif turnuva nesneleri (`...t` + `entries`) döndürür. `entries` korunuyor
+  çünkü skorer dropdown'ı (`board.js` renderMatch) ona bağlı.
+- `board:subscribe` handler'ı socket'i işaretler: `socket.data.boardId = +boardId`.
+- `flushBroadcast` artık `boardMode` socket'lere `getBoardSnapshot`, diğerlerine (organizatör/
+  izleyici/TV) tam `getSnapshot` gönderir. Cache anahtarı `'b:'|'f:' + uid` ile ayrıldı.
+- Bağlantı anındaki ilk `socket.emit('state', getSnapshot(uid))` tam kalır (tek seferlik,
+  abone olmadan önce). Sonraki tüm yayınlar tablet için hafif.
+
+Skoru giren tablet zaten `board:state` + `match:update` ile anlık güncelleniyor → bu
+değişiklikten etkilenmez. Board picker sayfası (henüz abone değil) hâlâ tam snapshot alır,
+ama geçici bir ekran olduğu için önemsiz.
+
+**Bekleyen (kullanıcıyla konuşulacak):** Bağlantı kopması sırasında gönderilemeyen atışın
+kaybolmaması için tablet tarafında offline kuyruk + retry. Bu ayrı bir iş — debounce/snapshot
+ile ilgisi yok.
+
 ## Ölçek / Performans — snapshot yayını (Haziran 2026)
 
 Soru: "Aynı anda kaç 512 kişilik turnuva sorunsuz çalışır?" İncelemede asıl darboğazın
