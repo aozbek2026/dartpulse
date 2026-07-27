@@ -429,6 +429,23 @@ app.patch('/api/boards/:id', auth.requireAuth, (req, res) => {
       }
       tid = +req.body.tournament_id;
     }
+    // Board FARKLI bir turnuvaya (veya boşa) taşınıyorsa, üzerinde kalan eski
+    // maç referansını temizle. Aksi halde eski turnuvanın maçı yeni turnuvada
+    // seçilen tablette görünmeye devam eder (tab başka turnuvanın maçını gösterir bug'ı).
+    const oldTid = b.tournament_id || null;
+    if (oldTid !== tid && b.current_match_id) {
+      try {
+        const old = db.matchById(b.current_match_id);
+        // Eski maç hâlâ bu board'a bağlı + henüz başlamamış (ready) ise havuza geri
+        // döndür — eski turnuvada başka boş tablete yeniden atanabilsin. Canlı (live)
+        // maça DOKUNMA (skoru var); sadece board'un işaretçisini boşaltmakla yetin.
+        if (old && old.board_id === b.id && old.status === 'ready') {
+          db.updateMatch(old.id, { board_id: null });
+        }
+      } catch (e) { console.warn('[patch board] eski maç serbest bırakma:', e.message); }
+      // Board'u boşalt (current_match_id=NULL, status=idle)
+      db.setBoardMatch(b.id, null);
+    }
     db.setBoardTournament(b.id, tid);
     changedTournament = true;
   }
