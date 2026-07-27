@@ -348,6 +348,14 @@ function getBoardSnapshot(userId = null) {
     tournaments: db.allTournaments(userId).map(t => ({
       ...t,
       entries: db.entriesForTournament(t.id),
+      // board.js renderPostMatch "SONRAKİ MAÇ var mı?" kararı için t.matches'e
+      // bakıyor. Hafif snapshot'ta tüm maçları göndermiyoruz; sadece bu karara
+      // yeten MİNİMAL listeyi (bitmemiş + iki oyuncusu belli maçlar, 4 alan)
+      // koyuyoruz. Aksi halde tablet, maç bitince "SONRAKİ MAÇ" yerine
+      // "Turnuva tamamlandı / Board'u serbest bırak" ekranını gösteriyordu.
+      matches: db.matchesForTournament(t.id)
+        .filter(mm => mm.status !== 'finished' && mm.entry1_id && mm.entry2_id)
+        .map(mm => ({ id: mm.id, status: mm.status, entry1_id: mm.entry1_id, entry2_id: mm.entry2_id })),
     })),
     boards: db.allBoards(userId).map(b => ({
       ...b,
