@@ -34,6 +34,17 @@
   .pill.finished { background:#3340; color:#abc; border:1px solid #456; }
   .adm-back { color:var(--accent-2,#00d4ff); text-decoration:none; font-size:0.9rem; }
   #adm-loading { text-align:center; padding:3rem; color:var(--muted,#9aa); }
+  /* Sayfa-içi onay/giriş modalı — native confirm()/prompt() yerine (Chrome'un
+     "bu sitenin iletişim kutularını engelle" özelliği butonları öldürmesin diye). */
+  .adm-modal-ov { position:fixed; inset:0; background:rgba(0,0,0,0.72); z-index:99999;
+    display:flex; align-items:center; justify-content:center; padding:1rem; }
+  .adm-modal { background:var(--bg-2,#11151c); border:1px solid var(--border,rgba(255,255,255,0.12));
+    border-radius:12px; padding:1.25rem 1.35rem; max-width:440px; width:100%; }
+  .adm-modal .msg { font-size:1.02rem; line-height:1.45; margin:0 0 1rem; }
+  .adm-modal textarea { width:100%; box-sizing:border-box; min-height:70px; border-radius:8px;
+    border:1px solid var(--border,rgba(255,255,255,0.15)); background:rgba(0,0,0,0.25);
+    color:inherit; padding:0.5rem 0.6rem; font:inherit; margin-bottom:1rem; resize:vertical; }
+  .adm-modal .row { display:flex; gap:0.5rem; justify-content:flex-end; }
 </style>
 </head>
 <body>
@@ -64,6 +75,58 @@
 
 <script>
 const esc = (s) => String(s == null ? '' : s).replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+
+// Sayfa-içi onay modalı — Promise<boolean>. Native confirm() yerine (dialog
+// engellemesine bağışık). okDanger=true ise onay butonu kırmızı.
+function admConfirm(message, { okText = 'Onayla', cancelText = 'Vazgeç', okDanger = false } = {}) {
+  return new Promise((resolve) => {
+    const ov = document.createElement('div');
+    ov.className = 'adm-modal-ov';
+    ov.innerHTML = `<div class="adm-modal">
+      <p class="msg">${esc(message)}</p>
+      <div class="row">
+        <button class="adm-btn no" data-a="cancel">${esc(cancelText)}</button>
+        <button class="adm-btn ${okDanger ? 'danger' : 'ok'}" data-a="ok">${esc(okText)}</button>
+      </div></div>`;
+    const done = (v) => { ov.remove(); document.removeEventListener('keydown', onKey, true); resolve(v); };
+    const onKey = (e) => { if (e.key === 'Escape') { e.preventDefault(); done(false); }
+                           else if (e.key === 'Enter') { e.preventDefault(); done(true); } };
+    ov.addEventListener('click', (e) => {
+      if (e.target === ov) return done(false);
+      const a = e.target.closest('[data-a]'); if (!a) return;
+      done(a.getAttribute('data-a') === 'ok');
+    });
+    document.addEventListener('keydown', onKey, true);
+    document.body.appendChild(ov);
+    ov.querySelector('[data-a="ok"]').focus();
+  });
+}
+
+// Sayfa-içi metin girişi modalı — Promise<string|null> (İptal → null). Native prompt() yerine.
+function admPrompt(message, { placeholder = '', okText = 'Gönder' } = {}) {
+  return new Promise((resolve) => {
+    const ov = document.createElement('div');
+    ov.className = 'adm-modal-ov';
+    ov.innerHTML = `<div class="adm-modal">
+      <p class="msg">${esc(message)}</p>
+      <textarea data-in placeholder="${esc(placeholder)}"></textarea>
+      <div class="row">
+        <button class="adm-btn no" data-a="cancel">Vazgeç</button>
+        <button class="adm-btn ok" data-a="ok">${esc(okText)}</button>
+      </div></div>`;
+    const ta = ov.querySelector('[data-in]');
+    const done = (v) => { ov.remove(); document.removeEventListener('keydown', onKey, true); resolve(v); };
+    const onKey = (e) => { if (e.key === 'Escape') { e.preventDefault(); done(null); } };
+    ov.addEventListener('click', (e) => {
+      if (e.target === ov) return done(null);
+      const a = e.target.closest('[data-a]'); if (!a) return;
+      done(a.getAttribute('data-a') === 'ok' ? ta.value : null);
+    });
+    document.addEventListener('keydown', onKey, true);
+    document.body.appendChild(ov);
+    ta.focus();
+  });
+}
 
 // NOT: common.js window.api'yi global nesne olarak tanımlıyor — çakışmasın diye admApi.
 async function admApi(url, opts) {
@@ -99,7 +162,7 @@ async function approveReq(uid) {
   catch (e) { alert(e.message); }
 }
 async function rejectReq(uid) {
-  const note = prompt('Red gerekçesi (opsiyonel, başvurana gösterilmez):', '');
+  const note = await admPrompt('Red gerekçesi (opsiyonel, başvurana gösterilmez):', { placeholder: 'Gerekçe…', okText: 'Reddet' });
   if (note === null) return;
   try { await admApi(`/api/admin/organizer-requests/${uid}/reject`, {
           method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ note }) });
@@ -126,7 +189,7 @@ async function loadOrganizers() {
   } catch (e) { box.innerHTML = `<div class="adm-empty">Hata: ${esc(e.message)}</div>`; }
 }
 async function revokeOrg(uid) {
-  if (!confirm('Bu kullanıcının organizatör yetkisi geri alınsın mı?')) return;
+  if (!await admConfirm('Bu kullanıcının organizatör yetkisi geri alınsın mı?', { okText: 'Geri Al', okDanger: true })) return;
   try { await admApi(`/api/admin/organizers/${uid}/revoke`, { method: 'POST' }); await loadOrganizers(); }
   catch (e) { alert(e.message); }
 }
@@ -152,12 +215,12 @@ async function loadTournaments() {
   } catch (e) { box.innerHTML = `<div class="adm-empty">Hata: ${esc(e.message)}</div>`; }
 }
 async function finishT(id) {
-  if (!confirm('Turnuva sonlandırılsın mı?')) return;
+  if (!await admConfirm('Turnuva sonlandırılsın mı?', { okText: 'Sonlandır' })) return;
   try { await admApi(`/api/admin/tournaments/${id}/finish`, { method: 'POST' }); await loadTournaments(); }
   catch (e) { alert(e.message); }
 }
 async function deleteT(id) {
-  if (!confirm('Turnuva KALICI olarak silinsin mi? Bu işlem geri alınamaz.')) return;
+  if (!await admConfirm('Turnuva KALICI olarak silinsin mi? Bu işlem geri alınamaz.', { okText: 'Kalıcı Olarak Sil', okDanger: true })) return;
   try { await admApi(`/api/admin/tournaments/${id}`, { method: 'DELETE' }); await loadTournaments(); }
   catch (e) { alert(e.message); }
 }
