@@ -131,6 +131,23 @@
   section.panel { scroll-margin-top: 80px; margin-bottom: 2rem; }
   section.panel h3 { margin-bottom: 1rem; font-size: 1.1rem; }
 
+  /* Mobil (dar ekran): üst banner kompaktlaşır — başlık + etiketler gizlenir,
+     nav sekmeleri ikon-only tek satır olur (kaydırma yok, 6'sı da sığar).
+     Masaüstü görünümü değişmez. */
+  @media (max-width: 640px) {
+    .top-bar { padding: 0.5rem 0.7rem; gap: 0.5rem; }
+    .top-bar h2 { display: none; }                 /* "🎯 Canlı Turnuva" başlığı */
+    .tour-picker { flex: 1 1 100%; gap: 0.35rem; }
+    .tour-picker label { display: none; }           /* "Turnuva:" etiketi */
+    #tour-select { flex: 1; min-width: 0 !important; }
+    .nav-pills { flex: 1 1 100%; flex-wrap: nowrap; gap: 0.35rem; }
+    .nav-pills a { flex: 1; text-align: center; padding: 0.5rem 0; font-size: 1.15rem; }
+    .top-bar-right { gap: 0.35rem; }
+    .btn-tv { padding: 0.45rem 0.65rem; }
+    /* Nav / Paylaş / TV Modu / Ana sayfa: metin gizlenir, ikon kalır */
+    .np-t { display: none; }
+  }
+
   /* Mobil: geniş tablolar sayfayı yatay kaydırmasın — kendi kutusunda kaysın */
   #standings-host, #matches-host, #recent-host, #past-host {
     overflow-x: auto;
@@ -226,20 +243,20 @@
       </select>
       <button id="share-btn" onclick="shareViewerLink()" title="İzleyici linkini kopyala"
               style="padding:0.4rem 0.7rem;border-radius:6px;background:var(--accent);border:none;color:#fff;font-size:0.9rem;cursor:pointer;white-space:nowrap">
-        🔗 Paylaş
+        🔗 <span class="np-t">Paylaş</span>
       </button>
     </div>
     <nav class="nav-pills" id="nav">
-      <a href="#sec-live">🔴 Canlı</a>
-      <a href="#sec-standings">📊 Klasman</a>
-      <a href="#sec-bracket">🏆 Bracket</a>
-      <a href="#sec-matches">📋 Tüm Maçlar</a>
-      <a href="#sec-recent">✅ Son Bitenler</a>
-      <a href="#sec-past">🗃️ Geçmiş</a>
+      <a href="#sec-live">🔴 <span class="np-t">Canlı</span></a>
+      <a href="#sec-standings">📊 <span class="np-t">Klasman</span></a>
+      <a href="#sec-bracket">🏆 <span class="np-t">Bracket</span></a>
+      <a href="#sec-matches">📋 <span class="np-t">Tüm Maçlar</span></a>
+      <a href="#sec-recent">✅ <span class="np-t">Son Bitenler</span></a>
+      <a href="#sec-past">🗃️ <span class="np-t">Geçmiş</span></a>
     </nav>
     <div class="top-bar-right">
-      <a href="/tv.html" class="btn-tv">📺 TV Modu</a>
-      <a href="/" class="btn secondary">Ana sayfa</a>
+      <a href="/tv.html" class="btn-tv">📺 <span class="np-t">TV Modu</span></a>
+      <a href="/" class="btn secondary">🏠 <span class="np-t">Ana sayfa</span></a>
     </div>
   </div>
 
