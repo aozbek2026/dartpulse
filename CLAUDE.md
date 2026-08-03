@@ -1278,6 +1278,8 @@ paket/anahtar yoksa sistem eskisi gibi çalışır (graceful degradation).
 - Backblaze bucket `dartcorepro-yedek` (Private, EU/Almanya). App key adı `dartcorepro-render2`.
   `BACKUP_INTERVAL_HOURS` default 24. `@aws-sdk/client-s3` zaten dependency.
 - Not: AWS SDK "Node 22'ye geç" uyarısı verir — zararsız, işlevi etkilemez.
+- **GÜNCELLEME (Ağustos 2026):** Günde-tek yedek yetersiz kaldı (bkz. aşağıdaki "Hafta 9 veri
+  kaybı" bölümü) → **olay-tetikli + temizlikli** sisteme geçildi. Ayrıntı aşağıda.
 
 ### 3. Yasal sayfalar + KVKK (canlıya deploy edilecek)
 - Üç yeni statik sayfa (Türkçe, site stilinde, kendi inline CSS'i + `/css/style.css`):
@@ -1503,3 +1505,72 @@ Mac'te de koşturması önerilir. node:sqlite "experimental" uyarısı verir —
 - Aşırı liste/madde ile boğma; kısa paragraflar tercih.
 - Görsel feedback değerli — büyük UI değişikliklerinden sonra mockup widget göstermek faydalı oluyor (kullanıcı "scorer ekranı nasıl görünüyor" gibi sorularla istiyor).
 - Yeni özellik eklemeden önce kısa bir plan paylaş, onay al, sonra uygula.
+
+---
+
+## Hafta 9 veri kaybı + yedekleme sıklaştırma (Ağustos 2026)
+
+Canlı SMDN sezonunda **Hafta 9 turnuvası silindi** (organizatör bugün öğleden sonra kurup
+yarı finale kadar oynatmış, sonra kazara/refactor sırasında turnuva satırları silinmiş).
+Belirti: `liga.html`'de sezon duruyordu ama Hafta 9 oturumu (`competition_sessions.id=28`)
+`tournament_id=NULL` + `status=pending`'e düşmüştü; turnuva id'leri 82→87 atlıyordu (83-86 silinmiş).
+
+### Teşhis (ileride benzer durumda izlenecek yol)
+1. `liga.html` + `/api/competitions` → sezon/lig kaydı duruyor mu?
+2. `/api/competitions/:id/sessions` → hangi oturum `tournament_id=NULL` / `pending`?
+3. `/api/tournaments` → beklenen turnuva var mı? **id boşlukları** silinmeye işaret eder.
+4. `/api/matches/for-tournament/:id` → silinen id'ler `403 "Erişim yok"` döner (satır yok = sahiplik bulunamaz).
+
+### Yedekten kurtarma DENENDİ, olmadı — neden (kritik ders)
+- Backblaze'de o günün **tek yedeği sabah** alınmıştı (`data-2026-08-03_0829.db.gz`; dosya adı
+  UTC, uploaded sütunu TR = UTC+3). Hafta 9 **öğleden sonra** kurulup akşam silindiği için
+  **hiçbir yedeğe hiç girmemişti**. Günde-tek yedek, gün içi kurulup silinen veriyi kaçırır.
+- Sandbox'ta `sqlite3` CLI yok, `.recover` yapılamadı; adli kurtarma da (silinen sayfaların
+  Lucky Loser 9'un aktif yazımıyla üzerine yazılma riski) belirsizdi. Kullanıcı sonuçları
+  bildiği için **yeniden kurma** yolu seçildi.
+
+### Kurtarma yöntemi — bracket'i yeniden kur + hükmen sonuç işle (çalıştı)
+Kullanıcı silinmeden önceki **boş bracket ekran görüntüsünü** (Son 32 kurası) gönderdi.
+Adımlar (hepsi tarayıcıdan, authenticated `fetch` ile — production endpoint'leri):
+1. **Kura reprodüksiyonu (dikkat!):** `seedWithByes` girişleri `buildSeedOrder` ile STANDART
+   tohumlama pozisyonlarına yerleştirir (1vN), ekrandaki ARDIŞIK eşleşmeyi (satır 1v2) doğrudan
+   vermez. Ekran görüntüsündeki slot sırasını birebir üretmek için **ters permütasyon** gerekir:
+   `entryIds[buildSeedOrder(32)[slot]-1] = slotOyuncu[slot]`, seed=null (sıra korunur). Bu,
+   yerel `node:sqlite` shim'iyle gerçek `tournament.js`'e karşı doğrulandı (16/16 eşleşme tuttu).
+2. `DELETE /api/competitions/6/sessions/28` (boştaki dangling oturumu sil).
+3. `POST /api/competitions/6/sessions` — `format:single_elim`, `participant_player_ids` (32 pid),
+   `entries:[{player_id,seed:null}]` ters-permütasyon sırasında, `round_overrides:{"final-5":{legs:4}}`.
+4. `POST /api/tournaments/:tid/start` (maçlar burada kurulur — `createTournament` DRAFT bırakır,
+   `startTournament` bracket'i kurar).
+5. Her turu (R1→R5) sırayla `POST /api/matches/:id/walkover {winnerSlot}` ile işle. Walkover
+   `is_walkover=1` + leg skoru (kazanan `legs_to_win`, rakip 0) yazar; **pozisyon/puan tam doğru**
+   olur, ama 3DA/180 gibi atış istatistikleri bu maçlar için gelmez (zaten silinmişti). `winnerSlot`,
+   `/api/matches/for-tournament/:tid`'deki `p1_name`/`p2_name` ile eşleştirilerek bulundu.
+6. `POST /api/competitions/6/sessions/:sid/finalize` — klasmana işle (idempotent). Puan haritası
+   `positionToStage` (1→birinci, 2→final, 3-4→yari_final, 5-8→ceyrek_final, 9-16→son_16, 17-32→son_32).
+   32 kişi, 87 puan dağıtıldı. Şampiyon: Serhan Özkebapçı.
+7. **Temizlik:** Oturum oluşturma idle boardları turnuvaya claim'ler; iş bitince
+   `PATCH /api/boards/:id {tournament_id:null}` ile Hafta 9 boardları serbest bırakıldı.
+
+**Board güvenliği:** Kurtarma sırasında tüm boardlar idle'dı (Lucky Loser 9 çalışıyordu ama o an
+tabletlerde canlı maç yoktu) → kesinti olmadı. Benzer işlemde önce `/api/boards`'tan idle olduğunu
+teyit et.
+
+### Kalıcı çözüm — olay-tetikli yedek + temizlik (deploy edildi)
+Kök sebep günde-tek yedekti. `src/backup.js` + `server.js` değiştirildi (additive, korumalı
+modüllere dokunulmadı):
+- **`backup.triggerBackup()`** — debounce'lu (env `BACKUP_MIN_INTERVAL_MIN`, varsayılan 15 dk).
+  `server.js`'de dört atış ucuna (`/throw`, `/cricket-throw`, `/fb-cezali-throw`, `/karambol-throw`)
+  + `/walkover`'a eklendi. Turnuva oynanırken (tabletlerden atış geldikçe) en fazla 15 dk'da bir
+  gerçek yedek; boştayken hiç. `_lastBackupAt`/`_pendingTimer` modül-seviye debounce durumu.
+- **Güvenlik ağı:** `startSchedule` varsayılan aralık 24s → **3s** (`BACKUP_INTERVAL_HOURS`).
+- **`pruneOldBackups(client)`** — her başarılı yükleme sonrası `LastModified` > `BACKUP_RETENTION_DAYS`
+  (varsayılan 60) olan yedekleri siler (S3 `ListObjectsV2`/`DeleteObject`). Depolama birikmez.
+- Üç değer de kod varsayılanlı → ekstra Render env gerekmez, sadece deploy.
+- Canlı doğrulama: deploy sonrası log `[backup] OK -> backups/data-2026-08-03_2241.db.gz (814 KB)`
+  — boyut 666→814 KB, çünkü artık Hafta 9 verisi de yedeğin içinde.
+
+**Ders:** Gün içi kurulup silinen veri günde-tek yedeğe girmez. Canlı turnuva sistemi için yedek,
+**aktivite anında** (atış geldikçe) alınmalı. Ayrıca sandbox'ta `sqlite3` CLI yok — adli kurtarma
+gerekirse ya CLI kur ya da ham DB'yi (online-backup DEĞİL, gerçek dosya) çıkar; online-backup
+silinen/freelist sayfaları almaz.
