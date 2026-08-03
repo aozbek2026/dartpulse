@@ -845,6 +845,7 @@ app.post('/api/matches/:id/cricket-throw', (req, res) => {
       return engine.recordCricketVisit(id, playerSlot, hits);
     });
     if (result && result.duplicate) { io.emit('match:update', { matchId: id }); scheduleBroadcast(); return res.json({ duplicate: true }); }
+    try { backup.triggerBackup(); } catch (_) {}
     const m = db.matchById(id);
     if (m?.board_id) {
       io.to(`board:${m.board_id}`).emit('board:state', {
@@ -870,6 +871,7 @@ app.post('/api/matches/:id/fb-cezali-throw', (req, res) => {
       return engine.recordFBCezaliVisit(id, playerSlot, allocation);
     });
     if (result && result.duplicate) { io.emit('match:update', { matchId: id }); scheduleBroadcast(); return res.json({ duplicate: true }); }
+    try { backup.triggerBackup(); } catch (_) {}
     const m = db.matchById(id);
     if (m?.board_id) {
       io.to(`board:${m.board_id}`).emit('board:state', {
@@ -895,6 +897,7 @@ app.post('/api/matches/:id/karambol-throw', (req, res) => {
       return engine.recordKarambolVisit(id, playerSlot, allocation);
     });
     if (result && result.duplicate) { io.emit('match:update', { matchId: id }); scheduleBroadcast(); return res.json({ duplicate: true }); }
+    try { backup.triggerBackup(); } catch (_) {}
     const m = db.matchById(id);
     if (m?.board_id) {
       io.to(`board:${m.board_id}`).emit('board:state', {
@@ -1110,6 +1113,8 @@ app.post('/api/matches/:id/throw', (req, res) => {
       scheduleBroadcast();
       return res.json({ duplicate: true });
     }
+    // Turnuva oynanırken sık yedek: her atışta tetikle (debounce'lu, en fazla ~15dk'da bir).
+    try { backup.triggerBackup(); } catch (_) {}
     io.emit('match:update', { matchId });
     if (result.matchFinished) {
       const m = db.matchById(matchId);
@@ -1162,6 +1167,7 @@ app.post('/api/matches/:id/walkover', (req, res) => {
     if (m.status === 'finished') return res.status(400).json({ error: 'Maç zaten bitti' });
     // Walkover olarak bitir
     db.walkoverMatch(matchId, winnerSlot);
+    try { backup.triggerBackup(); } catch (_) {}
     const updated = db.matchById(matchId);
     if (updated && updated.team_phase_match_id) {
       onTeamMatchFinished(matchId, updated);

@@ -31,12 +31,19 @@ function isConfigured() {
 }
 
 // aws-sdk opsiyonel: paket yoksa modül çökmesin (resend pattern'i gibi)
-let S3Client, PutObjectCommand;
+let S3Client, PutObjectCommand, ListObjectsV2Command, DeleteObjectCommand;
 try {
-  ({ S3Client, PutObjectCommand } = require('@aws-sdk/client-s3'));
+  ({ S3Client, PutObjectCommand, ListObjectsV2Command, DeleteObjectCommand } = require('@aws-sdk/client-s3'));
 } catch (e) {
   S3Client = null;
 }
+
+// Olay-tetikli (turnuva oynanırken) yedek için debounce durumu.
+// triggerBackup() her atışta çağrılabilir; en fazla BACKUP_MIN_INTERVAL_MIN
+// dakikada bir gerçek yedek alınır (varsayılan 15 dk). Böylece maçlar oynanırken
+// sık, boştayken hiç yedek alınır.
+let _lastBackupAt = 0;
+let _pendingTimer = null;
 
 function timestamp() {
   const d = new Date();
@@ -88,11 +95,56 @@ async function runBackup() {
       Body: gz,
       ContentType: 'application/gzip',
     }));
+    _lastBackupAt = Date.now();
     console.log(`[backup] OK -> ${key} (${(gz.length / 1024).toFixed(0)} KB)`);
+    // Başarılı yükleme sonrası eski yedekleri buda (asla throw etmez).
+    try { await pruneOldBackups(client); } catch (e) { console.warn('[backup] temizlik uyarısı:', e.message); }
     return { ok: true, key, size: gz.length };
   } catch (e) {
     console.error('[backup] HATA:', e.message);
     return { ok: false, error: e.message };
+  }
+}
+
+// Eski yedekleri siler: LastModified'ı BACKUP_RETENTION_DAYS'ten (varsayılan 60)
+// eski olan tüm yedek dosyalarını kaldırır. Depolama sınırsız birikmesin diye.
+// ASLA throw etmez; liste/silme paketleri yoksa sessizce atlar.
+async function pruneOldBackups(client) {
+  if (!ListObjectsV2Command || !DeleteObjectCommand) return;
+  const days = parseFloat(process.env.BACKUP_RETENTION_DAYS || '60');
+  if (!(days > 0)) return; // 0 veya geçersiz → temizlik kapalı
+  const prefix = process.env.BACKUP_S3_PREFIX || 'backups/';
+  const cutoff = Date.now() - days * 86400 * 1000;
+  const Bucket = process.env.BACKUP_S3_BUCKET;
+  let ContinuationToken = undefined;
+  let deleted = 0;
+  do {
+    const out = await client.send(new ListObjectsV2Command({ Bucket, Prefix: prefix, ContinuationToken }));
+    for (const o of (out.Contents || [])) {
+      if (o.LastModified && o.LastModified.getTime() < cutoff) {
+        await client.send(new DeleteObjectCommand({ Bucket, Key: o.Key }));
+        deleted++;
+      }
+    }
+    ContinuationToken = out.IsTruncated ? out.NextContinuationToken : undefined;
+  } while (ContinuationToken);
+  if (deleted) console.log(`[backup] temizlik: ${deleted} eski yedek silindi (>${days} gün)`);
+}
+
+// Turnuva oynanırken çağrılır (her atış/maç bitişinde). Debounce'lu: en fazla
+// BACKUP_MIN_INTERVAL_MIN (varsayılan 15) dakikada bir gerçek yedek alır.
+// Yapılandırılmamışsa hiçbir şey yapmaz.
+function triggerBackup() {
+  if (!isConfigured() || !S3Client) return;
+  const minMs = Math.max(1, parseFloat(process.env.BACKUP_MIN_INTERVAL_MIN || '15')) * 60 * 1000;
+  const since = Date.now() - _lastBackupAt;
+  if (since >= minMs) {
+    _lastBackupAt = Date.now(); // yarış durumunu önle: hemen işaretle
+    runBackup();
+  } else if (!_pendingTimer) {
+    // Yakın zamanda yedek alındı; kalan süre kadar bekleyip bir kez al.
+    _pendingTimer = setTimeout(() => { _pendingTimer = null; runBackup(); }, minMs - since);
+    if (_pendingTimer.unref) _pendingTimer.unref();
   }
 }
 
@@ -103,9 +155,10 @@ function startSchedule() {
     console.log('[backup] yapılandırılmamış (env var yok) — yedekleme kapalı');
     return;
   }
-  const hours = parseFloat(process.env.BACKUP_INTERVAL_HOURS || '24');
-  const ms = Math.max(1, hours) * 3600 * 1000;
-  console.log(`[backup] aktif — her ${hours} saatte bir yedek alınacak`);
+  const hours = parseFloat(process.env.BACKUP_INTERVAL_HOURS || '3');
+  const ms = Math.max(0.1, hours) * 3600 * 1000;
+  const minMin = parseFloat(process.env.BACKUP_MIN_INTERVAL_MIN || '15');
+  console.log(`[backup] aktif — güvenlik ağı her ${hours} saatte bir + maç oynanırken en fazla ${minMin} dk'da bir`);
   // açılıştan kısa süre sonra ilk yedek
   setTimeout(() => { runBackup(); }, 30 * 1000);
   // periyodik; unref ile process kapanışını engellemez
@@ -113,4 +166,4 @@ function startSchedule() {
   if (timer.unref) timer.unref();
 }
 
-module.exports = { isConfigured, runBackup, startSchedule };
+module.exports = { isConfigured, runBackup, startSchedule, triggerBackup, pruneOldBackups };
