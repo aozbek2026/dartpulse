@@ -130,7 +130,10 @@ fetch('/api/config', { credentials: 'same-origin' })
     s.src = 'https://challenges.cloudflare.com/turnstile/v0/api.js?onload=onTurnstileLoad';
     s.async = true; s.defer = true;
     window.onTurnstileLoad = () => {
-      document.getElementById('captcha-container').style.display = 'block';
+      // Captcha SADECE kayıt (register) modunda gösterilir. Login'de captcha
+      // gerekmiyor (sunucu login'de doğrulama yapmıyor) — böylece Turnstile
+      // çalıştıramayan akıllı TV tarayıcıları giriş yapabilir.
+      document.getElementById('captcha-container').style.display = (mode === 'register') ? 'block' : 'none';
       turnstileWidgetId = window.turnstile.render('#turnstile-widget', {
         sitekey: cfg.turnstileSiteKey,
         theme: 'dark',
@@ -151,6 +154,8 @@ tabs.forEach(tab => {
     tabs.forEach(t => t.classList.toggle('active', t === tab));
     submitBtn.textContent = mode === 'login' ? 'Giriş Yap' : 'Kayıt Ol';
     nameRow.style.display = mode === 'register' ? 'flex' : 'none';
+    const cap = document.getElementById('captcha-container');
+    if (cap && turnstileWidgetId !== null) cap.style.display = (mode === 'register') ? 'block' : 'none';
     errEl.classList.remove('show');
   });
 });

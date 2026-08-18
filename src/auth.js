@@ -142,12 +142,14 @@ async function registerHandler(req, res) {
 }
 
 async function loginHandler(req, res) {
-  const { email, password, captcha } = req.body || {};
+  const { email, password } = req.body || {};
   if (!email || !password) {
     return res.status(400).json({ error: 'Email ve şifre gerekli' });
   }
-  const ok = await verifyTurnstile(captcha, req.ip);
-  if (!ok) return res.status(400).json({ error: 'Güvenlik doğrulaması başarısız. Lütfen tekrar deneyin.' });
+  // NOT: Login'de captcha DOĞRULAMASI KALDIRILDI. Akıllı TV tarayıcıları Turnstile
+  // widget'ını çalıştıramadığı için token üretilemiyor ve giriş engelleniyordu.
+  // Login zaten şifre + authLimiter (rate limit) ile korunuyor. Captcha sadece
+  // kayıt (register) formunda tutuluyor (bot hesap açmayı engellemek için).
   const normEmail = String(email).trim().toLowerCase();
   const row = db.userByEmail(normEmail);
   if (!row || !verifyPassword(password, row.password_hash)) {
