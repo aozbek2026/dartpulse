@@ -400,6 +400,15 @@ function renderPreMatch() {
   const t = allTournaments.find(tt => tt.id === m.tournament_id);
   const scorerOptions = (t?.entries || []).filter(e => e.id !== m.entry1_id && e.id !== m.entry2_id);
 
+  // Maç formatı: kaç leg / set kazanılması gerekiyor (round override yoksa turnuva varsayılanı)
+  const fmtLegsToWin = m.legs_to_win || t?.legs_to_win || 2;
+  const fmtSetsToWin = m.sets_to_win || t?.sets_to_win || 1;
+  const fmtBoLegs = fmtLegsToWin * 2 - 1;
+  const fmtBoSets = fmtSetsToWin * 2 - 1;
+  const fmtLabel = fmtSetsToWin > 1
+    ? `BO${fmtBoSets} SET · Her set BO${fmtBoLegs} · İlk ${fmtLegsToWin} leg`
+    : `BO${fmtBoLegs} · İlk ${fmtLegsToWin} leg kazanan`;
+
   root.innerHTML = `
     <div class="board-header">
       <div>
@@ -413,6 +422,7 @@ function renderPreMatch() {
         <div style="font-size: 1rem; letter-spacing: 0.1em; color: var(--text-dim); text-transform: uppercase;">${tName}</div>
         <div style="font-size: 2.5rem; font-weight: 800; margin-top: 0.25rem; color: var(--accent);">${roundLabel}</div>
         <div style="font-size: 1.1rem; color: var(--text-dim); margin-top: 0.25rem;">${currentBoard.name}</div>
+        <div style="display: inline-block; margin-top: 0.7rem; padding: 0.5rem 1.4rem; background: var(--accent); color: #000; font-weight: 800; font-size: 1.4rem; border-radius: 999px; letter-spacing: 0.02em;">🎯 ${fmtLabel}</div>
       </div>
 
       <div style="width: 100%; max-width: 780px; display: grid; grid-template-columns: 1fr auto 1fr; gap: 1.5rem; align-items: center;">
