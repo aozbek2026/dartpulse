@@ -207,6 +207,7 @@ function renderStagesWizard() {
   const secondary = s1?.format || 'single_elim';
   const qcount = s0.qualifier_count || '';
   const groupSize = s0.config?.group_size || '';
+  const groupCount = s0.config?.group_count || '';
 
   // Çift eleme aşamasını bul (loser braket leg sayısı için)
   const dblStage = (primary === 'double_elim') ? s0
@@ -214,17 +215,19 @@ function renderStagesWizard() {
                  : null;
   const lbLegs = dblStage?.config?.lb_legs || '';
 
-  // Önizleme hesapla
+  // Önizleme hesapla — grup sayısı (öncelik) ya da grup başına kişi'den türet
   let groupPreview = '';
   let qualifierPreview = '';
-  if (primary === 'round_robin' && groupSize >= 2) {
+  if (primary === 'round_robin') {
     const entryCount = _entryCountForStage(0);
-    if (entryCount > 0) {
-      const gc = Math.ceil(entryCount / groupSize);
+    let gc = (groupCount && +groupCount >= 1) ? +groupCount
+           : (groupSize >= 2 && entryCount > 0 ? Math.ceil(entryCount / groupSize) : 0);
+    if (gc >= 1 && entryCount > 0) {
+      gc = Math.min(gc, entryCount);
       const floorSz = Math.floor(entryCount / gc);
       const extraGc = entryCount % gc;
       const sizeDesc = extraGc > 0
-        ? `${gc} grup (${extraGc}×${floorSz + 1} kişi, ${gc - extraGc}×${floorSz} kişi)`
+        ? `${gc} grup (${extraGc}×${floorSz + 1} kişi, ${gc - extraGc}×${floorSz} kişi) — tahtadan serbestçe değiştirilebilir`
         : `${gc} grup × ${floorSz} kişi`;
       groupPreview = `<div style="font-size:0.82rem;color:var(--accent-2);margin-top:0.3rem;">→ ${sizeDesc}</div>`;
       if (qcount) {
@@ -249,8 +252,11 @@ function renderStagesWizard() {
       </div>
       ${primary === 'round_robin' ? `
         <div>
-          <label>Grup başına kaç oyuncu?</label>
-          <input type="number" id="wiz-gsize" min="2" max="20" value="${groupSize}"
+          <label>Kaç grup?</label>
+          <input type="number" id="wiz-gcount" min="1" max="64" value="${groupCount}"
+            placeholder="örn: 6" oninput="wizSetGroupCount(this.value)" style="width: 100%;" />
+          <label style="margin-top:0.4rem; display:block;">veya grup başına kaç oyuncu? <span style="color:var(--text-dim); font-weight:400;">(ops.)</span></label>
+          <input type="number" id="wiz-gsize" min="2" max="40" value="${groupSize}"
             placeholder="örn: 4" oninput="wizSetGroupSize(this.value)" style="width: 100%;" />
           ${groupPreview}
         </div>
@@ -318,6 +324,17 @@ function wizSetPrimary(val) {
   renderStagesWizard();
   renderStagesDraft();
   renderRoundOverridesPanel();
+  renderEntriesDraft();
+}
+function wizSetGroupCount(val) {
+  const n = val ? +val : null;
+  if (!stagesDraft[0]) return;
+  if (!stagesDraft[0].config) stagesDraft[0].config = {};
+  stagesDraft[0].config.group_count = (n && n >= 1) ? n : null;
+  renderStagesWizard();
+  renderStagesDraft();
+  renderRoundOverridesPanel();
+  renderEntriesDraft();
 }
 function wizSetGroupSize(val) {
   const n = val ? +val : null;
@@ -326,6 +343,7 @@ function wizSetGroupSize(val) {
   stagesDraft[0].config.group_size = (n && n >= 2) ? n : null;
   renderStagesWizard();
   renderStagesDraft();
+  renderEntriesDraft();
 }
 function wizSetQualifierCount(val) {
   const n = val ? +val : null;
@@ -587,9 +605,187 @@ function drawLots() {
   renderRoundOverridesPanel();
   toast('Kura çekildi — seri başları yerinde, diğerleri karıştırıldı');
 }
+
+// ---- Manuel grup atama (grup aşaması / round-robin) ----
+// İlk aşama round_robin + group_size verilmişse, organizatör her katılımcıyı
+// elle bir gruba (A, B, C…) atar. Kurayı fiziksel çeker, sonucu buraya girer.
+// Motor grupları katılımcı sırasına göre böldüğü için, createTournament'ta
+// katılımcılar grup sırasına dizilip seed'siz gönderilir.
+function groupLetter(g) { return String.fromCharCode(65 + g); }
+
+// Aktif grup modu bilgisi: { active, groupSize, groupCount, validCount }
+// Grup sayısı (group_count) doğrudan verilebilir; yoksa grup başına kişi (group_size)
+// üzerinden türetilir. Gruplar eşit olmak zorunda değil — organizatör tahtadan serbestçe dağıtır.
+function groupModeInfo() {
+  const s0 = stagesDraft[0] || {};
+  const isRR = s0.format === 'round_robin';
+  const groupCountCfg = isRR ? (s0.config?.group_count || 0) : 0;
+  const groupSize = isRR ? (s0.config?.group_size || 0) : 0;
+  const teamMode = document.getElementById('t-team')?.value || 'singles';
+  const validCount = entriesDraft.filter(e => e.player1_id && (teamMode === 'singles' || e.player2_id)).length;
+  let groupCount = (groupCountCfg >= 2) ? groupCountCfg
+                 : (groupSize >= 2 ? Math.ceil(validCount / groupSize) : 0);
+  if (!isRR || groupCount < 2 || validCount < 2) {
+    return { active: false, groupSize, groupCount: 0, validCount };
+  }
+  groupCount = Math.min(groupCount, validCount); // oyuncudan fazla grup olamaz
+  return { active: true, groupSize, groupCount, validCount };
+}
+
+function updateEntryGroup(i, val) {
+  entriesDraft[i].group = (val === '' || val == null) ? null : +val;
+  renderEntriesDraft();
+}
+
+// Sırayla dağıt: geçerli katılımcıları listedeki sıraya göre bloklar hâlinde
+// gruplara böler (Grup A'ya ilk grup boyutu kadar, sonra B…). Başlangıç noktası
+// olarak kolaylık; organizatör sonra tek tek düzenleyebilir.
+function fillGroupsSequential() {
+  const gm = groupModeInfo();
+  if (!gm.active) return toast('Önce format = Grup aşaması ve grup boyutu girin');
+  const teamMode = document.getElementById('t-team')?.value || 'singles';
+  // Her grubun beklenen boyutu (motorla aynı: ilk (validCount % groupCount) grup +1)
+  const floorSz = Math.floor(gm.validCount / gm.groupCount);
+  const extra = gm.validCount % gm.groupCount;
+  const sizes = Array.from({ length: gm.groupCount }, (_, g) => g < extra ? floorSz + 1 : floorSz);
+  let g = 0, placed = 0;
+  for (const e of entriesDraft) {
+    if (!(e.player1_id && (teamMode === 'singles' || e.player2_id))) { e.group = null; continue; }
+    while (g < gm.groupCount && placed >= sizes[g]) { g++; placed = 0; }
+    e.group = g;
+    placed++;
+  }
+  renderEntriesDraft();
+  toast('Katılımcılar sırayla gruplara dağıtıldı — dilediğin gibi düzenleyebilirsin');
+}
+
+function clearGroups() {
+  entriesDraft.forEach(e => { e.group = null; });
+  renderEntriesDraft();
+}
+
+function renderGroupModeNote() {
+  const host = document.getElementById('group-mode-note');
+  if (!host) return;
+  const gm = groupModeInfo();
+  if (!gm.active) { host.innerHTML = ''; return; }
+  host.innerHTML = `
+    <div style="background: var(--surface-2); border: 1px solid var(--border); border-radius: 8px; padding: 0.6rem 0.75rem; margin-bottom: 0.75rem; font-size: 0.86rem; color: var(--text-dim);">
+      🎲 <strong style="color: var(--text);">Grup aşaması modu:</strong>
+      Kurayı elle çek, aşağıdaki <strong>grup tahtasında</strong> oyuncu isimlerini tutup gruplara sürükle
+      (ya da satırdaki Grup menüsünü kullan). ${gm.validCount} katılımcı → <strong>${gm.groupCount} grup</strong> (grup başına ~${Math.floor(gm.validCount / gm.groupCount)} kişi; eşit olmak zorunda değil).
+      Bu modda seri başı sütunu gizlidir.
+    </div>`;
+}
+
+// Sürükle-bırak grup tahtası için durum
+let chipDragIndex = null;
+
+function chipDragStart(e, i) {
+  chipDragIndex = i;
+  e.dataTransfer.effectAllowed = 'move';
+  try { e.dataTransfer.setData('text/plain', String(i)); } catch (_) {}
+}
+function chipDragEnd() {
+  chipDragIndex = null;
+  document.querySelectorAll('.grp-box').forEach(b => b.classList.remove('grp-box-over'));
+}
+function groupDragOver(e) {
+  e.preventDefault();
+  e.dataTransfer.dropEffect = 'move';
+  const box = e.currentTarget;
+  document.querySelectorAll('.grp-box').forEach(b => { if (b !== box) b.classList.remove('grp-box-over'); });
+  box.classList.add('grp-box-over');
+}
+function groupDragLeave(e) { e.currentTarget.classList.remove('grp-box-over'); }
+// g: 0..groupCount-1 grup, veya null = Atanmamış havuzu
+function groupDrop(e, g) {
+  e.preventDefault();
+  let i = chipDragIndex;
+  if (i == null) { const t = e.dataTransfer.getData('text/plain'); i = t === '' ? null : +t; }
+  if (i == null || !entriesDraft[i]) { chipDragEnd(); return; }
+  entriesDraft[i].group = (g == null) ? null : +g;
+  chipDragEnd();
+  renderEntriesDraft();
+}
+
+function renderGroupPreview() {
+  const host = document.getElementById('group-preview');
+  if (!host) return;
+  const gm = groupModeInfo();
+  const drawBtn = document.getElementById('btn-draw-lots');
+  const fillBtn = document.getElementById('btn-group-fill');
+  const clearBtn = document.getElementById('btn-group-clear');
+  if (drawBtn) drawBtn.style.display = gm.active ? 'none' : '';
+  if (fillBtn) fillBtn.style.display = gm.active ? '' : 'none';
+  if (clearBtn) clearBtn.style.display = gm.active ? '' : 'none';
+  if (!gm.active) { host.innerHTML = ''; return; }
+
+  const teamMode = document.getElementById('t-team')?.value || 'singles';
+
+  // Geçerli katılımcıları (giriş index'iyle) gruplara/atanmamışa dağıt
+  const groups = Array.from({ length: gm.groupCount }, () => []);
+  const unassigned = [];
+  entriesDraft.forEach((e, i) => {
+    if (!(e.player1_id && (teamMode === 'singles' || e.player2_id))) return;
+    const p1 = state.players.find(p => p.id === e.player1_id);
+    const p2 = state.players.find(p => p.id === e.player2_id);
+    const nm = p1 ? (p1.nickname || p1.name) : '?';
+    const label = (teamMode === 'doubles' && p2) ? `${nm} / ${p2.nickname || p2.name}` : nm;
+    const chip = { i, label };
+    if (e.group == null || e.group >= gm.groupCount) unassigned.push(chip);
+    else groups[e.group].push(chip);
+  });
+
+  const chipHtml = (c) => `
+    <div class="grp-chip" draggable="true"
+         ondragstart="chipDragStart(event, ${c.i})" ondragend="chipDragEnd()"
+         title="Sürükleyip bir gruba bırak"
+         style="display:flex; align-items:center; gap:0.4rem; cursor:grab; background:var(--surface); border:1px solid var(--border); border-radius:7px; padding:0.35rem 0.5rem; font-size:0.9rem; user-select:none;">
+      <span style="opacity:.45; cursor:grab;">⠿</span> ${c.label}
+    </div>`;
+
+  const boxHtml = (title, chips, meta, dropG, ok) => `
+    <div class="grp-box" ondragover="groupDragOver(event)" ondragleave="groupDragLeave(event)"
+         ondrop="groupDrop(event, ${dropG === null ? 'null' : dropG})"
+         style="border:1px solid ${ok ? 'var(--accent)' : 'var(--border)'}; border-radius:10px; padding:0.5rem 0.6rem; min-width:150px; flex:1; background:var(--surface-2); min-height:70px;">
+      <div style="font-weight:600; display:flex; justify-content:space-between; align-items:center; margin-bottom:0.4rem;">
+        <span>${title}</span><span style="font-size:0.82rem; color:${ok ? 'var(--accent)' : 'var(--text-dim)'};">${meta}</span>
+      </div>
+      <div style="display:flex; flex-direction:column; gap:0.3rem;">
+        ${chips.length ? chips.map(chipHtml).join('') : '<div style="color:var(--text-dim); font-size:0.82rem; padding:0.2rem 0;">buraya sürükle</div>'}
+      </div>
+    </div>`;
+
+  const groupBoxes = groups.map((chips, g) => {
+    const ok = chips.length >= 2; // RR için grupta en az 2 oyuncu
+    return boxHtml(`Grup ${groupLetter(g)}`, chips, `${chips.length} kişi`, g, ok);
+  }).join('');
+
+  const unassignedBox = boxHtml('Atanmamış', unassigned, `${unassigned.length}`, null, false);
+
+  const tooSmall = groups.filter(chips => chips.length < 2).length;
+  const allOk = unassigned.length === 0 && tooSmall === 0;
+  let warn = '';
+  if (unassigned.length > 0) {
+    warn = `<div style="color:#e0a020; font-size:0.85rem; margin-top:0.5rem;">⚠️ ${unassigned.length} katılımcı henüz gruba atanmadı — isimleri sürükleyip gruplara bırak.</div>`;
+  } else if (tooSmall > 0) {
+    warn = `<div style="color:#e0a020; font-size:0.85rem; margin-top:0.5rem;">⚠️ Her grupta en az 2 oyuncu olmalı (${tooSmall} grup eksik).</div>`;
+  } else {
+    warn = `<div style="color:var(--accent); font-size:0.85rem; margin-top:0.5rem;">✓ ${gm.groupCount} grup hazır — turnuvayı oluşturabilirsin.</div>`;
+  }
+
+  host.innerHTML = `
+    <div style="font-weight:600; margin-bottom:0.4rem;">Grup tahtası <span style="font-weight:400; color:var(--text-dim); font-size:0.85rem;">— oyuncu isimlerini tutup gruplara sürükle</span></div>
+    ${unassignedBox}
+    <div style="display:flex; flex-wrap:wrap; gap:0.5rem; margin-top:0.5rem;">${groupBoxes}</div>
+    ${warn}`;
+}
+
 function renderEntriesDraft() {
   const host = document.getElementById('entries-list');
   const teamMode = document.getElementById('t-team').value;
+  const gm = groupModeInfo();
 
   host.innerHTML = entriesDraft.map((e, i) => {
     const p1 = state.players.find(p => p.id === e.player1_id);
@@ -608,10 +804,18 @@ function renderEntriesDraft() {
           <span style="min-width: 40px; color: var(--text-dim); cursor: grab;" title="Sürükle">⠿ #${i + 1}</span>
           ${renderPickerBtn(key1, p1)}
           ${teamMode === 'doubles' ? renderPickerBtn(key2, p2) : ''}
-          <input type="number" min="1" placeholder="Seri başı" title="Seri başı (opsiyonel)"
-            value="${e.seed || ''}"
-            style="width: 90px;"
-            oninput="updateEntry(${i}, 'seed', this.value)" />
+          ${gm.active ? `
+            <select title="Grup" style="width: 110px;" onchange="updateEntryGroup(${i}, this.value)">
+              <option value="">— Grup —</option>
+              ${Array.from({ length: gm.groupCount }, (_, g) =>
+                `<option value="${g}" ${e.group === g ? 'selected' : ''}>Grup ${groupLetter(g)}</option>`).join('')}
+            </select>
+          ` : `
+            <input type="number" min="1" placeholder="Seri başı" title="Seri başı (opsiyonel)"
+              value="${e.seed || ''}"
+              style="width: 90px;"
+              oninput="updateEntry(${i}, 'seed', this.value)" />
+          `}
           <button class="icon danger" onclick="removeEntry(${i})">×</button>
         </div>
         ${openPickerKey === key1 ? renderPickerDropdown(key1, i, 'player1_id', e.player1_id) : ''}
@@ -619,6 +823,9 @@ function renderEntriesDraft() {
       </div>
     `;
   }).join('');
+
+  renderGroupModeNote();
+  renderGroupPreview();
 }
 
 function renderPickerBtn(key, selectedPlayer) {
@@ -744,8 +951,37 @@ async function createTournament() {
 
   if (!name) return toast('Turnuva adı gerekli');
 
-  const validEntries = entriesDraft.filter(e => e.player1_id && (team_mode === 'singles' || e.player2_id));
+  let validEntries = entriesDraft.filter(e => e.player1_id && (team_mode === 'singles' || e.player2_id));
   if (validEntries.length < 2) return toast('En az 2 geçerli katılımcı gerekli');
+
+  // Grup aşaması modu: katılımcılar elle gruplara atandıysa, açık grup tanımını
+  // (config.groups) motora gönderiyoruz. Grup boyutları serbest/eşitsiz olabilir.
+  // Katılımcıları grup sırasına dizip her grubu index dizisi olarak işaretliyoruz.
+  const gm = groupModeInfo();
+  let explicitGroups = null;
+  if (gm.active) {
+    const buckets = Array.from({ length: gm.groupCount }, () => []);
+    const missing = [];
+    for (const e of validEntries) {
+      if (e.group == null || e.group >= gm.groupCount) missing.push(e);
+      else buckets[e.group].push(e);
+    }
+    if (missing.length) return toast(`${missing.length} katılımcı gruba atanmadı — hepsini bir gruba ata`);
+    for (let g = 0; g < gm.groupCount; g++) {
+      if (buckets[g].length < 2) {
+        return toast(`Grup ${groupLetter(g)} en az 2 oyuncu olmalı (şu an ${buckets[g].length}).`);
+      }
+    }
+    // Grup sırasında diz + config.groups için index dizileri oluştur
+    const ordered = [];
+    explicitGroups = [];
+    for (let g = 0; g < gm.groupCount; g++) {
+      const idxs = [];
+      for (const e of buckets[g]) { idxs.push(ordered.length); ordered.push({ ...e, seed: null }); }
+      explicitGroups.push(idxs);
+    }
+    validEntries = ordered;
+  }
 
   let game_config_json = null;
   if (game_mode === 'cricket_fb_cezali' || game_mode === 'cricket_fb_karambol') {
@@ -756,6 +992,14 @@ async function createTournament() {
   // Loser braket leg sayısını round_overrides'a yedir (losers-* turlarına).
   // Granular panelde elle girilmiş losers-* anahtarları korunur, kalanlar doldurulur.
   const stagesPayload = stagesDraft.map(s => applyLbLegs(s));
+
+  // Açık grup tanımını ilk aşamaya (round_robin) enjekte et; UI-only group_count'u temizle.
+  if (explicitGroups && stagesPayload[0]) {
+    const cfg = { ...(stagesPayload[0].config || {}) };
+    cfg.groups = explicitGroups;
+    delete cfg.group_count;
+    stagesPayload[0] = { ...stagesPayload[0], config: cfg };
+  }
 
   const body = {
     name, game_mode, team_mode, legs_to_win, sets_to_win,

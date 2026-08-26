@@ -423,19 +423,30 @@ function buildRoundRobin(common, entryIds) {
   try { rrCfg = stage.config_json ? JSON.parse(stage.config_json) : {}; } catch (_) {}
 
   const totalPlayers = entryIds.length;
-  const groupSize = (rrCfg.group_size && rrCfg.group_size >= 2) ? rrCfg.group_size : totalPlayers;
-  const groupCount = Math.ceil(totalPlayers / groupSize);
 
-  // Oyuncuları gruplara dağıt (mümkün olduğunca eşit)
-  // Örn: 14 oyuncu, 4'lük grup → groupCount=4 → [4,4,3,3]
-  const floorSize = Math.floor(totalPlayers / groupCount);
-  const extraCount = totalPlayers % groupCount; // ilk extraCount grup floorSize+1 oyuncu alır
-  const groups = [];
-  let pi = 0;
-  for (let g = 0; g < groupCount; g++) {
-    const size = g < extraCount ? floorSize + 1 : floorSize;
-    groups.push(entryIds.slice(pi, pi + size));
-    pi += size;
+  // Grupları belirle. Üç yol (öncelik sırası):
+  //   1) rrCfg.groups verilmişse (organizatörün elle kurduğu AÇIK gruplar):
+  //      entry POZİSYON index'lerinden oluşan diziler — grup boyutları serbest/eşitsiz olabilir.
+  //   2) rrCfg.group_size verilmişse: eşit-mümkün olduğunca otomatik böl.
+  //   3) hiçbiri yoksa: tek grup (herkes herkesle).
+  let groups = [];
+  if (Array.isArray(rrCfg.groups) && rrCfg.groups.length) {
+    // Açık gruplar: index -> entryId. Geçersiz/eksik index'ler atlanır.
+    groups = rrCfg.groups.map(arr => (Array.isArray(arr) ? arr : [])
+      .map(i => entryIds[i]).filter(id => id != null));
+  } else {
+    const groupSize = (rrCfg.group_size && rrCfg.group_size >= 2) ? rrCfg.group_size : totalPlayers;
+    const groupCount = Math.ceil(totalPlayers / groupSize);
+    // Oyuncuları gruplara dağıt (mümkün olduğunca eşit)
+    // Örn: 14 oyuncu, 4'lük grup → groupCount=4 → [4,4,3,3]
+    const floorSize = Math.floor(totalPlayers / groupCount);
+    const extraCount = totalPlayers % groupCount; // ilk extraCount grup floorSize+1 oyuncu alır
+    let pi = 0;
+    for (let g = 0; g < groupCount; g++) {
+      const size = g < extraCount ? floorSize + 1 : floorSize;
+      groups.push(entryIds.slice(pi, pi + size));
+      pi += size;
+    }
   }
 
   // Her grup için circle method ile maçları oluştur
@@ -476,7 +487,7 @@ function computeStageQualifiers(stage, stageMatches) {
     try { rrCfg = stage.config_json ? JSON.parse(stage.config_json) : {}; } catch (_) {}
     const totalQualifiers = stage.qualifier_count;
 
-    if (rrCfg.group_size) {
+    if (rrCfg.group_size || (Array.isArray(rrCfg.groups) && rrCfg.groups.length)) {
       // Grup aşaması: her gruptan direkt çıkanlar + lucky loser'lar
       const standingsByGroup = computeRRStandingsByGroup(stageMatches);
       const groupIndices = Object.keys(standingsByGroup).map(Number).sort((a, b) => a - b);

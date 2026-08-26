@@ -5,6 +5,12 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
 <title>Organizatör · Dart Core Pro</title>
 <link rel="stylesheet" href="/css/style.css" />
+<style>
+  .grp-box { transition: border-color .12s, background .12s; }
+  .grp-box-over { border-color: var(--accent) !important; background: color-mix(in srgb, var(--accent) 12%, var(--surface-2)) !important; }
+  .grp-chip:active { cursor: grabbing; }
+  .grp-chip.dragging { opacity: .4; }
+</style>
 </head>
 <body>
 <div class="app">
@@ -175,12 +181,16 @@
           <strong>Seri başı</strong> sütununa numara girersen (1, 2, 3…) bracket'te seed olarak yerleştirilir;
           boş bırakılanlar kura ile karıştırılır.
         </p>
+        <div id="group-mode-note"></div>
         <div id="entries-list"></div>
         <div class="row" style="margin-top: 0.5rem; gap: 0.5rem;">
           <button class="secondary" onclick="addEntry()">+ Katılımcı ekle</button>
           <button class="secondary" onclick="addAllPlayers()">👥 Tümünü Ekle</button>
-          <button class="secondary" onclick="drawLots()">🎲 Kura çek (önizleme)</button>
+          <button class="secondary" id="btn-draw-lots" onclick="drawLots()">🎲 Kura çek (önizleme)</button>
+          <button class="secondary" id="btn-group-fill" onclick="fillGroupsSequential()" style="display:none;">↔️ Sırayla dağıt</button>
+          <button class="secondary" id="btn-group-clear" onclick="clearGroups()" style="display:none;">🧹 Grupları temizle</button>
         </div>
+        <div id="group-preview" style="margin-top: 0.75rem;"></div>
       </div>
 
       <div class="row end">
