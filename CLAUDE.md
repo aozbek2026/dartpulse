@@ -1260,13 +1260,20 @@ paket/anahtar yoksa sistem eskisi gibi çalışır (graceful degradation).
   (login/register, 15dk/20) + `passwordLimiter` (forgot/reset/resend, 1sa/5). Paket yoksa
   no-op geçirgen fonksiyona düşer. 429'da Türkçe mesaj. **Skor/socket uçlarına dokunulmadı.**
 - **Captcha (Cloudflare Turnstile)** — `src/auth.js` `verifyTurnstile(token, ip)` helper'ı;
-  `TURNSTILE_SECRET` env yoksa doğrulama ATLANIR (graceful). `registerHandler`/`loginHandler`
-  artık `async` ve captcha token'ını Cloudflare'e doğrulatıyor. `server.js` `GET /api/config`
-  ucu `TURNSTILE_SITE_KEY`'i (public) döndürür. `login.html` config'i çekip site key varsa
-  Turnstile widget'ını (dark tema) yükler, token'ı POST body'sine `captcha` olarak ekler,
-  hatada `resetCaptcha()`. **Render env:** `TURNSTILE_SITE_KEY` + `TURNSTILE_SECRET` girildi,
-  Cloudflare'de "Dart Core Pro" widget (Managed mod, hostname'ler: `dartcorepro.com` +
-  `www.dartcorepro.com`). Canlıda aktif.
+  `TURNSTILE_SECRET` env yoksa doğrulama ATLANIR (graceful). Captcha **yalnızca
+  `registerHandler`'da** doğrulanıyor (bot hesap açmayı engellemek için). `server.js`
+  `GET /api/config` ucu `TURNSTILE_SITE_KEY`'i (public) döndürür. `login.html` config'i
+  çekip site key varsa Turnstile widget'ını (dark tema) yükler, token'ı POST body'sine
+  `captcha` olarak ekler, hatada `resetCaptcha()`. **Render env:** `TURNSTILE_SITE_KEY` +
+  `TURNSTILE_SECRET` girildi, Cloudflare'de "Dart Core Pro" widget (Managed mod,
+  hostname'ler: `dartcorepro.com` + `www.dartcorepro.com`). Canlıda aktif.
+- **Login'de captcha KALDIRILDI (TV tarayıcı düzeltmesi)** — Akıllı TV tarayıcıları
+  (eski/kısıtlı WebView) Turnstile widget'ını çalıştıramadığı için token üretilemiyor,
+  `loginHandler` boş token'ı reddedip girişi engelliyordu (turnuva gecesi TV'den giriş
+  yapılamadı). Çözüm: `loginHandler` artık captcha doğrulaması yapmıyor — login zaten
+  şifre + `authLimiter` (rate limit) ile korunuyor. `login.html`'de captcha widget'ı
+  yalnızca "Kayıt Ol" sekmesinde gösteriliyor; "Giriş Yap"da hiç yüklenmiyor. Captcha
+  koruması register tarafında aynen duruyor.
 
 ### 2. Bulut yedekleme (Backblaze B2 — canlıda)
 - Kod zaten hazırdı (`src/backup.js`, `YEDEKLEME-KURULUM.md`). Bu oturumda **Render env'e
@@ -1574,3 +1581,28 @@ modüllere dokunulmadı):
 **aktivite anında** (atış geldikçe) alınmalı. Ayrıca sandbox'ta `sqlite3` CLI yok — adli kurtarma
 gerekirse ya CLI kur ya da ham DB'yi (online-backup DEĞİL, gerçek dosya) çıkar; online-backup
 silinen/freelist sayfaları almaz.
+
+
+---
+
+## 🎯 Grup aşaması — esnek gruplar + sürükle-bırak grup tahtası (organizer, Ağu 2026, UYGULANDI)
+
+**Sadece bağımsız turnuva (organizer) round-robin'i içindir. Sezon ve lig'e round-robin/grup EKLENMEDİ** (kullanıcı kararı, Ağu 2026 — sezon/lig canlı akış, veri riski olmasın diye dokunulmuyor). Tekrar sorulursa: turnuva = var, sezon/lig = yok.
+
+**Ne yapar:** Organizatör round-robin turnuvada grup yapısını serbestçe kurar. Grup sayısı ("Kaç grup?") ya da grup başına kişi ("grup başına kaç oyuncu?") ile; **gruplar eşit olmak zorunda değil** (ör. 4'lük 2 grup, 5'lik çok grup, 10 kişi → [3,3,4]). 174 gibi 4'e bölünmeyen sayıda motor otomatik dengeler (42×4 + 2×3 = 44 grup).
+
+**Frontend (`public/js/organizer.js` + `public/organizer.html`):**
+- Sihirbaz: `#wiz-gcount` → `config.group_count` (UI-only, motora gönderilmez), `#wiz-gsize` → `config.group_size`. `groupModeInfo()`: groupCount = group_count(≥2) yoksa ceil(validCount/group_size).
+- RR+grup modunda: satırda **Grup (A–…) menüsü** + **sürükle-bırak grup tahtası** (`renderGroupPreview`: Atanmamış havuzu + N grup kutusu, chip = oyuncu). DnD: `chipDragStart`/`groupDrop`/`chipDragEnd`; ayrıca `updateEntryGroup`, `fillGroupsSequential` ("Sırayla dağıt"), `clearGroups`. CSS `.grp-box`/`.grp-chip`/`.grp-box-over` organizer.html `<style>`'da. Her grup **≥2** doğrulaması; seri başı sütunu bu modda gizli.
+- `createTournament`: gruba göre dizer, seed'leri temizler, motora **açık grup tanımı** gönderir → `stages[0].config.groups = [[entryPozisyonIndex...], ...]` (entries'i gönderdiği sırayla index'ler). `group_count` payload'dan silinir.
+
+**Motor (`src/tournament.js`):**
+- `buildRoundRobin`: grup belirleme önceliği — (1) `rrCfg.groups` (index→entryId, **eşitsiz boyut serbest**), (2) `rrCfg.group_size` (otomatik ~eşit floor/extra bölme, geriye dönük), (3) hiçbiri → tek grup.
+- `computeStageQualifiers`: koşul `rrCfg.group_size || rrCfg.groups`. Terfi = `qualifier_count` verilince her gruptan `floor(q/grupSayısı)` direkt + kalan **lucky-loser** (grupların bir sonraki sırasındakiler, puan → leg averajı → atılan leg ile sıralanıp en iyileri). Örn: 24→6 grup, q=16 → 2 direkt/grup (12) + en iyi 4 üçüncü. 174→44 grup, q=64 → 1 direkt/grup (44) + en iyi 20 ikinci.
+- Geriye dönük uyumlu: eski `group_size` yolu aynen çalışır.
+
+**Test durumu (canlı öncesi, hepsi geçti):** motor headless (2×4, eşitsiz [3,3,4], 3×5, 24→6×4→16 lucky-loser doğru, 32→8×4→16, 174→44 grup→64), gerçek sunucu (server child-process, HTTP create→start→motor), tarayıcı (headless Chromium, grup dropdown + DnD Grup A/B + geri Atanmamış + oluştur). Turnuva oluşturma **onaylı organizatör** ister.
+
+## 🧱 Bracket görsel hizalaması (KALICI KURAL — kullanıcı iki kez vurguladı)
+
+Bracket çizen HER çıktı (uygulama içi görünüm VE üretilen rapor/mockup/PDF): bir sonraki tur maçı, kendisini besleyen **iki maçın tam dikey ORTASINDA** durmalı (parent y-merkezi = (child1_merkez + child2_merkez)/2), sabit satır yüksekliği + dirsekli bağlantı çizgileriyle (ikili-ağaç yerleşimi). **YANLIŞ:** flexbox `justify-content: space-around/space-between` ile kolonları ayrı dağıtmak — turlar ilerledikçe hiza kayar; görsel kusur yazılıma güveni düşürür. Doğru motor zaten var: `public/js/bracket-shared.js` (`renderElimBracketSVG`/`renderLinkedBracketSVG`). Bracket göstermek/değiştirmek gerekirse bunu referans al ya da yeniden kullan; elle gevşek flex bracket ÜRETME.
