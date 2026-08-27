@@ -1019,6 +1019,8 @@ async function submitCricketDarts() {
     renderMatch();
     return toast('Hata: ' + res.error);
   }
+  // Sunucu cevabındaki güncel maç ile ekranı hemen çiz (socket/fetch beklemeden).
+  if (res.match) { currentMatch = res.match; render(); }
   if (res.legFinished && !res.matchFinished && res.legSummary) {
     await showLegSummary(res.legSummary);
     if (!res.matchFinished) showLegScoreFlash(res.legSummary.p1_legs ?? 0, res.legSummary.p2_legs ?? 0);
@@ -1342,6 +1344,8 @@ async function submitFBCezaliDarts() {
     renderMatch();
     return toast('Hata: ' + res.error);
   }
+  // Sunucu cevabındaki güncel maç ile ekranı hemen çiz (socket/fetch beklemeden).
+  if (res.match) { currentMatch = res.match; render(); }
   if (res.legFinished && !res.matchFinished && res.legSummary) {
     await showLegSummary(res.legSummary);
     if (!res.matchFinished) showLegScoreFlash(res.legSummary.p1_legs ?? 0, res.legSummary.p2_legs ?? 0);
@@ -1533,6 +1537,8 @@ async function submitKarambolDarts() {
     renderMatch();
     return toast('Hata: ' + res.error);
   }
+  // Sunucu cevabındaki güncel maç ile ekranı hemen çiz (socket/fetch beklemeden).
+  if (res.match) { currentMatch = res.match; render(); }
   if (res.legFinished && !res.matchFinished && res.legSummary) {
     await showLegSummary(res.legSummary);
     if (!res.matchFinished) showLegScoreFlash(res.legSummary.p1_legs ?? 0, res.legSummary.p2_legs ?? 0);
@@ -1711,6 +1717,8 @@ async function submitScore() {
   if (res && res.duplicate) { currentInput = ''; return; }
   if (res.error) return toast('Hata: ' + res.error);
   currentInput = '';
+  // Sunucu cevabındaki güncel maç ile ekranı hemen çiz (socket + ikinci fetch beklemeden).
+  if (res.match) { currentMatch = res.match; render(); }
   // Flash efekti — kalan skor kutusuna kısa parıltı
   const inputEl = document.getElementById('keypad-input');
   if (inputEl) { inputEl.classList.remove('score-flash'); void inputEl.offsetWidth; inputEl.classList.add('score-flash'); }

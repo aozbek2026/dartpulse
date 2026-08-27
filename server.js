@@ -735,22 +735,30 @@ app.get('/api/tournaments/:id/report', (req, res) => {
 });
 
 // Match control (from board / tablet)
-app.get('/api/matches/:id', (req, res) => {
-  const m = db.matchById(+req.params.id);
-  if (!m) return res.status(404).json({ error: 'Maç bulunamadı' });
+// Bir maçı /api/matches/:id ile aynı zenginleştirilmiş biçimde döndürür.
+// Atış uçları bu nesneyi cevaba ekler → tablet ekranı fetch beklemeden anında çizer.
+function enrichMatch(id) {
+  const m = db.matchById(id);
+  if (!m) return null;
   const t = db.tournamentById(m.tournament_id);
   const stage = db.stageById(m.stage_id);
   const stageMatches = db.matchesForStage(m.stage_id);
   const bracketSize = tournament.computeBracketSize(stage, stageMatches);
   const round_label = tournament.roundLabel(m, { bracketSize, format: stage?.format });
-  res.json({
+  return {
     ...m,
     throws: db.throwsForMatch(m.id),
     stats: db.statsForMatch(m.id),
     tournament_name: t?.name,
     game_mode: t?.game_mode,
     round_label,
-  });
+  };
+}
+
+app.get('/api/matches/:id', (req, res) => {
+  const m = enrichMatch(+req.params.id);
+  if (!m) return res.status(404).json({ error: 'Maç bulunamadı' });
+  res.json(m);
 });
 
 // Maça Başla: ready → live. Opsiyonel: scorer_entry_id override.
@@ -854,7 +862,7 @@ app.post('/api/matches/:id/cricket-throw', (req, res) => {
       });
     }
     scheduleBroadcast();
-    res.json(result);
+    res.json({ ...result, match: enrichMatch(id) });
   } catch (e) {
     res.status(400).json({ error: e.message });
   }
@@ -880,7 +888,7 @@ app.post('/api/matches/:id/fb-cezali-throw', (req, res) => {
       });
     }
     scheduleBroadcast();
-    res.json(result);
+    res.json({ ...result, match: enrichMatch(id) });
   } catch (e) {
     res.status(400).json({ error: e.message });
   }
@@ -906,7 +914,7 @@ app.post('/api/matches/:id/karambol-throw', (req, res) => {
       });
     }
     scheduleBroadcast();
-    res.json(result);
+    res.json({ ...result, match: enrichMatch(id) });
   } catch (e) {
     res.status(400).json({ error: e.message });
   }
@@ -1150,7 +1158,7 @@ app.post('/api/matches/:id/throw', (req, res) => {
     } else {
       scheduleBroadcast();
     }
-    res.json(result);
+    res.json({ ...result, match: enrichMatch(matchId) });
   } catch (e) {
     res.status(400).json({ error: e.message });
   }
