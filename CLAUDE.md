@@ -1606,3 +1606,15 @@ silinen/freelist sayfaları almaz.
 ## 🧱 Bracket görsel hizalaması (KALICI KURAL — kullanıcı iki kez vurguladı)
 
 Bracket çizen HER çıktı (uygulama içi görünüm VE üretilen rapor/mockup/PDF): bir sonraki tur maçı, kendisini besleyen **iki maçın tam dikey ORTASINDA** durmalı (parent y-merkezi = (child1_merkez + child2_merkez)/2), sabit satır yüksekliği + dirsekli bağlantı çizgileriyle (ikili-ağaç yerleşimi). **YANLIŞ:** flexbox `justify-content: space-around/space-between` ile kolonları ayrı dağıtmak — turlar ilerledikçe hiza kayar; görsel kusur yazılıma güveni düşürür. Doğru motor zaten var: `public/js/bracket-shared.js` (`renderElimBracketSVG`/`renderLinkedBracketSVG`). Bracket göstermek/değiştirmek gerekirse bunu referans al ya da yeniden kullan; elle gevşek flex bracket ÜRETME.
+
+
+## 🎯 Grup→board sabitleme + kazanan hakemlik (scheduler opsiyonları, Ağu 2026, UYGULANDI)
+
+İkisi de **opsiyonel** (varsayılan KAPALI = eski davranış), yalnız **turnuva (organizer) RR aşaması** için. RR sihirbazında iki checkbox → `stagesDraft[0].config.pin_groups` / `winner_scores` → RR stage `config_json`'una yazılır. Scheduler bunları okur.
+
+- **pin_groups (grup→board sabitleme):** grup `g` → board `g % N` (N = o turnuvaya atanmış board sayısı, id sırasıyla). Her board **kendi gruplarını sırayla** oynatır: bir board index'i için "aktif grup" = o index'e düşen ve henüz bitmemiş maçı olan en küçük grup; board sadece o gruba maç alır, grup bitince sıradaki gruba geçer. Kapalıyken maçlar boş board havuzuna dağıtılır (grup fark etmeksizin) — eski davranış.
+- **winner_scores (kazanan hakemlik):** bir board'da biten maçın galibi `boards.last_winner_entry_id`'e yazılır (server.js maç + walkover bitişinde `db.setBoardLastWinner`). Board `/next` ile boşalıp scheduler yeni maç atarken, bu galip **maçta oynamıyorsa ve boştaysa** o maçın scorer'ı olur; değilse normal `pickScorerEntry`.
+
+**Dosyalar:** `src/scheduler.js` (assignForUser: cfgFor stage cache + activeGroupForBoardIndex + pin atama + kazanan-scorer), `src/db.js` (`boards.last_winner_entry_id` kolon+migration, `setBoardLastWinner`), `server.js` (bitiş/walkover hook), `public/js/organizer.js` (`wizSetPinGroups`/`wizSetWinnerScores` + iki checkbox; organizer.html değişmedi — checkbox'lar JS'de üretiliyor).
+
+**Uyarı:** pin gruplu RR içindir; grup kurmadan (tek havuz, group 0) işaretlenirse tüm maçlar board 0'a serileşir. **Test:** headless scheduler (pin izolasyon + sıralı akış + kazanan-scorer + pool default korundu) ve gerçek sunucu (migration + boot + config_json round-trip + in-server pin) — hepsi geçti. Commit `51fa840`.
