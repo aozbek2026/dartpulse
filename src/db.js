@@ -47,6 +47,7 @@ function init() {
       name TEXT NOT NULL,
       status TEXT DEFAULT 'idle',  -- idle | busy
       current_match_id INTEGER,
+      last_winner_entry_id INTEGER,  -- "kazanan hakemlik" için: bu board'da son biten maçın galibi
       created_at TEXT DEFAULT CURRENT_TIMESTAMP,
       FOREIGN KEY(user_id) REFERENCES users(id) ON DELETE CASCADE,
       FOREIGN KEY(tournament_id) REFERENCES tournaments(id) ON DELETE SET NULL
@@ -495,6 +496,9 @@ function init() {
   if (!boardCols.includes('user_id')) {
     try { db.exec('ALTER TABLE boards ADD COLUMN user_id INTEGER'); } catch {}
   }
+  if (!boardCols.includes('last_winner_entry_id')) {
+    try { db.exec('ALTER TABLE boards ADD COLUMN last_winner_entry_id INTEGER'); } catch {}
+  }
   const tournCols = db.prepare("PRAGMA table_info(tournaments)").all().map(c => c.name);
   if (!tournCols.includes('user_id')) {
     try { db.exec('ALTER TABLE tournaments ADD COLUMN user_id INTEGER'); } catch {}
@@ -808,6 +812,12 @@ function deleteBoard(id) {
 function setBoardMatch(boardId, matchId) {
   db.prepare('UPDATE boards SET current_match_id = ?, status = ? WHERE id = ?')
     .run(matchId, matchId ? 'busy' : 'idle', boardId);
+}
+// "Kazanan hakemlik": bu board'da biten maçın galibini board'a yaz (bir sonraki
+// maçın scorer'ı olarak scheduler tarafından kullanılır). entryId null → temizle.
+function setBoardLastWinner(boardId, entryId) {
+  db.prepare('UPDATE boards SET last_winner_entry_id = ? WHERE id = ?')
+    .run(entryId || null, boardId);
 }
 
 // --- Tournaments ---
@@ -2535,7 +2545,7 @@ module.exports = {
   setResetToken, getUserByResetToken, clearResetToken,
   updatePassword, deleteUser,
   createPlayer, allPlayers, playerById, deletePlayer, playerActiveTournament,
-  createBoard, allBoards, boardById, deleteBoard, setBoardMatch, clearUserBoards, clearTournamentBoards, setBoardTournament,
+  createBoard, allBoards, boardById, deleteBoard, setBoardMatch, setBoardLastWinner, clearUserBoards, clearTournamentBoards, setBoardTournament,
   adminAllTournaments,
   eventSettings, upsertEventSettings,
   registrationsForTournament, registrationByUser, countRegistrations,

@@ -208,6 +208,8 @@ function renderStagesWizard() {
   const qcount = s0.qualifier_count || '';
   const groupSize = s0.config?.group_size || '';
   const groupCount = s0.config?.group_count || '';
+  const pinGroups = !!s0.config?.pin_groups;
+  const winnerScores = !!s0.config?.winner_scores;
 
   // Çift eleme aşamasını bul (loser braket leg sayısı için)
   const dblStage = (primary === 'double_elim') ? s0
@@ -279,6 +281,16 @@ function renderStagesWizard() {
           </select>
         </div>
       </div>
+      <div style="margin-top: 0.75rem; display:flex; flex-direction:column; gap:0.4rem;">
+        <label style="display:flex; align-items:center; gap:0.5rem; font-weight:400; cursor:pointer;">
+          <input type="checkbox" id="wiz-pin-groups" ${pinGroups ? 'checked' : ''} onchange="wizSetPinGroups(this.checked)" style="width:auto;" />
+          <span>🎯 Grup maçlarını board'lara sabitle <span style="color:var(--text-dim);">(grup → board; her board kendi gruplarını sırayla oynatır)</span></span>
+        </label>
+        <label style="display:flex; align-items:center; gap:0.5rem; font-weight:400; cursor:pointer;">
+          <input type="checkbox" id="wiz-winner-scores" ${winnerScores ? 'checked' : ''} onchange="wizSetWinnerScores(this.checked)" style="width:auto;" />
+          <span>✍️ Grup maçlarında kazanan hakemlik yapsın <span style="color:var(--text-dim);">(kazanan masada kalıp sonraki maçı yazar)</span></span>
+        </label>
+      </div>
     ` : ''}
 
     ${dblStage ? `
@@ -298,6 +310,16 @@ function renderStagesWizard() {
   `;
 }
 
+function wizSetPinGroups(checked) {
+  if (!stagesDraft[0]) return;
+  if (!stagesDraft[0].config) stagesDraft[0].config = {};
+  stagesDraft[0].config.pin_groups = !!checked;
+}
+function wizSetWinnerScores(checked) {
+  if (!stagesDraft[0]) return;
+  if (!stagesDraft[0].config) stagesDraft[0].config = {};
+  stagesDraft[0].config.winner_scores = !!checked;
+}
 function wizSetLbLegs(val) {
   const n = val ? +val : null;
   const primary = stagesDraft[0]?.format;

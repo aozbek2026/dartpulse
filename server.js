@@ -1126,6 +1126,11 @@ app.post('/api/matches/:id/throw', (req, res) => {
     io.emit('match:update', { matchId });
     if (result.matchFinished) {
       const m = db.matchById(matchId);
+      // "Kazanan hakemlik": bu board'da biten maçın galibini board'a yaz.
+      // /next ile board boşalınca scheduler bunu bir sonraki maçın scorer'ı yapabilir.
+      if (m && m.board_id && m.winner_entry_id) {
+        try { db.setBoardLastWinner(m.board_id, m.winner_entry_id); } catch (_) {}
+      }
       if (m && m.team_phase_match_id) {
         // Takım maçı — ayrı işleyici
         onTeamMatchFinished(matchId, m);
@@ -1177,6 +1182,9 @@ app.post('/api/matches/:id/walkover', (req, res) => {
     db.walkoverMatch(matchId, winnerSlot);
     try { backup.triggerBackup(); } catch (_) {}
     const updated = db.matchById(matchId);
+    if (updated && updated.board_id && updated.winner_entry_id) {
+      try { db.setBoardLastWinner(updated.board_id, updated.winner_entry_id); } catch (_) {}
+    }
     if (updated && updated.team_phase_match_id) {
       onTeamMatchFinished(matchId, updated);
     } else {
