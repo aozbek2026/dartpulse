@@ -2537,6 +2537,29 @@ function deleteUser(userId) {
   db.prepare('DELETE FROM users WHERE id = ?').run(userId);
 }
 
+function avg3ByEntry(tournamentId) {
+  // Bir turnuvadaki her entry'nin biten maçlardaki toplam skor/ok -> 3-ok ortalaması.
+  const rows = db.prepare(`
+    SELECT ms.player_slot AS slot, ms.total_score AS score, ms.darts_thrown AS darts,
+           mt.entry1_id AS e1, mt.entry2_id AS e2
+    FROM match_stats ms JOIN matches mt ON mt.id = ms.match_id
+    WHERE mt.tournament_id = ? AND mt.status = 'finished'
+  `).all(tournamentId);
+  const agg = {};
+  for (const r of rows) {
+    const eid = r.slot === 1 ? r.e1 : r.e2;
+    if (!eid) continue;
+    if (!agg[eid]) agg[eid] = { score: 0, darts: 0 };
+    agg[eid].score += r.score || 0;
+    agg[eid].darts += r.darts || 0;
+  }
+  const out = {};
+  for (const [eid, v] of Object.entries(agg)) {
+    out[eid] = v.darts > 0 ? +((v.score / v.darts) * 3).toFixed(2) : 0;
+  }
+  return out;
+}
+
 module.exports = {
   db, init,
   createUser, userByEmail, userById, allUsers,
@@ -2558,7 +2581,7 @@ module.exports = {
   createMatch, matchById, matchesForTournament, matchesForStage,
   activeMatches, pendingReadyMatches, updateMatch, setMatchEntry, deleteMatch, walkoverMatch,
   addThrow, throwsForMatch, lastThrow, deleteThrow,
-  getStats, updateStats, statsForMatch, recomputeBestCheckout, applyThrowIdempotent, tournamentPlayerReport,
+  getStats, updateStats, statsForMatch, avg3ByEntry, recomputeBestCheckout, applyThrowIdempotent, tournamentPlayerReport,
   resetAll,
   createTeamEvent, allTeamEvents, teamEventById, updateTeamEvent, deleteTeamEvent,
   createTeamPhase, phasesForEvent, teamPhaseById, updateTeamPhase,

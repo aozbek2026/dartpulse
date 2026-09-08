@@ -1895,7 +1895,7 @@ function renderStage(t, stage, index) {
 
   // Build bracket view
   if (stage.format === 'round_robin') {
-    return renderRRStage(stage, stageMatches);
+    return renderRRStage(t, stage, stageMatches);
   }
   return renderElimStage(stage, stageMatches);
 }
@@ -2015,56 +2015,253 @@ function renderBracketMatch(m) {
   `;
 }
 
-function renderRRStage(stage, matches) {
-  // Compute standings
-  const table = computeRRStandings(matches);
+function renderRRStage(t, stage, matches) {
+  const hasGroups = matches.some(m => m.group_index != null);
+  const allFinished = matches.length > 0 && matches.every(m => m.status === 'finished');
+  const nextStage = (t.stages || []).find(x => x.stage_index === stage.stage_index + 1);
+  const nextStarted = nextStage && (t.matches || []).some(m => m.stage_id === nextStage.id);
+  const canAdvance = allFinished && nextStage && !nextStarted;
+
+  const qCount = stage.qualifier_count || null;
+  const groupCount = hasGroups ? new Set(matches.map(m => m.group_index)).size : 1;
+  const baseAdv = qCount ? Math.floor(qCount / groupCount) : 2;
+  const remAdv = qCount ? (qCount - baseAdv * groupCount) : 0;
+  const avg3Map = t.avg3ByEntry || {};
+
+  // Elle seçim modu: grup bitti, üst tur başlamadı, kota belli.
+  const selecting = canAdvance && hasGroups && qCount;
+
+  const byGroup = hasGroups ? computeRRStandingsByGroup(matches, avg3Map) : null;
+  const gis = byGroup ? Object.keys(byGroup).map(Number).sort((a, b) => a - b) : [];
+  const defaultSet = selecting ? defaultQualifierSet(byGroup, gis, qCount) : new Set();
+
+  let advanceInfo = '';
+  if (nextStage) {
+    advanceInfo = qCount
+      ? (remAdv > 0
+          ? `Her gruptan ilk ${baseAdv} (${baseAdv * groupCount}) + en iyi ${remAdv} (${baseAdv + 1}.'ler) = <strong>${qCount}</strong> oyuncu üst tura`
+          : `Her gruptan ilk ${baseAdv} = <strong>${qCount}</strong> oyuncu üst tura`)
+      : `Her gruptan ilk ${baseAdv} üst tura`;
+  }
+
+  // Standings blok(lar)ı
+  let standingsHtml;
+  if (hasGroups) {
+    const selCol = selecting ? '<th title="Üst tura çıksın mı?">✓</th>' : '';
+    standingsHtml = `<div class="grid cols-2" style="gap:0.75rem;">` + gis.map(gi => {
+      const rows = byGroup[gi];
+      return `
+        <div>
+          <h5 style="margin:0 0 0.35rem;color:var(--accent-2);font-size:0.85rem;">${String.fromCharCode(65 + gi)} Grubu</h5>
+          <table class="standings-table">
+            <thead><tr>${selCol}<th>#</th><th>Oyuncu</th><th title="Galibiyet">G</th><th title="Mağlubiyet">M</th><th title="Alınan leg">Leg</th><th title="3-ok ortalaması">3DA</th><th>P</th></tr></thead>
+            <tbody>
+              ${rows.length === 0 ? `<tr><td colspan="${selecting ? 8 : 7}" class="empty">—</td></tr>` :
+                rows.map((r, i) => {
+                  const cls = i < baseAdv ? 'style="background:rgba(34,197,94,0.14);"'
+                            : (i === baseAdv && remAdv > 0) ? 'style="background:rgba(234,179,8,0.12);"' : '';
+                  const badge = i < baseAdv ? ' ✅' : (i === baseAdv && remAdv > 0) ? ' ⭐' : '';
+                  const sel = selecting
+                    ? `<td><input type="checkbox" class="qsel-${t.id}" data-entry="${r.entryId}" ${defaultSet.has(r.entryId) ? 'checked' : ''} onchange="updateQualCounter(${t.id}, ${qCount})"></td>`
+                    : '';
+                  return `<tr ${cls}>
+                    ${sel}
+                    <td>${i + 1}</td>
+                    <td>${entryLabelById(r.entryId)}${badge}</td>
+                    <td>${r.W}</td><td>${r.L}</td>
+                    <td>${r.legsFor}</td>
+                    <td>${r.avg3 ? r.avg3.toFixed(2) : '—'}</td>
+                    <td><strong>${r.points}</strong></td>
+                  </tr>`;
+                }).join('')}
+            </tbody>
+          </table>
+        </div>`;
+    }).join('') + `</div>
+      <div style="font-size:0.78rem;color:var(--text-dim);margin-top:0.4rem;">✅ ilk ${baseAdv} (direkt)${remAdv > 0 ? ` · ⭐ en iyi ${remAdv} (${baseAdv + 1}.'ler)` : ''} üst tura · Sıralama: puan → alınan leg → 3-ok ort.${selecting ? ' · Kutucukları değiştirerek elle düzenleyebilirsin.' : ''}</div>`;
+  } else {
+    const table = computeRRStandings(matches);
+    standingsHtml = `
+      <table>
+        <thead><tr><th>#</th><th>Oyuncu</th><th>G</th><th>M</th><th>Leg</th><th>P</th></tr></thead>
+        <tbody>
+          ${table.length === 0 ? '<tr><td colspan="6" class="empty">Henüz sonuç yok</td></tr>' :
+            table.map((row, i) => `
+              <tr ${i < (qCount || 2) ? 'style="background:rgba(34,197,94,0.14);"' : ''}>
+                <td>${i + 1}</td>
+                <td>${entryLabelById(row.entryId)}</td>
+                <td>${row.W}</td><td>${row.L}</td>
+                <td>${row.legsFor}-${row.legsAgainst}</td>
+                <td><strong>${row.points}</strong></td>
+              </tr>`).join('')}
+        </tbody>
+      </table>`;
+  }
+
+  // Başlat butonu: seçim modunda elle (manual) listeyi gönderir; değilse otomatik.
+  const startBtn = canAdvance
+    ? (selecting
+        ? `<button class="btn" id="qstart-${t.id}" style="background:#22c55e;color:#000;font-weight:700;" onclick="advanceStage(${t.id}, true)">🚀 Üst turu başlat</button>`
+        : `<button class="btn" style="background:#22c55e;color:#000;font-weight:700;" onclick="advanceStage(${t.id})">🚀 Üst turu başlat</button>`)
+    : '';
+
+  const counter = selecting
+    ? `<span id="qcount-${t.id}" style="font-size:0.85rem;font-weight:600;color:${defaultSet.size === qCount ? 'var(--accent-2)' : 'var(--accent)'};">Seçili: ${defaultSet.size} / ${qCount}</span>`
+    : '';
+
   return `
     <div style="margin-top: 1rem;">
-      <h4 style="color: var(--text-dim); font-size: 0.8rem; text-transform: uppercase; letter-spacing: 0.05em; margin-bottom: 0.5rem;">
-        Round-robin — Aşama ${stage.stage_index + 1}
-      </h4>
-      <div class="grid cols-2">
-        <div>
-          <table>
-            <thead>
-              <tr><th>#</th><th>Oyuncu</th><th>G</th><th>M</th><th>Leg</th><th>P</th></tr>
-            </thead>
-            <tbody>
-              ${table.length === 0 ? '<tr><td colspan="6" class="empty">Henüz sonuç yok</td></tr>' :
-                table.map((row, i) => `
-                  <tr>
-                    <td>${i + 1}</td>
-                    <td>${entryLabelById(row.entryId)}</td>
-                    <td>${row.W}</td>
-                    <td>${row.L}</td>
-                    <td>${row.legsFor}-${row.legsAgainst}</td>
-                    <td><strong>${row.points}</strong></td>
-                  </tr>
-                `).join('')
-              }
-            </tbody>
-          </table>
-        </div>
-        <div>
-          <table>
-            <thead>
-              <tr><th>R</th><th>Maç</th><th>Skor</th><th>Durum</th></tr>
-            </thead>
-            <tbody>
-              ${matches.map(m => `
-                <tr>
-                  <td>R${m.round}</td>
-                  <td>${entryLabel(m.entry1)} vs ${entryLabel(m.entry2)}</td>
-                  <td>${m.p1_legs}-${m.p2_legs}</td>
-                  <td>${statusBadge(m.status)}</td>
-                </tr>
-              `).join('')}
-            </tbody>
-          </table>
-        </div>
+      <div class="row between" style="align-items:center;flex-wrap:wrap;gap:0.5rem;">
+        <h4 style="color: var(--text-dim); font-size: 0.8rem; text-transform: uppercase; letter-spacing: 0.05em; margin:0;">
+          Grup aşaması — Klasman ${allFinished ? '· TAMAMLANDI' : ''}
+        </h4>
+        <div class="row" style="align-items:center;gap:0.75rem;">${counter}${startBtn}</div>
       </div>
+      ${nextStage ? `<div style="font-size:0.82rem;color:var(--text-dim);margin:0.25rem 0 0.6rem;">${advanceInfo}${canAdvance ? '' : (nextStarted ? ' · üst tur başladı' : ' · grup maçları bitince başlatılabilir')}</div>` : ''}
+      ${standingsHtml}
+      <details style="margin-top:0.6rem;">
+        <summary style="cursor:pointer;color:var(--text-dim);font-size:0.85rem;">Grup maçları</summary>
+        <table style="margin-top:0.4rem;">
+          <thead><tr><th>Grup</th><th>Maç</th><th>Skor</th><th>Durum</th></tr></thead>
+          <tbody>
+            ${matches.map(m => `
+              <tr>
+                <td>${m.group_index != null ? String.fromCharCode(65 + m.group_index) : 'R' + m.round}</td>
+                <td>${entryLabel(m.entry1)} vs ${entryLabel(m.entry2)}</td>
+                <td>${m.p1_legs}-${m.p2_legs}</td>
+                <td>${statusBadge(m.status)}</td>
+              </tr>`).join('')}
+          </tbody>
+        </table>
+      </details>
     </div>
   `;
+}
+
+// Varsayılan qualifier kümesi (sunucu mantığının aynısı): her gruptan ilk `taban`
+// + en iyi `kalan` (taban+1). sıradaki. Onay kutuları bununla önden işaretlenir.
+function defaultQualifierSet(byGroup, gis, qCount) {
+  const G = gis.length;
+  const base = Math.floor(qCount / G);
+  const rem = qCount - base * G;
+  const set = new Set();
+  const thirds = [];
+  for (const g of gis) {
+    const rows = byGroup[g];
+    for (let i = 0; i < rows.length; i++) {
+      if (i < base) set.add(rows[i].entryId);
+      else if (i === base) thirds.push(rows[i]);
+    }
+  }
+  thirds.sort((a, b) => b.points - a.points || b.legsFor - a.legsFor || (b.avg3 || 0) - (a.avg3 || 0));
+  thirds.slice(0, rem).forEach(r => set.add(r.entryId));
+  return set;
+}
+
+// Seçim sayacını güncelle + tam sayıda değilse başlat butonunu kilitle.
+function updateQualCounter(tid, need) {
+  const boxes = Array.from(document.querySelectorAll('.qsel-' + tid));
+  const sel = boxes.filter(b => b.checked).length;
+  const el = document.getElementById('qcount-' + tid);
+  if (el) {
+    el.textContent = `Seçili: ${sel} / ${need}`;
+    el.style.color = sel === need ? 'var(--accent-2)' : 'var(--accent)';
+  }
+  const btn = document.getElementById('qstart-' + tid);
+  if (btn) {
+    btn.disabled = sel !== need;
+    btn.style.opacity = sel === need ? '1' : '0.5';
+    btn.style.cursor = sel === need ? 'pointer' : 'not-allowed';
+  }
+}
+
+// Grup bazlı klasman (motordaki computeRRStandingsByGroup ile aynı sıralama)
+function computeRRStandingsByGroup(matches, avg3Map = {}) {
+  const groups = {};
+  for (const m of matches) {
+    const g = m.group_index == null ? 0 : m.group_index;
+    if (!groups[g]) groups[g] = {};
+    for (const eid of [m.entry1_id, m.entry2_id]) {
+      if (eid && !groups[g][eid]) groups[g][eid] = { entryId: eid, W: 0, L: 0, legsFor: 0, legsAgainst: 0, points: 0 };
+    }
+  }
+  for (const m of matches) {
+    if (m.status !== 'finished') continue;
+    const g = m.group_index == null ? 0 : m.group_index;
+    for (const slot of [1, 2]) {
+      const eid = slot === 1 ? m.entry1_id : m.entry2_id;
+      if (!eid || !groups[g][eid]) continue;
+      const lf = slot === 1 ? (m.p1_legs || 0) : (m.p2_legs || 0);
+      const la = slot === 1 ? (m.p2_legs || 0) : (m.p1_legs || 0);
+      groups[g][eid].legsFor += lf;
+      groups[g][eid].legsAgainst += la;
+      if (m.winner_entry_id === eid) { groups[g][eid].W++; groups[g][eid].points += 3; }
+      else groups[g][eid].L++;
+    }
+  }
+  const out = {};
+  for (const [g, tbl] of Object.entries(groups)) {
+    const rows = Object.values(tbl);
+    for (const r of rows) r.avg3 = +avg3Map[r.entryId] || 0;
+    // Eşitlik: puan → alınan leg (legsFor) → 3-ok ort. → head-to-head
+    rows.sort((a, b) =>
+      b.points - a.points ||
+      b.legsFor - a.legsFor ||
+      b.avg3 - a.avg3);
+    out[+g] = applyHeadToHead(rows, matches);
+  }
+  return out;
+}
+
+// (puan+alınan leg+avg3) eşit olan blokları kendi aralarındaki maça göre sırala
+function applyHeadToHead(sorted, matches) {
+  const sameKey = (a, b) => a.points === b.points && a.legsFor === b.legsFor && a.avg3 === b.avg3;
+  let i = 0;
+  while (i < sorted.length) {
+    let j = i + 1;
+    while (j < sorted.length && sameKey(sorted[i], sorted[j])) j++;
+    if (j - i > 1) {
+      const tied = sorted.slice(i, j);
+      const ids = new Set(tied.map(r => r.entryId));
+      const h = {};
+      tied.forEach(r => { h[r.entryId] = { w: 0, lf: 0, la: 0 }; });
+      for (const m of matches) {
+        if (m.status !== 'finished') continue;
+        if (!ids.has(m.entry1_id) || !ids.has(m.entry2_id)) continue;
+        h[m.entry1_id].lf += m.p1_legs || 0; h[m.entry1_id].la += m.p2_legs || 0;
+        h[m.entry2_id].lf += m.p2_legs || 0; h[m.entry2_id].la += m.p1_legs || 0;
+        if (m.winner_entry_id === m.entry1_id) h[m.entry1_id].w++;
+        else if (m.winner_entry_id === m.entry2_id) h[m.entry2_id].w++;
+      }
+      tied.sort((a, b) => {
+        const A = h[a.entryId], B = h[b.entryId];
+        return B.w - A.w || (B.lf - B.la) - (A.lf - A.la) || B.lf - A.lf;
+      });
+      for (let k = 0; k < tied.length; k++) sorted[i + k] = tied[k];
+    }
+    i = j;
+  }
+  return sorted;
+}
+
+// Organizatör: grup aşaması bitince üst turu başlat
+async function advanceStage(id, manual = false) {
+  let body = {};
+  let msg = 'Grup aşaması sonuçlarına göre üst tur (tek eleme) kurulacak. Başlatılsın mı?';
+  if (manual) {
+    const boxes = Array.from(document.querySelectorAll('.qsel-' + id));
+    const qualifiers = boxes.filter(b => b.checked).map(b => +b.dataset.entry);
+    body = { qualifiers };
+    msg = `Seçtiğin ${qualifiers.length} oyuncu ile üst tur (tek eleme) kurulacak. Başlatılsın mı?`;
+  }
+  if (!await showOrgConfirm(msg, 'Başlat', 'İptal')) return;
+  try {
+    const res = await api.post(`/api/tournaments/${id}/advance-stage`, body);
+    if (res && res.error) return toast('Hata: ' + res.error);
+    toast(res && res.manual ? 'Üst tur (elle seçimle) başlatıldı 🚀' : 'Üst tur başlatıldı 🚀');
+  } catch (e) {
+    toast('Başlatılamadı: ' + (e.message || e));
+  }
 }
 
 function statusBadge(s) {

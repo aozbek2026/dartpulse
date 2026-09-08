@@ -323,14 +323,53 @@ function buildGroupStandings(t, stageMatches) {
         if (m.winner_entry_id === m.entry2_id) b.matches_won++;
       }
     }
+    const avg3Map = t.avg3ByEntry || {};
     const rows = Object.values(stats).map(s => ({
       ...s,
       leg_diff: s.legs_for - s.legs_against,
+      average_3dart: +avg3Map[s.entry?.id] || 0,
     }));
-    rows.sort((a, b) => b.matches_won - a.matches_won || b.leg_diff - a.leg_diff);
-    result[gi] = rows;
+    // Eşitlik: kazanılan maç → alınan leg (legs_for) → 3-ok ort. → head-to-head
+    rows.sort((a, b) =>
+      b.matches_won - a.matches_won ||
+      b.legs_for - a.legs_for ||
+      b.average_3dart - a.average_3dart);
+    result[gi] = applyHeadToHeadV(rows, groupMatches);
   }
   return result;
+}
+
+// (kazanılan maç + alınan leg + avg3) eşit blokları head-to-head ile sırala
+function applyHeadToHeadV(sorted, matches) {
+  const sameKey = (a, b) =>
+    a.matches_won === b.matches_won && a.legs_for === b.legs_for && a.average_3dart === b.average_3dart;
+  let i = 0;
+  while (i < sorted.length) {
+    let j = i + 1;
+    while (j < sorted.length && sameKey(sorted[i], sorted[j])) j++;
+    if (j - i > 1) {
+      const tied = sorted.slice(i, j);
+      const ids = new Set(tied.map(r => r.entry && r.entry.id).filter(x => x != null));
+      const h = {};
+      tied.forEach(r => { if (r.entry) h[r.entry.id] = { w: 0, lf: 0, la: 0 }; });
+      for (const m of matches) {
+        if (m.status !== 'finished') continue;
+        if (!ids.has(m.entry1_id) || !ids.has(m.entry2_id)) continue;
+        h[m.entry1_id].lf += m.p1_legs || 0; h[m.entry1_id].la += m.p2_legs || 0;
+        h[m.entry2_id].lf += m.p2_legs || 0; h[m.entry2_id].la += m.p1_legs || 0;
+        if (m.winner_entry_id === m.entry1_id) h[m.entry1_id].w++;
+        else if (m.winner_entry_id === m.entry2_id) h[m.entry2_id].w++;
+      }
+      tied.sort((a, b) => {
+        const A = h[a.entry && a.entry.id] || { w: 0, lf: 0, la: 0 };
+        const B = h[b.entry && b.entry.id] || { w: 0, lf: 0, la: 0 };
+        return B.w - A.w || (B.lf - B.la) - (A.lf - A.la) || B.lf - A.lf;
+      });
+      for (let k = 0; k < tied.length; k++) sorted[i + k] = tied[k];
+    }
+    i = j;
+  }
+  return sorted;
 }
 
 // ========== Render: Canlı ==========
@@ -429,7 +468,11 @@ function renderStandings() {
     if (rrStage) {
       const cfg = parseCfg(rrStage.config_json);
       const rrMatches = t.matches.filter(m => m.stage_id === rrStage.id);
-      if (cfg.group_size && cfg.group_size > 0) {
+      // Grup var mı? Hem group_size (otomatik bölme) hem de açık gruplar
+      // (config.groups / maçlardaki group_index) için grup klasmanı göster.
+      const hasGroups = (cfg.group_size && cfg.group_size > 0) ||
+        rrMatches.some(m => m.group_index != null);
+      if (hasGroups) {
         // Grup sıralamaları
         const groupStandings = buildGroupStandings(t, rrMatches);
         const groupIndices = Object.keys(groupStandings).map(Number).sort((a, b) => a - b);
@@ -449,12 +492,12 @@ function renderStandings() {
                       <tr>
                         <th>#</th><th>Oyuncu</th>
                         <th class="num">O</th><th class="num">G</th><th class="num">M</th>
-                        <th class="num">Leg</th><th class="num">±</th>
+                        <th class="num">Leg</th><th class="num">±</th><th class="num" title="3-ok ortalaması">3DA</th>
                       </tr>
                     </thead>
                     <tbody>
                       ${rows.length === 0
-                        ? '<tr><td colspan="7" class="empty">Henüz veri yok</td></tr>'
+                        ? '<tr><td colspan="8" class="empty">Henüz veri yok</td></tr>'
                         : rows.map((r, i) => {
                             const rank = i + 1;
                             const pillCls = rank === 1 ? 'gold' : rank === 2 ? 'silver' : rank === 3 ? 'bronze' : '';
@@ -467,6 +510,7 @@ function renderStandings() {
                                 <td class="num">${r.matches_played - r.matches_won}</td>
                                 <td class="num">${r.legs_for}-${r.legs_against}</td>
                                 <td class="num">${r.leg_diff > 0 ? '+' : ''}${r.leg_diff}</td>
+                                <td class="num">${r.average_3dart ? r.average_3dart.toFixed(2) : '—'}</td>
                               </tr>
                             `;
                           }).join('')}

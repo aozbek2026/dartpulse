@@ -518,6 +518,24 @@ app.post('/api/tournaments/:id/start', auth.requireOrganizer, (req, res) => {
     res.status(400).json({ error: e.message });
   }
 });
+
+// Grup aşaması bittikten sonra organizatör üst turu (tek/çift eleme) elle başlatır.
+app.post('/api/tournaments/:id/advance-stage', auth.requireOrganizer, (req, res) => {
+  try {
+    const t = db.tournamentById(+req.params.id);
+    if (!t) return res.status(404).json({ error: 'Turnuva bulunamadı' });
+    if (t.user_id && t.user_id !== req.user.id) {
+      return res.status(403).json({ error: 'Yetkiniz yok' });
+    }
+    const override = Array.isArray(req.body?.qualifiers) ? req.body.qualifiers : null;
+    const result = tournament.advanceStage(+req.params.id, override);
+    scheduler.assignPendingMatches(io, req.user.id);
+    scheduleBroadcast();
+    res.json({ ok: true, ...result });
+  } catch (e) {
+    res.status(400).json({ error: e.message });
+  }
+});
 // Turnuva ayarlarını güncelle — sadece draft durumunda
 app.patch('/api/tournaments/:id', auth.requireAuth, (req, res) => {
   try {
@@ -1688,6 +1706,7 @@ app.get('/api/public/tournament/:token', (req, res) => {
         matches: db.matchesForTournament(t.id),
         entries: db.entriesForTournament(t.id),
         report: cachedReport(t.id),
+        avg3ByEntry: db.avg3ByEntry(t.id),
       },
     });
   } catch (e) {
@@ -1715,6 +1734,7 @@ app.get('/api/public/tournament-by-id/:id', (req, res) => {
         matches: db.matchesForTournament(t.id),
         entries: db.entriesForTournament(t.id),
         report: cachedReport(t.id),
+        avg3ByEntry: db.avg3ByEntry(t.id),
       },
     });
   } catch (e) {

@@ -102,6 +102,15 @@ function onMatchFinished(matchId) {
     const allStages = db.stagesForTournament(t.id);
     const next = allStages.find(s => s.stage_index === stage.stage_index + 1);
     if (next) {
+      // GRUP AŞAMASI (round_robin): sonrasını OTOMATİK BAŞLATMA.
+      // Organizatör önce klasmanı görüp "Üst turu başlat" butonuna bassın
+      // (advanceStage). Pratikte hemen başlamasının anlamı yok, hatalı
+      // sonuç girişinde geri almak da mümkün olsun. Diğer formatlar (elim→elim)
+      // eski davranışla otomatik ilerler.
+      if (stage.format === 'round_robin') {
+        // Bekleme durumu — turnuva 'running' kalır, next aşama 'pending' bekler.
+        return;
+      }
       const qualifiers = computeStageQualifiers(stage, stageMatches);
       buildStageMatches(t, next, qualifiers);
       db.updateStageStatus(next.id, 'running');
@@ -109,6 +118,70 @@ function onMatchFinished(matchId) {
       db.updateTournamentStatus(t.id, 'finished');
     }
   }
+}
+
+// Organizatörün "Üst turu başlat" butonuyla tetiklenir.
+// Bitmiş bir round_robin aşamasından, henüz başlamamış bir sonraki aşamaya
+// (tek/çift eleme) yükselenleri hesaplayıp maçları kurar.
+// overrideQualifiers: organizatörün elle seçtiği entryId listesi (opsiyonel).
+// Verilirse otomatik hesap yerine bu liste kullanılır (doğrulanır + bracket için sıralanır).
+function advanceStage(tournamentId, overrideQualifiers = null) {
+  const t = db.tournamentById(tournamentId);
+  if (!t) throw new Error('Turnuva bulunamadı');
+  if (t.status !== 'running') throw new Error('Turnuva devam eden durumda değil');
+
+  const allStages = db.stagesForTournament(t.id).sort((a, b) => a.stage_index - b.stage_index);
+  // Bitmiş, bir sonraki aşaması henüz kurulmamış ilk aşamayı bul.
+  for (const stage of allStages) {
+    const next = allStages.find(s => s.stage_index === stage.stage_index + 1);
+    if (!next) continue;
+    const stageMatches = db.matchesForStage(stage.id);
+    const stageDone = stageMatches.length > 0 && stageMatches.every(m => m.status === 'finished');
+    const nextMatches = db.matchesForStage(next.id);
+    if (stageDone && nextMatches.length === 0) {
+      const auto = computeStageQualifiers(stage, stageMatches);
+      let qualifiers = auto;
+
+      if (Array.isArray(overrideQualifiers) && overrideQualifiers.length) {
+        const validIds = new Set();
+        for (const m of stageMatches) {
+          if (m.entry1_id) validIds.add(m.entry1_id);
+          if (m.entry2_id) validIds.add(m.entry2_id);
+        }
+        const uniq = [...new Set(overrideQualifiers.map(Number))];
+        if (uniq.length !== overrideQualifiers.length) throw new Error('Seçimde tekrarlayan oyuncu var');
+        const bad = uniq.find(id => !validIds.has(id));
+        if (bad != null) throw new Error('Bu aşamada olmayan bir oyuncu seçildi');
+        if (uniq.length !== auto.length) {
+          throw new Error(`Üst tura tam ${auto.length} oyuncu seçmelisiniz (seçili: ${uniq.length})`);
+        }
+        // Bracket için grup-sütun sırasına göre diz (1.'ler, 2.'ler, ... — seçili olanlar)
+        qualifiers = _orderOverrideQualifiers(stageMatches, new Set(uniq));
+      }
+
+      buildStageMatches(t, next, qualifiers);
+      db.updateStageStatus(stage.id, 'finished');
+      db.updateStageStatus(next.id, 'running');
+      return { advancedFrom: stage.stage_index, advancedTo: next.stage_index, qualifiers, manual: qualifiers !== auto };
+    }
+  }
+  throw new Error('Başlatılacak bir sonraki aşama yok (grup aşaması bitmemiş olabilir veya üst tur zaten başlamış).');
+}
+
+// Seçili entryId kümesini bracket tohumlaması için sıralar: her grubun 1.'leri,
+// sonra 2.'leri, ... (sütun-öncelikli) — sadece seçili olanlar. Grup kazananları yayılır.
+function _orderOverrideQualifiers(stageMatches, selectedSet) {
+  const byGroup = computeRRStandingsByGroup(stageMatches);
+  const gis = Object.keys(byGroup).map(Number).sort((a, b) => a - b);
+  const maxLen = Math.max(0, ...gis.map(g => byGroup[g].length));
+  const ordered = [];
+  for (let pos = 0; pos < maxLen; pos++) {
+    for (const g of gis) {
+      const row = byGroup[g][pos];
+      if (row && selectedSet.has(row.entryId)) ordered.push(row.entryId);
+    }
+  }
+  return ordered;
 }
 
 // --- Stage building ---
@@ -500,8 +573,16 @@ function computeStageQualifiers(stage, stageMatches) {
         );
       }
 
-      const directPerGroup = Math.floor(totalQualifiers / groupCount);
-      const luckyLoserCount = totalQualifiers - groupCount * directPerGroup;
+      // GENEL KURAL (taban + kalan):
+      //   taban  = floor(N / grupSayısı)  → her gruptan bu kadarı DİREKT çıkar
+      //   kalan  = N mod grupSayısı       → (taban+1). sıradakilerin en iyileri
+      //                                      ("en iyi üçüncüler") kalan slotları doldurur
+      // Örn: 24 kişi/6 grup, N=16 → taban 2, kalan 4 → her gruptan ilk 2 + en iyi 4 üçüncü.
+      //      16 kişi/4 grup, N=8  → taban 2, kalan 0 → her gruptan ilk 2.
+      //      24 kişi/4 grup, N=16 → taban 4, kalan 0 → her gruptan ilk 4.
+      // Eşitlik: puan → alınan leg (legsFor) → 3-ok ortalaması (avg3).
+      const base = Math.floor(totalQualifiers / groupCount);
+      const remainder = totalQualifiers - base * groupCount;
 
       const directQualifiers = [];
       const luckyLoserCandidates = [];
@@ -509,24 +590,25 @@ function computeStageQualifiers(stage, stageMatches) {
       for (const g of groupIndices) {
         const standings = standingsByGroup[g];
         for (let i = 0; i < standings.length; i++) {
-          if (i < directPerGroup) {
+          if (i < base) {
             directQualifiers.push(standings[i]);
-          } else if (i === directPerGroup && luckyLoserCount > 0) {
+          } else if (i === base && remainder > 0) {
+            // Her grubun (taban+1). sıradaki oyuncusu — "en iyi üçüncü" adayı
             luckyLoserCandidates.push(standings[i]);
           }
         }
       }
 
-      // Lucky loser'ları puana göre sırala
+      // Adayları: puan → alınan leg → 3-ok ortalaması
       luckyLoserCandidates.sort((a, b) =>
         b.points - a.points ||
-        (b.legsFor - b.legsAgainst) - (a.legsFor - a.legsAgainst) ||
-        b.legsFor - a.legsFor
+        b.legsFor - a.legsFor ||
+        b.avg3 - a.avg3
       );
 
       return [
         ...directQualifiers.map(r => r.entryId),
-        ...luckyLoserCandidates.slice(0, luckyLoserCount).map(r => r.entryId),
+        ...luckyLoserCandidates.slice(0, remainder).map(r => r.entryId),
       ];
     } else {
       // Tek grup (eski davranış)
@@ -540,6 +622,49 @@ function computeStageQualifiers(stage, stageMatches) {
   return final?.winner_entry_id ? [final.winner_entry_id] : [];
 }
 
+// Bir maçtaki bir oyuncunun (slot) toplam skor + atılan ok sayısı (match_stats).
+function _matchStats(matchId, slot) {
+  try {
+    const rows = db.statsForMatch(matchId) || [];
+    const r = rows.find(x => x.player_slot === slot);
+    return { score: r ? (r.total_score || 0) : 0, darts: r ? (r.darts_thrown || 0) : 0 };
+  } catch (_) { return { score: 0, darts: 0 }; }
+}
+
+// Sıralı tabloda, (puan + alınan leg + avg3) TAMAMEN eşit olan oyuncu bloklarını
+// kendi aralarındaki maçlara (head-to-head) göre yeniden sırala.
+// 2 kişi: aralarındaki maçı kazanan üstte. 3+ kişi: yalnız o oyuncular arasındaki
+// mini-lig (galibiyet → leg farkı → alınan leg). H2H de eşitse sıra korunur.
+function _applyHeadToHead(sorted, matches) {
+  const sameKey = (a, b) => a.points === b.points && a.legsFor === b.legsFor && a.avg3 === b.avg3;
+  let i = 0;
+  while (i < sorted.length) {
+    let j = i + 1;
+    while (j < sorted.length && sameKey(sorted[i], sorted[j])) j++;
+    if (j - i > 1) {
+      const tied = sorted.slice(i, j);
+      const ids = new Set(tied.map(r => r.entryId));
+      const h = {};
+      tied.forEach(r => { h[r.entryId] = { w: 0, lf: 0, la: 0 }; });
+      for (const m of matches) {
+        if (m.status !== 'finished') continue;
+        if (!ids.has(m.entry1_id) || !ids.has(m.entry2_id)) continue; // ikisi de eşit blokta olmalı
+        h[m.entry1_id].lf += m.p1_legs || 0; h[m.entry1_id].la += m.p2_legs || 0;
+        h[m.entry2_id].lf += m.p2_legs || 0; h[m.entry2_id].la += m.p1_legs || 0;
+        if (m.winner_entry_id === m.entry1_id) h[m.entry1_id].w++;
+        else if (m.winner_entry_id === m.entry2_id) h[m.entry2_id].w++;
+      }
+      tied.sort((a, b) => {
+        const A = h[a.entryId], B = h[b.entryId];
+        return B.w - A.w || (B.lf - B.la) - (A.lf - A.la) || B.lf - A.lf;
+      });
+      for (let k = 0; k < tied.length; k++) sorted[i + k] = tied[k];
+    }
+    i = j;
+  }
+  return sorted;
+}
+
 // Per-grup sıralama tablosu: { groupIndex → [{ entryId, W, L, legsFor, legsAgainst, points }] }
 function computeRRStandingsByGroup(matches) {
   const groups = {};
@@ -549,7 +674,7 @@ function computeRRStandingsByGroup(matches) {
     if (!groups[g]) groups[g] = {};
     for (const eid of [m.entry1_id, m.entry2_id]) {
       if (eid && !groups[g][eid]) {
-        groups[g][eid] = { entryId: eid, W: 0, L: 0, legsFor: 0, legsAgainst: 0, points: 0 };
+        groups[g][eid] = { entryId: eid, W: 0, L: 0, legsFor: 0, legsAgainst: 0, points: 0, scoreSum: 0, dartsSum: 0, avg3: 0 };
       }
     }
   }
@@ -564,6 +689,9 @@ function computeRRStandingsByGroup(matches) {
       const legsAgainst = slot === 1 ? (m.p2_legs || 0) : (m.p1_legs || 0);
       groups[g][eid].legsFor += legsFor;
       groups[g][eid].legsAgainst += legsAgainst;
+      const st = _matchStats(m.id, slot);
+      groups[g][eid].scoreSum += st.score;
+      groups[g][eid].dartsSum += st.darts;
       if (m.winner_entry_id === eid) { groups[g][eid].W++; groups[g][eid].points += 3; }
       else { groups[g][eid].L++; }
     }
@@ -571,11 +699,15 @@ function computeRRStandingsByGroup(matches) {
   // Her grubu sırala
   const result = {};
   for (const [g, table] of Object.entries(groups)) {
-    result[+g] = Object.values(table).sort((a, b) =>
+    const rows = Object.values(table);
+    for (const r of rows) r.avg3 = r.dartsSum > 0 ? +((r.scoreSum / r.dartsSum) * 3).toFixed(2) : 0;
+    // Eşitlik: puan → alınan leg (legsFor) → 3-ok ort. → head-to-head
+    rows.sort((a, b) =>
       b.points - a.points ||
-      (b.legsFor - b.legsAgainst) - (a.legsFor - a.legsAgainst) ||
-      b.legsFor - a.legsFor
+      b.legsFor - a.legsFor ||
+      b.avg3 - a.avg3
     );
+    result[+g] = _applyHeadToHead(rows, matches);
   }
   return result;
 }
@@ -587,11 +719,14 @@ function computeRRStandings(matches) {
     for (const slot of [1, 2]) {
       const eid = slot === 1 ? m.entry1_id : m.entry2_id;
       if (!eid) continue;
-      if (!table[eid]) table[eid] = { entryId: eid, W: 0, L: 0, legsFor: 0, legsAgainst: 0, points: 0, playedReal: 0 };
+      if (!table[eid]) table[eid] = { entryId: eid, W: 0, L: 0, legsFor: 0, legsAgainst: 0, points: 0, playedReal: 0, scoreSum: 0, dartsSum: 0, avg3: 0 };
       const legsFor = slot === 1 ? m.p1_legs : m.p2_legs;
       const legsAgainst = slot === 1 ? m.p2_legs : m.p1_legs;
       table[eid].legsFor += legsFor;
       table[eid].legsAgainst += legsAgainst;
+      const st2 = _matchStats(m.id, slot);
+      table[eid].scoreSum += st2.score;
+      table[eid].dartsSum += st2.darts;
       // Gerçekten oynanmış (hükmen olmayan) maç sayısı — "maça çıktı mı" göstergesi
       if (!m.is_walkover) table[eid].playedReal++;
       if (m.winner_entry_id === eid) {
@@ -606,12 +741,16 @@ function computeRRStandings(matches) {
   // Bunlar (ör. yerine kimse gelmeyen "???" gibi placeholder'lar) daima en sona düşer,
   // gerçekten oynayıp tüm maçlarını kaybedenlerin bile altında.
   const isNoShow = (r) => r.playedReal === 0 && r.W === 0 && r.legsFor === 0;
-  return Object.values(table).sort((a, b) =>
+  const rows = Object.values(table);
+  for (const r of rows) r.avg3 = r.dartsSum > 0 ? +((r.scoreSum / r.dartsSum) * 3).toFixed(2) : 0;
+  // Eşitlik: puan → alınan leg (legsFor) → 3-ok ort. → head-to-head
+  rows.sort((a, b) =>
     (isNoShow(a) - isNoShow(b)) ||
     b.points - a.points ||
-    (b.legsFor - b.legsAgainst) - (a.legsFor - a.legsAgainst) ||
-    b.legsFor - a.legsFor
+    b.legsFor - a.legsFor ||
+    b.avg3 - a.avg3
   );
+  return _applyHeadToHead(rows, matches);
 }
 
 // --- Helpers ---
@@ -1053,6 +1192,7 @@ module.exports = {
   onMatchFinished,
   createResetFinal,
   computeRRStandings,
+  advanceStage,
   computeFinalStandings,
   orderEntriesBySeed,
   roundLabel,
