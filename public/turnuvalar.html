@@ -35,6 +35,10 @@
   .pill.cat { background:#3340; color:#abc; border:1px solid #456; }
   .tn-cap { font-size:0.8rem; color:var(--muted,#9aa); }
   .tn-empty { color:var(--muted,#9aa); padding:1.5rem 0; text-align:center; }
+  .tn-btn.plist { background:#2f3b52; color:#dbe6f5; }
+  .tn-plist { margin-top:0.6rem; border-top:1px solid var(--border,rgba(255,255,255,0.08)); padding-top:0.5rem; font-size:0.85rem; }
+  .tn-plist ol { margin:0.3rem 0 0; padding-left:1.3rem; color:#cbd; }
+  .tn-plist li { margin:0.15rem 0; }
   #tn-loginbar { background:rgba(255,56,96,0.08); border:1px solid rgba(255,56,96,0.3); border-radius:10px; padding:0.75rem 1rem; margin-bottom:1rem; font-size:0.9rem; }
 </style>
 </head>
@@ -89,6 +93,33 @@ function switchTab(tab) {
   if (tab === 'mine') loadMine();
 }
 
+// Katılımcı listesi (aç/kapat) — yalnızca görüntüleme
+async function toggleParticipants(btn, kind, id) {
+  const card = btn.closest('.tn-card');
+  const box = card && card.querySelector('.tn-plist');
+  if (!box) return;
+  if (!box.hidden) { box.hidden = true; btn.textContent = 'Katılımcılar'; return; }
+  box.hidden = false;
+  btn.textContent = 'Gizle';
+  box.innerHTML = 'Yükleniyor…';
+  try {
+    const url = kind === 't'
+      ? `/api/public/tournament/${id}/participants`
+      : `/api/public/session/${id}/participants`;
+    const { participants } = await tnApi(url);
+    if (!participants.length) { box.innerHTML = 'Henüz katılımcı yok.'; return; }
+    const main = participants.filter(p => p.status !== 'waitlisted');
+    const wl = participants.filter(p => p.status === 'waitlisted');
+    let html = `<div><b>Katılımcılar (${main.length})</b><ol>` +
+      main.map(p => `<li>${esc(p.name)}</li>`).join('') + '</ol></div>';
+    if (wl.length) {
+      html += `<div style="margin-top:0.4rem;"><b>Yedek (${wl.length})</b><ol>` +
+        wl.map(p => `<li>${esc(p.name)}</li>`).join('') + '</ol></div>';
+    }
+    box.innerHTML = html;
+  } catch (e) { box.innerHTML = `Hata: ${esc(e.message)}`; }
+}
+
 // ── Gelecek Turnuvalar ──
 async function loadUpcoming() {
   const box = document.getElementById('tn-upcoming');
@@ -127,8 +158,12 @@ async function loadUpcoming() {
               </div>
               ${t.description ? `<div class="tn-desc">${esc(t.description)}</div>` : ''}
             </div>
-            <div class="tn-actions">${action}</div>
+            <div class="tn-actions">
+              <button class="tn-btn plist" onclick="toggleParticipants(this,'t',${t.id})">Katılımcılar</button>
+              ${action}
+            </div>
           </div>
+          <div class="tn-plist" hidden></div>
         </div>`;
     }).join('');
 
@@ -161,8 +196,12 @@ async function loadUpcoming() {
                 <span class="tn-cap">${cap}${wait}</span>
               </div>
             </div>
-            <div class="tn-actions">${action}</div>
+            <div class="tn-actions">
+              <button class="tn-btn plist" onclick="toggleParticipants(this,'s',${s.session_id})">Katılımcılar</button>
+              ${action}
+            </div>
           </div>
+          <div class="tn-plist" hidden></div>
         </div>`;
     }).join('');
 

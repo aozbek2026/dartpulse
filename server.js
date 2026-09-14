@@ -595,6 +595,24 @@ app.get('/api/public/upcoming-tournaments', auth.optionalAuth, (req, res) => {
   }
   res.json({ tournaments: list });
 });
+// Turnuvanın katılımcı listesi — herkese açık (yalnızca ad + durum)
+app.get('/api/public/tournament/:id/participants', (req, res) => {
+  const t = db.tournamentById(+req.params.id);
+  if (!t) return res.status(404).json({ error: 'Turnuva bulunamadı' });
+  const rows = db.registrationsForTournament(t.id)
+    .filter(r => ['registered', 'waitlisted', 'checked_in', 'confirmed'].includes(r.status))
+    .map(r => ({ name: r.user_name || 'Oyuncu', status: r.status }));
+  res.json({ participants: rows });
+});
+// Sezon oturumunun katılımcı listesi — herkese açık (yalnızca ad + durum)
+app.get('/api/public/session/:sid/participants', (req, res) => {
+  const s = db.sessionById(+req.params.sid);
+  if (!s) return res.status(404).json({ error: 'Oturum bulunamadı' });
+  const rows = db.sessionRegistrations(s.id)
+    .filter(r => ['registered', 'waitlisted', 'checked_in', 'confirmed'].includes(r.status))
+    .map(r => ({ name: r.user_name || 'Oyuncu', status: r.status }));
+  res.json({ participants: rows });
+});
 // Turnuvaya kayıt ol
 app.post('/api/tournaments/:id/register', auth.requireAuth, (req, res) => {
   const t = db.tournamentById(+req.params.id);
