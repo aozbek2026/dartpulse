@@ -972,6 +972,16 @@ function setRegistrationStatus(id, status) {
   db.prepare('UPDATE registrations SET status = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?').run(status, id);
   return registrationById(id);
 }
+// Hesaba bağlı tüm oyuncu kayıtlarının adını hesabın güncel adıyla eşitle.
+// Kimlik hesaptır (account_user_id); ad sadece görünen etikettir.
+function syncAccountPlayerNames(accountUserId, name) {
+  if (!name) return;
+  db.prepare('UPDATE players SET name = ? WHERE account_user_id = ?').run(name, accountUserId);
+}
+function setUserName(userId, name) {
+  db.prepare('UPDATE users SET name = ? WHERE id = ?').run(name, userId);
+  syncAccountPlayerNames(userId, name);
+}
 // Bu kullanıcı için bu organizatörün havuzunda zaten oyuncu var mı (yeniden kullan)
 function playerByAccountUser(ownerUserId, accountUserId) {
   return db.prepare('SELECT * FROM players WHERE user_id = ? AND account_user_id = ?')
@@ -1000,6 +1010,9 @@ function confirmRegistrations(tournamentId, ownerUserId, checkinEnabled) {
       const displayName = (u && (u.name || (u.email || '').split('@')[0])) || ('Oyuncu ' + reg.user_id);
       // Bu hesap için oyuncu var mı? Yoksa yarat (account_user_id bağıyla)
       let player = playerByAccountUser(ownerUserId, reg.user_id);
+      if (player && u && u.name && player.name !== displayName) {
+        db.prepare('UPDATE players SET name = ? WHERE id = ?').run(displayName, player.id);
+      }
       if (!player) {
         const info = db.prepare(
           'INSERT INTO players (user_id, name, nickname, account_user_id) VALUES (?, ?, ?, ?)'
@@ -2426,6 +2439,9 @@ function confirmSessionRegistrations(sessionId, competitionId, ownerUserId, chec
       const u = db.prepare('SELECT id, name, email FROM users WHERE id = ?').get(reg.user_id);
       const displayName = (u && (u.name || (u.email || '').split('@')[0])) || ('Oyuncu ' + reg.user_id);
       let player = playerByAccountUser(ownerUserId, reg.user_id);
+      if (player && u && u.name && player.name !== displayName) {
+        db.prepare('UPDATE players SET name = ? WHERE id = ?').run(displayName, player.id);
+      }
       if (!player) {
         const info = db.prepare(
           'INSERT INTO players (user_id, name, nickname, account_user_id) VALUES (?, ?, ?, ?)'
@@ -2595,7 +2611,7 @@ module.exports = {
   eventSettings, upsertEventSettings,
   registrationsForTournament, registrationByUser, countRegistrations,
   createRegistration, withdrawRegistration, registrationsForUser, upcomingTournaments,
-  registrationById, setRegistrationStatus, playerByAccountUser, confirmRegistrations,
+  registrationById, setRegistrationStatus, playerByAccountUser, confirmRegistrations, setUserName, syncAccountPlayerNames,
   playerCareerProfile, removeEntry,
   createTournament, allTournaments, publicRunningTournaments, setTournamentHiddenFromPublic, tournamentById, updateTournamentStatus, updateTournament, deleteTournament,
   addEntry, entriesForTournament, entryById, updateEntrySlots,

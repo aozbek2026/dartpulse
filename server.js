@@ -199,6 +199,14 @@ app.get('/auth/verify-email', auth.verifyEmailHandler);
 app.post('/auth/resend-verify', passwordLimiter, auth.resendVerifyHandler);
 app.post('/auth/delete-account', auth.deleteAccountHandler);
 app.get('/auth/export-data', auth.exportDataHandler);
+// Görünen adı değiştir — istatistikler e-posta hesabına bağlı kalır, oyuncu kayıtları yeni adı alır
+app.put('/auth/name', auth.requireAuth, (req, res) => {
+  const name = String((req.body || {}).name || '').trim().replace(/\s+/g, ' ');
+  if (name.length < 2 || name.length > 60) return res.status(400).json({ error: 'Ad 2-60 karakter olmalı' });
+  db.setUserName(req.user.id, name);
+  scheduleBroadcast();
+  res.json({ ok: true, name });
+});
 app.post('/auth/organizer-apply', auth.requireAuth, auth.applyOrganizerHandler);
 
 // --- Admin paneli endpoint'leri (Turnuva Kayıt Sistemi — Dilim C) ---

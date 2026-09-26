@@ -43,6 +43,18 @@
       Yalnızca organizatörün "istatistik tutulsun" seçeneğini açtığı online-kayıtlı turnuvalar burada görünür.
     </p>
 
+    <h2 class="pf-sec" style="margin-top:2.5rem;">Görünen Ad</h2>
+    <div style="background:var(--surface,#1a1e2d);border:1px solid var(--border,#2a2f48);border-radius:12px;padding:1.1rem 1.3rem;">
+      <p style="color:#c8cee0;font-size:0.92rem;margin:0 0 0.8rem;line-height:1.6;">
+        Braketlerde ve klasmanda görünen adın. Değiştirsen de tüm geçmiş ve yeni performansın e-posta hesabına bağlı kalır.
+      </p>
+      <div style="display:flex;gap:0.5rem;flex-wrap:wrap;">
+        <input id="pf-name" type="text" maxlength="60" placeholder="Ad Soyad" style="flex:1;min-width:200px;" />
+        <button id="pf-name-save" style="background:var(--accent-2,#00d4ff);color:#06121a;font-weight:700;border:none;border-radius:9px;padding:0.6rem 1.2rem;cursor:pointer;">Kaydet</button>
+      </div>
+      <div id="pf-name-msg" style="font-size:0.85rem;margin-top:0.5rem;color:#9aa;"></div>
+    </div>
+
     <h2 class="pf-sec" style="margin-top:2.5rem;">Verilerim & Gizlilik</h2>
     <div style="background:var(--surface,#1a1e2d);border:1px solid var(--border,#2a2f48);border-radius:12px;padding:1.1rem 1.3rem;">
       <p style="color:#c8cee0;font-size:0.92rem;margin:0 0 1rem;line-height:1.6;">
@@ -122,5 +134,25 @@ function render(data) {
 </script>
 <script src="/js/common.js"></script>
 <script src="/js/cookie-consent.js"></script>
+<script>
+(async () => {
+  const inp = document.getElementById('pf-name');
+  const msg = document.getElementById('pf-name-msg');
+  try {
+    const r = await fetch('/auth/me', { credentials: 'same-origin' });
+    if (r.ok) { const d = await r.json(); const u = d.user || d; if (u && u.name) inp.value = u.name; }
+  } catch (_) {}
+  document.getElementById('pf-name-save').onclick = async () => {
+    msg.style.color = '#9aa'; msg.textContent = 'Kaydediliyor…';
+    try {
+      const r = await fetch('/auth/name', { method: 'PUT', credentials: 'same-origin',
+        headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ name: inp.value }) });
+      const d = await r.json();
+      if (!r.ok || d.error) { msg.style.color = '#ef4444'; msg.textContent = d.error || 'Kaydedilemedi'; return; }
+      msg.style.color = '#16a34a'; msg.textContent = '✓ Adın güncellendi: ' + d.name;
+    } catch (_) { msg.style.color = '#ef4444'; msg.textContent = 'Sunucu hatası'; }
+  };
+})();
+</script>
 </body>
 </html>
