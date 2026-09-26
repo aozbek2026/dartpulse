@@ -632,6 +632,10 @@ function init() {
     try { db.exec('ALTER TABLE competition_sessions ADD COLUMN is_masters INTEGER DEFAULT 0'); } catch {}
   }
   // Sezon online kayit (Dilim 1): kayit acik/kapali + durum + kontenjan + check-in
+  // Kayıt-açık oturumun braket ayarları (format, loser leg, tur leg'leri, kura) — onayda uygulanır
+  if (!compSessCols.includes('reg_setup_json')) {
+    try { db.exec('ALTER TABLE competition_sessions ADD COLUMN reg_setup_json TEXT'); } catch {}
+  }
   if (!compSessCols.includes('reg_enabled')) {
     try { db.exec('ALTER TABLE competition_sessions ADD COLUMN reg_enabled INTEGER DEFAULT 0'); } catch {}
   }
@@ -1187,10 +1191,18 @@ function removeEntry(tournamentId, entryId) {
   return { ok: true };
 }
 // entry sıralamasını güncelle: orderedEntryIds dizisindeki sıra → slot 1, 2, 3, ...
-function updateEntrySlots(tournamentId, orderedEntryIds) {
+function updateEntrySlots(tournamentId, orderedEntryIds, seeds) {
   const update = db.prepare('UPDATE entries SET slot = ? WHERE id = ? AND tournament_id = ?');
+  const upSeed = db.prepare('UPDATE entries SET seed = ? WHERE id = ? AND tournament_id = ?');
   const tx = db.transaction(() => {
     orderedEntryIds.forEach((id, i) => update.run(i + 1, id, tournamentId));
+    // Seri başı numaraları (opsiyonel): { entryId: seed|null }
+    if (seeds && typeof seeds === 'object') {
+      for (const [id, v] of Object.entries(seeds)) {
+        const n = Number(v);
+        upSeed.run(Number.isInteger(n) && n >= 1 ? n : null, +id, tournamentId);
+      }
+    }
   });
   tx();
 }
@@ -2255,7 +2267,13 @@ function createSession(data) {
     (data.capacity != null && data.capacity !== '') ? +data.capacity : null,
     data.checkin_enabled ? 1 : 0,
   );
-  return db.prepare('SELECT * FROM competition_sessions WHERE id = ?').get(info.lastInsertRowid);
+  const row = db.prepare('SELECT * FROM competition_sessions WHERE id = ?').get(info.lastInsertRowid);
+  if (data.reg_setup_json) {
+    const js = typeof data.reg_setup_json === 'string' ? data.reg_setup_json : JSON.stringify(data.reg_setup_json);
+    db.prepare('UPDATE competition_sessions SET reg_setup_json = ? WHERE id = ?').run(js, row.id);
+    row.reg_setup_json = js;
+  }
+  return row;
 }
 
 function sessionsForCompetition(competitionId) {
@@ -2272,7 +2290,7 @@ function updateSession(id, fields) {
   const allowed = ['session_number', 'tournament_id', 'name', 'session_date',
                    'status', 'finished_at', 'round_number', 'session_type',
                    'points_override_json', 'is_masters',
-                   'reg_enabled', 'reg_status', 'capacity', 'checkin_enabled'];
+                   'reg_enabled', 'reg_status', 'capacity', 'checkin_enabled', 'reg_setup_json'];
   const keys = Object.keys(fields).filter(k => allowed.includes(k));
   if (!keys.length) return;
   // points_override_json object verilirse stringle

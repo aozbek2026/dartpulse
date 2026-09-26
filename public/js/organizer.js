@@ -1215,6 +1215,62 @@ function showParticipants(id) {
   });
 }
 
+// Taslak turnuvada tur bazında leg/set — sihirbazdaki panelin aynısı, gerçek katılımcı sayısıyla
+function showRoundOvEditor(id) {
+  const t = state.tournaments.find(x => x.id === id);
+  if (!t || t.status !== 'draft') return;
+  const stages = [...(t.stages || [])].sort((a, b) => a.stage_index - b.stage_index);
+  const work = {};
+  stages.forEach(st => {
+    let cfg = {}; try { cfg = st.config_json ? JSON.parse(st.config_json) : {}; } catch (_) {}
+    work[st.stage_index] = JSON.parse(JSON.stringify(cfg.round_overrides || {}));
+  });
+  const fmtName = f => f === 'single_elim' ? 'Tek eleme' : f === 'double_elim' ? 'Çift eleme' : 'Round-robin';
+  const sections = stages.map((st, i) => {
+    const ec = i === 0 ? t.entries.length : (+(stages[i - 1].qualifier_count) || 0);
+    const rounds = _roundsForStage(st.format, ec);
+    const rows = rounds.map(rd => {
+      const cur = work[st.stage_index][rd.key] || {};
+      return `<div class="row" style="gap:0.5rem;margin-bottom:0.4rem;align-items:center;">
+        <span style="flex:1;color:var(--text-dim);">${rd.label}</span>
+        <label style="display:flex;align-items:center;gap:0.3rem;font-size:0.85rem;"><span style="color:var(--text-dim)">Leg</span>
+          <input type="number" min="1" placeholder="${t.legs_to_win}" value="${cur.legs ?? ''}" style="width:70px" data-si="${st.stage_index}" data-k="${rd.key}" data-f="legs" /></label>
+        <label style="display:flex;align-items:center;gap:0.3rem;font-size:0.85rem;"><span style="color:var(--text-dim)">Set</span>
+          <input type="number" min="1" placeholder="${t.sets_to_win}" value="${cur.sets ?? ''}" style="width:70px" data-si="${st.stage_index}" data-k="${rd.key}" data-f="sets" /></label>
+      </div>`;
+    }).join('');
+    return `<div class="card" style="margin-bottom:0.6rem;padding:0.7rem;">
+      <strong style="display:block;margin-bottom:0.5rem;">Aşama ${i + 1} — ${fmtName(st.format)}${ec ? ` (${ec} katılımcı)` : ''}</strong>
+      ${rows || '<p style="color:var(--text-dim);font-size:0.85rem;margin:0">Bu aşamanın turları katılımcı sayısı belli olunca listelenir.</p>'}</div>`;
+  }).join('');
+  const overlay = document.createElement('div');
+  overlay.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,0.75);display:flex;align-items:center;justify-content:center;z-index:9999;padding:1rem;overflow:auto;';
+  overlay.innerHTML = `<div style="background:var(--surface);border-radius:16px;padding:1.5rem;max-width:560px;width:100%;max-height:90vh;overflow:auto;">
+      <h3 style="margin-bottom:0.3rem;">🎯 Tur Leg'leri — ${t.name.replace(/</g, '&lt;')}</h3>
+      <div style="color:var(--text-dim);font-size:0.85rem;margin-bottom:0.8rem;">Boş bırakılan turlar turnuvanın varsayılan leg/set değerini kullanır.</div>
+      ${sections}
+      <div style="display:flex;justify-content:flex-end;gap:0.5rem;margin-top:0.8rem;">
+        <button class="secondary" data-act="close">Vazgeç</button><button data-act="save">Kaydet</button></div></div>`;
+  document.body.appendChild(overlay);
+  const close = () => overlay.remove();
+  overlay.addEventListener('click', e => { if (e.target === overlay) close(); });
+  overlay.querySelector('[data-act="close"]').onclick = close;
+  overlay.querySelector('[data-act="save"]').onclick = async () => {
+    overlay.querySelectorAll('input[data-k]').forEach(inp => {
+      const o = work[inp.dataset.si]; const k = inp.dataset.k; const f = inp.dataset.f;
+      if (!o[k]) o[k] = {};
+      const n = +inp.value;
+      if (n >= 1) o[k][f] = n; else delete o[k][f];
+      if (!o[k].legs && !o[k].sets) delete o[k];
+    });
+    const res = await api.put(`/api/tournaments/${id}/round-overrides`, { overrides: work });
+    if (res && res.error) return toast('Hata: ' + res.error);
+    toast('Tur leg\'leri kaydedildi');
+    close();
+  };
+}
+window.showRoundOvEditor = showRoundOvEditor;
+
 // Taslak RR turnuvasında grupları sonradan kur (online kayıt onayı sonrası)
 function showGroupEditor(id) {
   const t = state.tournaments.find(x => x.id === id);
@@ -1912,6 +1968,7 @@ function renderTournament(t) {
           <button class="secondary" title="Online kayıt, check-in ve etkinlik ayarları" onclick="showEventSettings(${t.id})">🎫 Etkinlik</button>
           ${t.status === 'draft' ? `<button class="secondary" title="Online kayıtlar, check-in ve katılımcı onayı" onclick="showRegistrations(${t.id})">📋 Kayıtlar</button>` : ''}
           ${t.status === 'draft' && t.entries.length ? `<button class="secondary" title="Katılımcı listesi — çıkarma" onclick="showParticipants(${t.id})">👥 Katılımcılar (${t.entries.length})</button>` : ''}
+          ${t.status === 'draft' && t.entries.length >= 2 ? `<button class="secondary" title="Çeyrek/yarı/final gibi turlarda farklı leg/set" onclick="showRoundOvEditor(${t.id})">🎯 Tur Leg'leri</button>` : ''}
           ${t.status === 'draft' && t.entries.length >= 4 && t.stages && t.stages[0] && t.stages[0].format === 'round_robin' ? `<button class="secondary" title="Katılımcıları sürükle-bırak ile gruplara yerleştir" onclick="showGroupEditor(${t.id})">🧩 Grupları Düzenle</button>` : ''}
           <button class="danger" onclick="deleteTournament(${t.id})">Sil</button>
         </div>
@@ -2467,7 +2524,7 @@ function showMatchEditModal(tournamentId) {
   const t = state.tournaments.find(x => x.id === tournamentId);
   if (!t || t.status !== 'draft') return;
   _editTournamentId = tournamentId;
-  _editEntries = [...t.entries].sort((a, b) => a.slot - b.slot);
+  _editEntries = t.entries.map(e => ({ ...e })).sort((a, b) => a.slot - b.slot);
   _editSelected = null;
   _renderMatchEditModal();
 }
@@ -2516,8 +2573,19 @@ function _renderMatchEditModal() {
       <div class="mep-toolbar">
         <button class="secondary" onclick="_editShuffle()">🎲 Karıştır</button>
         <button class="secondary" onclick="_editSortSeq()">🔢 Sıralı</button>
-        <button class="secondary" onclick="_editSortSeeded()">🏆 Seri Başı</button>
+        <button class="secondary" onclick="_editSortSeeded()">🏆 Seri Başı + Kura</button>
       </div>
+      <details class="mep-seeds" ${_editEntries.some(e => e.seed) ? 'open' : ''} style="margin:0.6rem 0;border:1px solid var(--border);border-radius:10px;padding:0.5rem 0.7rem;">
+        <summary style="cursor:pointer;font-weight:600;">🏆 Seri başları <span style="color:var(--text-dim);font-weight:400;font-size:0.85rem">— numara ver (1 = en güçlü), sonra "Seri Başı + Kura"</span></summary>
+        <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(190px,1fr));gap:0.35rem 0.8rem;margin-top:0.5rem;max-height:220px;overflow:auto;">
+          ${[..._editEntries].sort((a, b) => (a.seed || 999) - (b.seed || 999)).map(e => `
+            <label style="display:flex;align-items:center;gap:0.4rem;font-size:0.88rem;">
+              <input type="number" min="1" value="${e.seed || ''}" placeholder="–" style="width:56px;margin:0;"
+                onchange="_editSetSeed(${e.id}, this.value)" />
+              <span>${_editEntryName(e)}</span>
+            </label>`).join('')}
+        </div>
+      </details>
       <div id="mep-pairs">${pairsHtml}</div>
       <div class="mep-actions">
         <button class="secondary" onclick="_closeMatchEditModal()">İptal</button>
@@ -2529,13 +2597,25 @@ function _renderMatchEditModal() {
   document.body.appendChild(overlay);
 }
 
+function _editEntryName(entry) {
+  const p1 = state.players.find(p => p.id === entry.player1_id);
+  const p2 = entry.player2_id ? state.players.find(p => p.id === entry.player2_id) : null;
+  const n1 = p1 ? (p1.nickname || p1.name) : '?';
+  return p2 ? `${n1} / ${p2.nickname || p2.name}` : n1;
+}
 function _editEntryChip(entry) {
   if (!entry) return `<span class="mep-chip mep-bye">BYE</span>`;
-  const p1 = state.players.find(p => p.id === entry.player1_id);
-  const name = p1 ? (p1.nickname || p1.name) : '?';
   const isSel = _editSelected === entry.id;
-  return `<span class="mep-chip${isSel ? ' mep-sel' : ''}" onclick="_editTap(${entry.id})">${name}</span>`;
+  const badge = entry.seed ? `<b style="color:var(--accent);margin-right:0.25rem">[${entry.seed}]</b>` : '';
+  return `<span class="mep-chip${isSel ? ' mep-sel' : ''}" onclick="_editTap(${entry.id})">${badge}${_editEntryName(entry)}</span>`;
 }
+function _editSetSeed(entryId, value) {
+  const e = _editEntries.find(x => x.id === entryId);
+  if (!e) return;
+  const n = parseInt(value, 10);
+  e.seed = (n >= 1) ? n : null;
+}
+window._editSetSeed = _editSetSeed;
 
 function _editTap(entryId) {
   if (_editSelected === null) {
@@ -2566,7 +2646,7 @@ function _editShuffle() {
 function _editSortSeq() {
   // Orijinal ekleniş sırasına dön (slot değerine göre sırala — sunucudaki mevcut slot)
   const t = state.tournaments.find(x => x.id === _editTournamentId);
-  _editEntries = [...t.entries].sort((a, b) => a.slot - b.slot);
+  _editEntries = t.entries.map(e => ({ ...e })).sort((a, b) => a.slot - b.slot);
   _editSelected = null;
   _renderMatchEditModal();
 }
@@ -2576,8 +2656,13 @@ function _editSortSeeded() {
   // ardından seed'siz oyuncular mevcut sıralarında.
   // Dağıtım (1-vs-N, BYE serpiştirme) artık _renderMatchEditModal'daki seedOrder
   // ile otomatik yapıldığı için burada SADECE sıralama listesi hazırlanır.
+  // Seri başsızlar kura ile (rastgele) yerleştirilir.
   const seeded = _editEntries.filter(e => e && e.seed).slice().sort((a, b) => a.seed - b.seed);
   const unseeded = _editEntries.filter(e => !e || !e.seed);
+  for (let i = unseeded.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [unseeded[i], unseeded[j]] = [unseeded[j], unseeded[i]];
+  }
   _editEntries = [...seeded, ...unseeded];
   _editSelected = null;
   _renderMatchEditModal();
@@ -2593,7 +2678,9 @@ function _closeMatchEditModal() {
 async function _saveMatchEdit() {
   if (!_editTournamentId) return;
   const order = _editEntries.map(e => e.id);
-  const res = await api.put(`/api/tournaments/${_editTournamentId}/entries/reorder`, { order });
+  const seeds = {};
+  _editEntries.forEach(e => { seeds[e.id] = e.seed || null; });
+  const res = await api.put(`/api/tournaments/${_editTournamentId}/entries/reorder`, { order, seeds });
   if (res.error) { toast('Hata: ' + res.error); return; }
   toast('Eşleşmeler kaydedildi');
   _closeMatchEditModal();
