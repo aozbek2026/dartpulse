@@ -8,7 +8,9 @@ const START_SCORES = { '501': 501, '701': 701, '1001': 1001, 'cricket': 0 };
 function createTournament(data) {
   const { name, game_mode, team_mode, legs_to_win, sets_to_win, entries, stages, user_id } = data;
   if (!name || !game_mode || !team_mode) throw new Error('Turnuva ismi, oyun ve takım modu gerekli');
-  if (!entries || entries.length < 2) throw new Error('En az 2 katılımcı gerekli');
+  // Online kayıtla açılan turnuvada (allow_empty) katılımcılar sonradan kayıttan gelir;
+  // 2 katılımcı kontrolü o durumda başlatma anında (startTournament) yapılır.
+  if (!data.allow_empty && (!entries || entries.length < 2)) throw new Error('En az 2 katılımcı gerekli');
   if (!stages || stages.length === 0) throw new Error('En az bir aşama gerekli');
 
   const t = db.createTournament({
@@ -48,6 +50,7 @@ function startTournament(tournamentId) {
 
   const stages = db.stagesForTournament(tournamentId);
   const entries = db.entriesForTournament(tournamentId);
+  if (entries.length < 2) throw new Error('En az 2 katılımcı gerekli — önce kayıtları onaylayın');
 
   // Build first stage
   const first = stages[0];

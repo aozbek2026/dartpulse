@@ -963,6 +963,14 @@ function applyLbLegs(stage) {
   return out;
 }
 
+// Online kayıt modu: katılımcı listesi zorunlu değil, kayıt alanlarını göster
+function toggleRegMode() {
+  const on = !!document.getElementById('t-reg-mode')?.checked;
+  const panel = document.getElementById('t-reg-panel');
+  if (panel) { panel.hidden = !on; panel.style.display = on ? 'grid' : 'none'; }
+}
+window.toggleRegMode = toggleRegMode;
+
 // ---- Create tournament ----
 async function createTournament() {
   const name = document.getElementById('t-name').value.trim();
@@ -973,15 +981,16 @@ async function createTournament() {
 
   if (!name) return toast('Turnuva adı gerekli');
 
+  const regMode = !!document.getElementById('t-reg-mode')?.checked;
   let validEntries = entriesDraft.filter(e => e.player1_id && (team_mode === 'singles' || e.player2_id));
-  if (validEntries.length < 2) return toast('En az 2 geçerli katılımcı gerekli');
+  if (!regMode && validEntries.length < 2) return toast('En az 2 geçerli katılımcı gerekli');
 
   // Grup aşaması modu: katılımcılar elle gruplara atandıysa, açık grup tanımını
   // (config.groups) motora gönderiyoruz. Grup boyutları serbest/eşitsiz olabilir.
   // Katılımcıları grup sırasına dizip her grubu index dizisi olarak işaretliyoruz.
   const gm = groupModeInfo();
   let explicitGroups = null;
-  if (gm.active) {
+  if (gm.active && !regMode) {
     const buckets = Array.from({ length: gm.groupCount }, () => []);
     const missing = [];
     for (const e of validEntries) {
@@ -1029,10 +1038,22 @@ async function createTournament() {
     entries: validEntries,
     stages: stagesPayload,
   };
+  if (regMode) {
+    const v = id => (document.getElementById(id)?.value || '').trim();
+    body.registration = {
+      event_date: v('t-reg-date') || null,
+      reg_deadline: v('t-reg-deadline') || null,
+      capacity: v('t-reg-capacity') || null,
+      checkin_enabled: !!document.getElementById('t-reg-checkin')?.checked,
+      stats_to_profile: !!document.getElementById('t-reg-stats')?.checked,
+    };
+  }
 
   const res = await api.post('/api/tournaments', body);
   if (res.error) return toast('Hata: ' + res.error);
-  toast('Turnuva oluşturuldu');
+  toast(regMode ? 'Turnuva oluşturuldu — online kayda açık' : 'Turnuva oluşturuldu');
+  const regBox = document.getElementById('t-reg-mode');
+  if (regBox && regBox.checked) { regBox.checked = false; toggleRegMode(); }
   // Reset drafts and jump to tournaments tab
   entriesDraft = [{ player1_id: null, player2_id: null, seed: null }];
   stagesDraft = [{ format: 'single_elim', qualifier_count: null, config: {} }];
@@ -1184,6 +1205,114 @@ function showParticipants(id) {
     };
   });
 }
+
+// Taslak RR turnuvasında grupları sonradan kur (online kayıt onayı sonrası)
+function showGroupEditor(id) {
+  const t = state.tournaments.find(x => x.id === id);
+  if (!t || t.status !== 'draft') return;
+  const esc = (s) => String(s == null ? '' : s).replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+  const entries = [...t.entries].sort((a, b) => a.slot - b.slot);
+  let cfg = {}; try { cfg = t.stages[0].config_json ? JSON.parse(t.stages[0].config_json) : {}; } catch (_) {}
+  // Mevcut atama: entryId -> grup index
+  const assign = new Map();
+  let count = 2;
+  if (Array.isArray(cfg.groups_entry_ids) && cfg.groups_entry_ids.length) {
+    count = cfg.groups_entry_ids.length;
+    cfg.groups_entry_ids.forEach((g, gi) => g.forEach(eid => assign.set(eid, gi)));
+  } else if (Array.isArray(cfg.groups) && cfg.groups.length) {
+    count = cfg.groups.length;
+    cfg.groups.forEach((g, gi) => g.forEach(i => entries[i] && assign.set(entries[i].id, gi)));
+  } else if (cfg.group_size >= 2) {
+    count = Math.max(2, Math.ceil(entries.length / cfg.group_size));
+  }
+  let dragId = null;
+
+  const overlay = document.createElement('div');
+  overlay.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,0.75);display:flex;align-items:center;justify-content:center;z-index:9999;padding:1rem;overflow:auto;';
+  document.body.appendChild(overlay);
+  const close = () => overlay.remove();
+  overlay.addEventListener('click', (e) => { if (e.target === overlay) close(); });
+
+  const chip = (e) => `<div class="grp-chip" draggable="true" data-eid="${e.id}"
+      style="display:flex;align-items:center;gap:0.4rem;cursor:grab;background:var(--surface);border:1px solid var(--border);border-radius:7px;padding:0.35rem 0.5rem;font-size:0.9rem;user-select:none;">
+      <span style="opacity:.45">⠿</span> ${esc(entryLabel(e))}</div>`;
+  const box = (title, list, g, ok) => `<div class="grp-box" data-g="${g}"
+      style="border:1px solid ${ok ? 'var(--accent)' : 'var(--border)'};border-radius:10px;padding:0.5rem 0.6rem;min-width:150px;flex:1;background:var(--surface-2);min-height:70px;">
+      <div style="font-weight:600;display:flex;justify-content:space-between;margin-bottom:0.4rem;"><span>${title}</span><span style="font-size:0.82rem;color:var(--text-dim)">${list.length}</span></div>
+      <div style="display:flex;flex-direction:column;gap:0.3rem;">${list.length ? list.map(chip).join('') : '<div style="color:var(--text-dim);font-size:0.82rem">buraya sürükle</div>'}</div></div>`;
+
+  function render() {
+    const groups = Array.from({ length: count }, () => []);
+    const un = [];
+    entries.forEach(e => { const g = assign.get(e.id); (g != null && g < count ? groups[g] : un).push(e); });
+    const bad = groups.filter(g => g.length < 2).length;
+    const ready = !un.length && !bad;
+    overlay.innerHTML = `
+      <div style="background:var(--surface);border-radius:16px;padding:1.5rem;max-width:1000px;width:100%;position:relative;max-height:92vh;overflow:auto;">
+        <button data-act="close" style="position:absolute;top:1rem;right:1rem;background:none;border:none;color:var(--text-dim);font-size:1.5rem;cursor:pointer;">×</button>
+        <h3 style="margin-bottom:0.3rem;">🧩 Grupları Düzenle — ${esc(t.name)}</h3>
+        <div style="color:var(--text-dim);font-size:0.85rem;margin-bottom:0.8rem;">${entries.length} katılımcı. İsimleri sürükleyip gruplara bırak. Her grupta en az 2 oyuncu olmalı.</div>
+        <div style="display:flex;gap:0.5rem;align-items:center;flex-wrap:wrap;margin-bottom:0.8rem;">
+          <label style="margin:0">Grup sayısı</label>
+          <input type="number" data-act="count" min="2" max="${Math.floor(entries.length / 2)}" value="${count}" style="width:80px;margin:0;" />
+          <button class="secondary" data-act="fill">Sırayla dağıt</button>
+          <button class="secondary" data-act="shuffle">🎲 Kura ile dağıt</button>
+          <button class="secondary" data-act="clear">Temizle</button>
+        </div>
+        <div style="display:flex;gap:0.6rem;flex-wrap:wrap;">
+          ${box('Atanmamış', un, -1, false)}
+          ${groups.map((g, i) => box('Grup ' + groupLetter(i), g, i, g.length >= 2)).join('')}
+        </div>
+        ${!ready ? `<div style="color:#e0a020;font-size:0.85rem;margin-top:0.6rem;">⚠️ ${un.length ? un.length + ' katılımcı atanmadı' : bad + ' grupta 2\'den az oyuncu var'}.</div>` : ''}
+        <div style="display:flex;justify-content:flex-end;gap:0.5rem;margin-top:1rem;">
+          <button class="secondary" data-act="close">Vazgeç</button>
+          <button data-act="save" ${ready ? '' : 'disabled'}>Kaydet</button>
+        </div>
+      </div>`;
+    overlay.querySelectorAll('[data-act="close"]').forEach(b => b.onclick = close);
+    overlay.querySelector('[data-act="count"]').onchange = (ev) => {
+      const n = Math.max(2, Math.min(Math.floor(entries.length / 2), +ev.target.value || 2));
+      count = n; render();
+    };
+    const distribute = (list) => { list.forEach((e, i) => assign.set(e.id, i % count)); render(); };
+    overlay.querySelector('[data-act="fill"]').onclick = () => {
+      assign.clear();
+      const per = Math.ceil(entries.length / count);
+      entries.forEach((e, i) => assign.set(e.id, Math.min(count - 1, Math.floor(i / per))));
+      render();
+    };
+    overlay.querySelector('[data-act="shuffle"]').onclick = () => {
+      const a = entries.slice();
+      for (let i = a.length - 1; i > 0; i--) { const j = Math.floor(Math.random() * (i + 1)); [a[i], a[j]] = [a[j], a[i]]; }
+      assign.clear(); distribute(a);
+    };
+    overlay.querySelector('[data-act="clear"]').onclick = () => { assign.clear(); render(); };
+    overlay.querySelectorAll('.grp-chip').forEach(c => {
+      c.ondragstart = (ev) => { dragId = +c.dataset.eid; ev.dataTransfer.effectAllowed = 'move'; };
+    });
+    overlay.querySelectorAll('.grp-box').forEach(b => {
+      b.ondragover = (ev) => { ev.preventDefault(); b.style.outline = '2px dashed var(--accent)'; };
+      b.ondragleave = () => { b.style.outline = ''; };
+      b.ondrop = (ev) => {
+        ev.preventDefault();
+        if (dragId == null) return;
+        const g = +b.dataset.g;
+        if (g < 0) assign.delete(dragId); else assign.set(dragId, g);
+        dragId = null; render();
+      };
+    });
+    overlay.querySelector('[data-act="save"]').onclick = async () => {
+      const out = Array.from({ length: count }, () => []);
+      entries.forEach(e => out[assign.get(e.id)].push(e.id));
+      const res = await api.put(`/api/tournaments/${id}/groups`, { groups: out });
+      if (res && res.error) return toast('Hata: ' + res.error);
+      toast('Gruplar kaydedildi');
+      close();
+    };
+  }
+  render();
+}
+window.showGroupEditor = showGroupEditor;
 
 // Kayıt yönetimi modalı (Dilim F) — check-in + Confirm (motora aktarım)
 const REG_STATUS_TR = {
@@ -1774,6 +1903,7 @@ function renderTournament(t) {
           <button class="secondary" title="Online kayıt, check-in ve etkinlik ayarları" onclick="showEventSettings(${t.id})">🎫 Etkinlik</button>
           ${t.status === 'draft' ? `<button class="secondary" title="Online kayıtlar, check-in ve katılımcı onayı" onclick="showRegistrations(${t.id})">📋 Kayıtlar</button>` : ''}
           ${t.status === 'draft' && t.entries.length ? `<button class="secondary" title="Katılımcı listesi — çıkarma" onclick="showParticipants(${t.id})">👥 Katılımcılar (${t.entries.length})</button>` : ''}
+          ${t.status === 'draft' && t.entries.length >= 4 && t.stages && t.stages[0] && t.stages[0].format === 'round_robin' ? `<button class="secondary" title="Katılımcıları sürükle-bırak ile gruplara yerleştir" onclick="showGroupEditor(${t.id})">🧩 Grupları Düzenle</button>` : ''}
           <button class="danger" onclick="deleteTournament(${t.id})">Sil</button>
         </div>
       </div>

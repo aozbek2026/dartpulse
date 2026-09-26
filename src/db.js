@@ -1225,6 +1225,10 @@ function createStage(tournamentId, stageIndex, format, qualifierCount = null, co
 function stagesForTournament(tournamentId) {
   return db.prepare('SELECT * FROM stages WHERE tournament_id = ? ORDER BY stage_index').all(tournamentId);
 }
+// Aşama config_json'unu güncelle (yalnız veri; şema değişmez)
+function setStageConfig(stageId, cfg) {
+  db.prepare('UPDATE stages SET config_json = ? WHERE id = ?').run(JSON.stringify(cfg || {}), stageId);
+}
 function stageById(id) {
   return db.prepare('SELECT * FROM stages WHERE id = ?').get(id);
 }
@@ -2577,7 +2581,7 @@ module.exports = {
   playerCareerProfile, removeEntry,
   createTournament, allTournaments, publicRunningTournaments, setTournamentHiddenFromPublic, tournamentById, updateTournamentStatus, updateTournament, deleteTournament,
   addEntry, entriesForTournament, entryById, updateEntrySlots,
-  createStage, stagesForTournament, stageById, updateStageStatus,
+  createStage, stagesForTournament, stageById, updateStageStatus, setStageConfig,
   createMatch, matchById, matchesForTournament, matchesForStage,
   activeMatches, pendingReadyMatches, updateMatch, setMatchEntry, deleteMatch, walkoverMatch,
   addThrow, throwsForMatch, lastThrow, deleteThrow,

@@ -146,6 +146,17 @@
             <input type="number" id="t-sets" min="1" value="1" style="width: 100%;" />
           </div>
         </div>
+        <label style="display:flex;align-items:center;gap:0.5rem;margin-top:0.9rem;cursor:pointer;">
+          <input type="checkbox" id="t-reg-mode" onchange="toggleRegMode()" style="width:auto;margin:0;" />
+          <b>🎫 Online kayıtla oluştur</b> <span style="color:var(--text-dim);font-size:0.85rem">(katılımcılar kayıttan gelir, dummy gerekmez)</span>
+        </label>
+        <div id="t-reg-panel" hidden style="display:none;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:0.75rem;margin-top:0.75rem;">
+          <div><label>Etkinlik tarihi</label><input type="date" id="t-reg-date" style="width:100%;" /></div>
+          <div><label>Son kayıt tarihi</label><input type="date" id="t-reg-deadline" style="width:100%;" /></div>
+          <div><label>Kontenjan (boş = sınırsız)</label><input type="number" id="t-reg-capacity" min="2" style="width:100%;" /></div>
+          <label style="display:flex;align-items:center;gap:0.4rem;"><input type="checkbox" id="t-reg-checkin" style="width:auto;margin:0;" /> Check-in yapılsın</label>
+          <label style="display:flex;align-items:center;gap:0.4rem;"><input type="checkbox" id="t-reg-stats" checked style="width:auto;margin:0;" /> İstatistik profile işlensin</label>
+        </div>
       </div>
 
       <div class="card">

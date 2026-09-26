@@ -497,7 +497,26 @@ app.patch('/api/tournaments/:id/hide-public', auth.requireAuth, (req, res) => {
 });
 app.post('/api/tournaments', auth.requireOrganizer, (req, res) => {
   try {
-    const t = tournament.createTournament({ ...req.body, user_id: req.user.id });
+    const b = req.body || {};
+    const reg = b.registration && typeof b.registration === 'object' ? b.registration : null;
+    const t = tournament.createTournament({
+      ...b, user_id: req.user.id,
+      entries: Array.isArray(b.entries) ? b.entries : [],
+      allow_empty: !!reg,
+    });
+    // Online kayıtlı turnuva: etkinlik ayarlarını hemen aç (dummy katılımcı gerekmez)
+    if (reg) {
+      const toInt = v => (v === '' || v == null ? null : (Number.isFinite(+v) && +v > 0 ? +v : null));
+      const toStr = v => { const x = (v == null ? '' : String(v)).trim(); return x ? x.slice(0, 2000) : null; };
+      db.upsertEventSettings(t.id, {
+        reg_enabled: 1,
+        checkin_enabled: reg.checkin_enabled ? 1 : 0,
+        stats_to_profile: reg.stats_to_profile ? 1 : 0,
+        capacity: toInt(reg.capacity),
+        event_date: toStr(reg.event_date),
+        reg_deadline: toStr(reg.reg_deadline),
+      });
+    }
     scheduleBroadcast();
     res.json(t);
   } catch (e) {
@@ -509,6 +528,22 @@ app.post('/api/tournaments/:id/start', auth.requireOrganizer, (req, res) => {
     const t = db.tournamentById(+req.params.id);
     if (t && t.user_id && t.user_id !== req.user.id) {
       return res.status(403).json({ error: 'Yetkiniz yok' });
+    }
+    // Sonradan (kayıt onayı sonrası) elle kurulan gruplar oyuncu-kimliğiyle saklanır;
+    // başlatmadan önce motorun beklediği pozisyon index'lerine çevrilir.
+    if (t && t.status === 'draft') {
+      const st0 = db.stagesForTournament(t.id)[0];
+      let cfg = {}; try { cfg = st0 && st0.config_json ? JSON.parse(st0.config_json) : {}; } catch (_) {}
+      if (st0 && Array.isArray(cfg.groups_entry_ids) && cfg.groups_entry_ids.length) {
+        const ids = db.entriesForTournament(t.id).map(e => e.id);
+        const pos = new Map(ids.map((id, i) => [id, i]));
+        const flat = cfg.groups_entry_ids.flat();
+        if (flat.length !== ids.length || flat.some(id => !pos.has(id))) {
+          return res.status(400).json({ error: 'Katılımcı listesi grup kurulumundan sonra değişti — "🧩 Grupları Düzenle" ile grupları yeniden kaydedin.' });
+        }
+        cfg.groups = cfg.groups_entry_ids.map(g => g.map(id => pos.get(id)));
+        db.setStageConfig(st0.id, cfg);
+      }
     }
     tournament.startTournament(+req.params.id);
     scheduler.assignPendingMatches(io, req.user.id);
@@ -718,6 +753,32 @@ app.post('/api/tournaments/:id/confirm', auth.requireOrganizer, (req, res) => {
   const result = db.confirmRegistrations(t.id, req.user.id, checkinEnabled);
   scheduleBroadcast();
   res.json({ ok: true, transferred: result.transferred });
+});
+
+// Taslak RR turnuvasında grupları elle kur (ör. online kayıt onayından sonra)
+// body: { groups: [[entryId, ...], ...] } — her katılımcı tam bir grupta, grup başına ≥2
+app.put('/api/tournaments/:id/groups', auth.requireOrganizer, (req, res) => {
+  const t = db.tournamentById(+req.params.id);
+  if (!t) return res.status(404).json({ error: 'Turnuva bulunamadı' });
+  if (t.user_id !== req.user.id) return res.status(403).json({ error: 'Yetkisiz' });
+  if (t.status !== 'draft') return res.status(400).json({ error: 'Gruplar yalnız taslak turnuvada düzenlenebilir' });
+  const st0 = db.stagesForTournament(t.id)[0];
+  if (!st0 || st0.format !== 'round_robin') return res.status(400).json({ error: 'İlk aşama round-robin değil' });
+  const groups = Array.isArray(req.body && req.body.groups) ? req.body.groups : null;
+  if (!groups || !groups.length) return res.status(400).json({ error: 'Grup bilgisi eksik' });
+  const ids = new Set(db.entriesForTournament(t.id).map(e => e.id));
+  const clean = groups.map(g => (Array.isArray(g) ? g : []).map(Number));
+  const flat = clean.flat();
+  if (clean.some(g => g.length < 2)) return res.status(400).json({ error: 'Her grupta en az 2 oyuncu olmalı' });
+  if (flat.length !== ids.size || new Set(flat).size !== flat.length || flat.some(id => !ids.has(id))) {
+    return res.status(400).json({ error: 'Tüm katılımcılar tam olarak bir gruba atanmalı' });
+  }
+  let cfg = {}; try { cfg = st0.config_json ? JSON.parse(st0.config_json) : {}; } catch (_) {}
+  cfg.groups_entry_ids = clean;
+  delete cfg.groups; // başlatırken groups_entry_ids'ten yeniden üretilir
+  db.setStageConfig(st0.id, cfg);
+  scheduleBroadcast();
+  res.json({ ok: true });
 });
 
 // Draft turnuvadan katılımcı çıkar — sadece draft durumunda
