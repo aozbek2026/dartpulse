@@ -271,14 +271,14 @@
             <div style="display:flex;gap:1.2rem;flex-wrap:wrap;align-items:flex-end">
               <div>
                 <label style="display:block;font-size:0.82rem;color:var(--text-dim);margin-bottom:0.25rem">Kontenjan <span style="opacity:0.6">(boş = sınırsız)</span></label>
-                <input id="ns-reg-capacity" type="number" min="2" placeholder="örn. 32" style="width:120px" />
+                <input id="ns-reg-capacity" type="number" min="2" placeholder="örn. 32" style="width:120px" oninput="renderRoundOvPanel()" />
               </div>
               <label style="display:flex;align-items:center;gap:0.5rem;cursor:pointer;font-size:0.88rem;padding-bottom:0.35rem">
                 <input type="checkbox" id="ns-reg-checkin" />
                 <span>Gün-içi check-in iste <span style="color:var(--text-dim);font-size:0.8rem">(sadece check-in olanlar bracket'e girer)</span></span>
               </label>
             </div>
-            <p style="font-size:0.76rem;color:var(--text-dim);margin:0.5rem 0 0 0">Format ve kura/seri başı, kayıtları onaylarken seçilecek. Bracket o an kurulur.</p>
+            <p style="font-size:0.76rem;color:var(--text-dim);margin:0.5rem 0 0 0">Format, loser leg ve tur leg'lerini şimdi seçebilirsin. Kayıtları onaylayınca normal oturum formu bu ayarlar ve kayıtlı oyuncularla dolu açılır; kura, seri başı ve elle düzeltmeyi orada yaparsın.</p>
           </div>
         </div>
 

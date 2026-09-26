@@ -296,11 +296,25 @@ function deleteAccountHandler(req, res) {
   res.json({ ok: true, message: 'Hesabınız silindi.' });
 }
 
+// Giriş yapmış kullanıcı şifresini değiştirir (mevcut şifre doğrulanır)
+function changePasswordHandler(req, res) {
+  if (!req.session || !req.session.userId) return res.status(401).json({ error: 'Giriş gerekli' });
+  const { current, next } = req.body || {};
+  if (!current || !next) return res.status(400).json({ error: 'Mevcut ve yeni şifre gerekli' });
+  if (String(next).length < 6) return res.status(400).json({ error: 'Yeni şifre en az 6 karakter olmalı' });
+  const user = db.userByEmail(db.userById(req.session.userId)?.email);
+  if (!user || !verifyPassword(current, user.password_hash)) {
+    return res.status(401).json({ error: 'Mevcut şifre hatalı' });
+  }
+  db.updatePassword(user.id, hashPassword(String(next)));
+  res.json({ ok: true });
+}
+
 module.exports = {
   hashPassword, verifyPassword,
   requireAuth, requireAdmin, requireOrganizer, optionalAuth,
   registerHandler, loginHandler, logoutHandler, meHandler,
   forgotPasswordHandler, resetPasswordHandler, verifyEmailHandler,
   resendVerifyHandler, deleteAccountHandler, exportDataHandler,
-  applyOrganizerHandler,
+  applyOrganizerHandler, changePasswordHandler,
 };

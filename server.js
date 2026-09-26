@@ -197,7 +197,8 @@ app.post('/auth/forgot-password', passwordLimiter, auth.forgotPasswordHandler);
 app.post('/auth/reset-password', passwordLimiter, auth.resetPasswordHandler);
 app.get('/auth/verify-email', auth.verifyEmailHandler);
 app.post('/auth/resend-verify', passwordLimiter, auth.resendVerifyHandler);
-app.post('/auth/delete-account', auth.deleteAccountHandler);
+app.post('/auth/delete-account', passwordLimiter, auth.deleteAccountHandler);
+app.put('/auth/password', passwordLimiter, auth.changePasswordHandler);
 app.get('/auth/export-data', auth.exportDataHandler);
 // Görünen adı değiştir — istatistikler e-posta hesabına bağlı kalır, oyuncu kayıtları yeni adı alır
 app.put('/auth/name', auth.requireAuth, (req, res) => {

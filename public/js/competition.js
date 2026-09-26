@@ -652,7 +652,8 @@ function renderSessionRow(s) {
   const dateStr = s.session_date ? formatDate(s.session_date) : '';
 
   // Kayıt-açık sezon oturumu (bracket henüz kurulmadı): kayıt yönetimi + onay
-  if (s.reg_enabled && s.reg_status === 'open' && !s.tournament_id) {
+  if (s.reg_enabled && (s.reg_status === 'open' || s.reg_status === 'players_confirmed') && !s.tournament_id) {
+    const pc = s.reg_status === 'players_confirmed';
     const active = s.reg_active || 0;
     const wait = s.reg_waitlist || 0;
     const capStr = s.capacity ? ` / ${s.capacity}` : '';
@@ -665,7 +666,7 @@ function renderSessionRow(s) {
           <div class="pname">
             <span style="color:var(--text-dim);min-width:1.8em;display:inline-block">${s.session_number}.</span>
             ${escapeHtml(s.name || `${s.session_number}. Oturum`)}
-            <span style="margin-left:0.5rem;font-size:0.7rem;background:var(--accent,#ff3860);color:#fff;padding:0.1rem 0.55rem;border-radius:10px;font-weight:700">🎫 KAYIT AÇIK</span>
+            <span style="margin-left:0.5rem;font-size:0.7rem;background:${pc ? '#16a34a' : 'var(--accent,#ff3860)'};color:#fff;padding:0.1rem 0.55rem;border-radius:10px;font-weight:700">${pc ? '✓ KAYITLAR ONAYLANDI' : '🎫 KAYIT AÇIK'}</span>
           </div>
           <div class="pmeta">
             ${dateStr ? `📅 ${dateStr} · ` : ''}🎫 ${active}${capStr} kayıtlı${wait ? ` · ⏳ ${wait} yedek` : ''}${checkinNote}
@@ -673,7 +674,9 @@ function renderSessionRow(s) {
         </div>
         <div class="pactions">
           <button class="btn" onclick="openRegModal(${s.id})" style="padding:0.4rem 0.7rem;font-size:0.85rem;background:rgba(255,255,255,0.08);color:var(--text)">📋 Kayıtlar (${active})</button>
-          <button class="primary" onclick="openConfirmRegModal(${s.id})" style="padding:0.4rem 0.7rem;font-size:0.85rem">✓ Katılımcıları Onayla</button>
+          ${pc
+            ? `<button class="primary" onclick="openAttachBracketForm(${s.id})" style="padding:0.4rem 0.7rem;font-size:0.85rem">🎯 Braketi Kur</button>`
+            : `<button class="primary" onclick="confirmRegPlayers(${s.id})" style="padding:0.4rem 0.7rem;font-size:0.85rem">✓ Kayıtları Onayla</button>`}
           ${canDelete ? `<button class="danger" onclick="confirmDeleteSession(${s.id}, '${name}')" style="padding:0.4rem 0.6rem;font-size:0.85rem">🗑️</button>` : ''}
         </div>
       </div>
@@ -771,6 +774,7 @@ function toggleNewSessionForm() {
   const f = document.getElementById('new-session-form');
   const opening = f.style.display === 'none' || !f.style.display;
   f.style.display = opening ? 'block' : 'none';
+  STATE.attachSid = null;
   if (opening) {
     document.getElementById('ns-name').value = '';
     document.getElementById('ns-date').value = todayISO();
@@ -845,14 +849,12 @@ function toggleRegMode(checked) {
   const panel = document.getElementById('ns-reg-panel');
   if (panel) panel.hidden = !checked;
   const hide = (id, on) => { const el = document.getElementById(id); if (el) el.style.display = on ? 'none' : ''; };
-  hide('ns-format-row', checked);
-  hide('ns-format-row-spacer', checked);
-  hide('ns-lb-legs-row', checked);
+  // Format, loser leg ve tur bazında leg ayarları kayıt modunda da SORULUR (oluştururken);
+  // yalnız katılımcı seçimi ve Ustalar gizlenir (katılımcılar kayıttan gelir).
   hide('ns-participants-section', checked);
-  hide('ns-round-ov-section', checked);
   hide('ns-masters-section', checked);
-  // Kapatınca format satırının lb alanı tekrar duruma göre ayarlansın
-  if (!checked) onNsFormatChange();
+  onNsFormatChange();
+  renderRoundOvPanel();
 }
 window.toggleRegMode = toggleRegMode;
 
@@ -919,6 +921,8 @@ function renderRoundOvPanel() {
   if (!STATE.roundOv) STATE.roundOv = {};
 
   const format = (document.getElementById('ns-format') || {}).value || 'single_elim';
+  // Kayıt modu: katılımcı sayısı belli değil → turlar "finalden geriye" listelenir
+  if (document.getElementById('ns-reg-toggle')?.checked) { renderRoundOvPanelRel(panel, format); return; }
   // Ustalar modunda katılımcı sayısı roster'dan, normalde checkbox'tan gelir
   const mastersCb = document.getElementById('ns-is-masters');
   const count = (mastersCb && mastersCb.checked)
@@ -960,6 +964,54 @@ function renderRoundOvPanel() {
   }).join('');
   panel.innerHTML = intro + rows;
 }
+
+// Kayıt-açık oturum: tur listesi kontenjana göre (yoksa Son 64'e kadar), anahtarlar
+// finalden geriye göreli (r0=Final, r1=Yarı, ... gf=Grand Final). Onayda sunucu
+// gerçek katılımcı sayısına göre doğru turlara çevirir.
+function renderRoundOvPanelRel(panel, format) {
+  if (!STATE.roundOvRel) STATE.roundOvRel = {};
+  const baseLegs = (STATE.comp && STATE.comp.legs_to_win) || 2;
+  const baseSets = (STATE.comp && STATE.comp.sets_to_win) || 1;
+  if (format === 'round_robin') {
+    panel.innerHTML = '<p style="font-size:0.82rem;color:var(--text-dim);margin:0">Round-robin formatında çeyrek/yarı/final yoktur; tur bazında özel leg geçerli değil.</p>';
+    return;
+  }
+  const cap = +(document.getElementById('ns-reg-capacity')?.value) || 0;
+  let n = 6; // Son 64'e kadar
+  if (cap >= 2) { let p = 1; while (p < cap) p *= 2; n = Math.max(1, Math.log2(p)); }
+  const names = ['Final', 'Yarı Final', 'Çeyrek Final', 'Son 16', 'Son 32', 'Son 64', 'Son 128'];
+  const rows = [];
+  if (format === 'double_elim') rows.push({ key: 'gf', label: 'Grand Final' });
+  for (let k = 0; k < Math.min(n, names.length); k++) {
+    rows.push({ key: 'r' + k, label: (format === 'double_elim' ? 'WB ' : '') + names[k] });
+  }
+  const html = rows.map(rd => {
+    const cur = STATE.roundOvRel[rd.key] || {};
+    return `
+      <div style="display:flex;gap:0.5rem;align-items:center;margin-bottom:0.4rem">
+        <span style="flex:1;color:var(--text-dim);font-size:0.86rem">${rd.label}</span>
+        <label style="display:flex;align-items:center;gap:0.3rem;font-size:0.82rem">
+          <span style="color:var(--text-dim)">Leg</span>
+          <input type="number" min="1" max="15" placeholder="${baseLegs}" value="${cur.legs ?? ''}" style="width:62px"
+            oninput="updateRoundOvRel('${rd.key}','legs',this.value)" />
+        </label>
+        <label style="display:flex;align-items:center;gap:0.3rem;font-size:0.82rem">
+          <span style="color:var(--text-dim)">Set</span>
+          <input type="number" min="1" max="9" placeholder="${baseSets}" value="${cur.sets ?? ''}" style="width:62px"
+            oninput="updateRoundOvRel('${rd.key}','sets',this.value)" />
+        </label>
+      </div>`;
+  }).join('');
+  panel.innerHTML = '<p style="font-size:0.8rem;color:var(--text-dim);margin:0 0 0.5rem 0">Katılımcı sayısı kayıtlar onaylanınca belli olur; girdiğin değerler o an ilgili turlara uygulanır. Katılımcı az olursa olmayan turlar yok sayılır. Boş = sezon varsayılanı.</p>' + html;
+}
+function updateRoundOvRel(key, field, value) {
+  if (!STATE.roundOvRel) STATE.roundOvRel = {};
+  if (!STATE.roundOvRel[key]) STATE.roundOvRel[key] = {};
+  const n = value ? +value : null;
+  if (n && n >= 1) STATE.roundOvRel[key][field] = n; else delete STATE.roundOvRel[key][field];
+  if (!STATE.roundOvRel[key].legs && !STATE.roundOvRel[key].sets) delete STATE.roundOvRel[key];
+}
+window.updateRoundOvRel = updateRoundOvRel;
 
 function updateRoundOvNs(key, field, value) {
   if (!STATE.roundOv) STATE.roundOv = {};
@@ -1332,12 +1384,24 @@ async function submitNewSession() {
   } else if (regMode) {
     // Sezon online kayıt: katılımcı/format yok — kayıt-açık boş oturum yarat
     const capRaw = +(document.getElementById('ns-reg-capacity')?.value);
+    const format = document.getElementById('ns-format').value;
     body = {
       name: name || null, session_date,
       reg_enabled: true,
       capacity: (Number.isInteger(capRaw) && capRaw >= 2) ? capRaw : null,
       checkin_enabled: !!document.getElementById('ns-reg-checkin')?.checked,
+      format,
+      draw: document.getElementById('ns-reg-draw')?.value === 'order' ? 'order' : 'random',
     };
+    if (format === 'double_elim') {
+      const lbVal = +(document.getElementById('ns-lb-legs')?.value);
+      if (Number.isInteger(lbVal) && lbVal >= 1) body.lb_legs = lbVal;
+    }
+    const rovToggle = document.getElementById('ns-round-ov-toggle');
+    if (format !== 'round_robin' && rovToggle && rovToggle.checked &&
+        STATE.roundOvRel && Object.keys(STATE.roundOvRel).length) {
+      body.round_overrides_rel = STATE.roundOvRel;
+    }
   } else {
     // Sezon: format gerekli; katılımcı kaynağı Ustalar mı normal mi'ye göre değişir
     const format = document.getElementById('ns-format').value;
@@ -1357,6 +1421,7 @@ async function submitNewSession() {
       return;
     }
     body = { name: name || null, session_date, format, participant_player_ids: ids };
+    if (STATE.attachSid) body.attach_session_id = STATE.attachSid;
 
     // Çift elemede loser braket leg sayısı (boşsa winners ile aynı)
     if (format === 'double_elim') {
@@ -1408,7 +1473,8 @@ async function submitNewSession() {
       if (submitBtn) { submitBtn.disabled = false; submitBtn.textContent = origText; }
       return;
     }
-    toast('Oturum oluşturuldu ✓');
+    toast(STATE.attachSid ? 'Braket kuruldu ✓' : 'Oturum oluşturuldu ✓');
+    STATE.attachSid = null;
     document.getElementById('new-session-form').style.display = 'none';
     STATE.schedule = null; // schedule'ı tazele
     await loadComp();
@@ -1602,10 +1668,97 @@ async function openRegModal(sid) {
 }
 window.openRegModal = openRegModal;
 
+// ── Kayıtlı oturum: 1) kayıtları onayla  2) normal oturum formuyla braketi kur ──
+// Kayıt sonrası akış, normal oturum oluşturmayla birebir aynı ekrandır: kura, seri başı,
+// sürükle-sırala, tur bazında leg/set, Ustalar. Tek fark katılımcıların kayıttan gelmesi.
+async function confirmRegPlayers(sid) {
+  const s = (STATE.sessions || []).find(x => x.id === sid) || {};
+  const msg = s.checkin_enabled
+    ? 'Check-in yapmış oyuncular sezon havuzuna eklenecek ve kayıt kapanacak. Ardından braket ayarlarına geçeceksin. Devam?'
+    : 'Kayıtlı oyuncular sezon havuzuna eklenecek ve kayıt kapanacak. Ardından braket ayarlarına geçeceksin. Devam?';
+  if (!confirm(msg)) return;
+  const res = await api.post(`/api/competitions/${STATE.id}/sessions/${sid}/confirm-players`, {});
+  if (res && res.error) { toast('Hata: ' + res.error, 4000); return; }
+  toast(`${res.player_ids.length} katılımcı onaylandı ✓`);
+  await loadComp();
+  await loadPlayers();
+  await loadSessions();
+  renderSessions();
+  await openAttachBracketForm(sid, res.player_ids, res.setup);
+}
+window.confirmRegPlayers = confirmRegPlayers;
+
+// Kayıt-öncesi girilen "finalden geriye" tur leg'lerini gerçek round anahtarlarına çevir
+function _relOvToAbsNs(format, count, rel) {
+  const out = {};
+  if (!rel || format === 'round_robin' || count < 2) return out;
+  let size = 1; while (size < count) size *= 2;
+  const W = Math.log2(size);
+  const LB = W === 1 ? 0 : 2 * (W - 1);
+  for (const [k, v] of Object.entries(rel)) {
+    if (!v) continue;
+    if (k === 'gf') { if (format === 'double_elim') out[`final-${W + LB + 1}`] = { ...v }; continue; }
+    const m = /^r(\d)$/.exec(k); if (!m) continue;
+    const r = W - (+m[1]); if (r < 1) continue;
+    out[(format === 'single_elim' && r === W) ? `final-${r}` : `winners-${r}`] = { ...v };
+  }
+  return out;
+}
+
+async function openAttachBracketForm(sid, playerIds, setup) {
+  const s = (STATE.sessions || []).find(x => x.id === sid) || {};
+  if (!playerIds) {
+    const r = await api.get(`/api/competitions/${STATE.id}/sessions/${sid}/registrations`);
+    if (r && r.error) { toast('Hata: ' + r.error, 4000); return; }
+    playerIds = (r.registrations || []).filter(x => x.status === 'confirmed' && x.player_id).map(x => x.player_id);
+  }
+  if (!setup) { try { setup = s.reg_setup_json ? JSON.parse(s.reg_setup_json) : {}; } catch (_) { setup = {}; } }
+  await loadPlayers(); // onaylanan kayıtlar havuza yeni eklendi
+
+  // Formu temiz aç, sonra bu oturuma bağla
+  const f = document.getElementById('new-session-form');
+  if (f.style.display === 'block') toggleNewSessionForm();
+  toggleNewSessionForm();
+  STATE.attachSid = sid;
+
+  document.getElementById('ns-name').value = s.name || '';
+  if (s.session_date) document.getElementById('ns-date').value = s.session_date;
+  const regSec = document.getElementById('ns-reg-section');
+  if (regSec) regSec.style.display = 'none';
+
+  const format = setup.format || 'single_elim';
+  document.getElementById('ns-format').value = format;
+  const lb = document.getElementById('ns-lb-legs');
+  if (lb) lb.value = setup.lb_legs || '';
+
+  // Katılımcılar: yalnız onaylanan kayıtlar seçili
+  const idSet = new Set(playerIds.map(Number));
+  document.querySelectorAll('.ns-part-cb').forEach(c => { c.checked = idSet.has(+c.value); });
+  updateParticipantCount();
+  onNsFormatChange();
+
+  // Oluştururken girilen tur leg'leri → gerçek turlar, panel açık gelsin
+  const abs = _relOvToAbsNs(format, playerIds.length, setup.round_overrides_rel);
+  if (Object.keys(abs).length) {
+    STATE.roundOv = abs;
+    const cb = document.getElementById('ns-round-ov-toggle');
+    if (cb) cb.checked = true;
+    const panel = document.getElementById('ns-round-ov-panel');
+    if (panel) panel.hidden = false;
+    renderRoundOvPanel();
+  }
+
+  const info = document.getElementById('ns-round-info');
+  if (info) info.innerHTML = `🎫 <strong>${escapeHtml(s.name || 'Kayıtlı oturum')}</strong> için braket — ${playerIds.length} onaylı katılımcı seçili. Kura / seri başı / tur leg'lerini düzenleyip oluştur.`;
+  f.scrollIntoView({ behavior: 'smooth', block: 'start' });
+}
+window.openAttachBracketForm = openAttachBracketForm;
+
 // ── Katılımcıları Onayla → bracket kur ─────────────────────────────
 function openConfirmRegModal(sid) {
   const s = (STATE.sessions || []).find(x => x.id === sid) || {};
   const active = s.reg_active || 0;
+  let setup = {}; try { setup = s.reg_setup_json ? JSON.parse(s.reg_setup_json) : {}; } catch (_) {}
   const checkinNote = s.checkin_enabled
     ? `<p style="margin:0.4rem 0 0 0;color:#f59e0b;font-size:0.82rem">⚠️ Check-in açık — sadece check-in olmuş katılımcılar bracket'e girer.</p>`
     : '';
@@ -1620,14 +1773,15 @@ function openConfirmRegModal(sid) {
       <div style="padding:0.9rem 1.2rem">
         <label style="display:block;font-size:0.82rem;color:var(--text-dim);margin-bottom:0.25rem">Bracket formatı</label>
         <select id="cr-format" style="width:100%" onchange="document.getElementById('cr-lb-row').style.display=this.value==='double_elim'?'block':'none'">
-          <option value="single_elim">Tek eleme</option>
-          <option value="double_elim">Çift eleme</option>
-          <option value="round_robin">Round-robin (herkes herkesle)</option>
+          <option value="single_elim" ${setup.format === 'single_elim' || !setup.format ? 'selected' : ''}>Tek eleme</option>
+          <option value="double_elim" ${setup.format === 'double_elim' ? 'selected' : ''}>Çift eleme</option>
+          <option value="round_robin" ${setup.format === 'round_robin' ? 'selected' : ''}>Round-robin (herkes herkesle)</option>
         </select>
-        <div id="cr-lb-row" style="display:none;margin-top:0.6rem">
+        <div id="cr-lb-row" style="display:${setup.format === 'double_elim' ? 'block' : 'none'};margin-top:0.6rem">
           <label style="display:block;font-size:0.82rem;color:var(--text-dim);margin-bottom:0.25rem">Loser braket leg sayısı <span style="opacity:0.6">(boş = winners ile aynı)</span></label>
-          <input id="cr-lb-legs" type="number" min="1" max="11" placeholder="örn. 2" style="width:100%" />
+          <input id="cr-lb-legs" type="number" min="1" max="11" placeholder="örn. 2" value="${setup.lb_legs || ''}" style="width:100%" />
         </div>
+        <p style="margin:0.6rem 0 0 0;color:var(--text-dim);font-size:0.8rem">Oturumu oluştururken girdiğin ayarlar hazır geliyor${setup.round_overrides_rel && Object.keys(setup.round_overrides_rel).length ? ' (tur bazında özel leg\'ler dahil)' : ''}. Kura: ${setup.draw === 'order' ? 'kayıt sırası' : 'rastgele'}.</p>
       </div>
       <div style="padding:0.8rem 1.2rem;border-top:1px solid var(--border,rgba(255,255,255,0.08));display:flex;justify-content:flex-end;gap:0.5rem">
         <button id="cr-cancel">Vazgeç</button>
@@ -1906,3 +2060,4 @@ document.addEventListener('keydown', (e) => {
 });
 
 boot();
+window.renderRoundOvPanel = renderRoundOvPanel;
