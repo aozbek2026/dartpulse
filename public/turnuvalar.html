@@ -153,6 +153,7 @@ async function loadUpcoming() {
               <div class="tn-meta">
                 ${date ? `<span>📅 ${date}</span>` : ''}
                 ${t.checkin_time ? `<span>⏰ Check-in ${esc(t.checkin_time)}</span>` : ''}
+                ${t.reg_deadline ? `<span>⏳ Son kayıt ${esc(fmtDate(String(t.reg_deadline).slice(0, 10)) || '')}${String(t.reg_deadline).length > 10 ? ' ' + esc(String(t.reg_deadline).slice(11, 16)) : ''}</span>` : ''}
                 ${t.owner_name ? `<span>👤 ${esc(t.owner_name)}</span>` : ''}
                 <span class="tn-cap">${cap}${wait}</span>
               </div>

@@ -1042,7 +1042,8 @@ async function createTournament() {
     const v = id => (document.getElementById(id)?.value || '').trim();
     body.registration = {
       event_date: v('t-reg-date') || null,
-      reg_deadline: v('t-reg-deadline') || null,
+      reg_deadline: v('t-reg-deadline') ? (v('t-reg-deadline') + (v('t-reg-deadline-time') ? 'T' + v('t-reg-deadline-time') : '')) : null,
+      checkin_time: v('t-reg-checkin-time') || null,
       capacity: v('t-reg-capacity') || null,
       checkin_enabled: !!document.getElementById('t-reg-checkin')?.checked,
       stats_to_profile: !!document.getElementById('t-reg-stats')?.checked,
@@ -1130,7 +1131,11 @@ async function showEventSettings(id) {
         <div style="display:flex;gap:0.75rem;">
           <div style="flex:1;">
             <label>Son kayıt tarihi</label>
-            <input id="es-reg-deadline" type="date" value="${v(s.reg_deadline)}" style="width:100%;margin-bottom:0.75rem;box-sizing:border-box;" />
+            <input id="es-reg-deadline" type="date" value="${v(s.reg_deadline).slice(0, 10)}" style="width:100%;margin-bottom:0.75rem;box-sizing:border-box;" />
+          </div>
+          <div style="flex:1;">
+            <label>Son kayıt saati</label>
+            <input id="es-reg-deadline-time" type="time" value="${v(s.reg_deadline).slice(11, 16)}" style="width:100%;margin-bottom:0.75rem;box-sizing:border-box;" />
           </div>
           <div style="flex:1;">
             <label>Check-in saati</label>
@@ -1158,7 +1163,11 @@ async function showEventSettings(id) {
       stats_to_profile: overlay.querySelector('#es-stats').checked,
       category: overlay.querySelector('#es-category').value,
       capacity: overlay.querySelector('#es-capacity').value,
-      reg_deadline: overlay.querySelector('#es-reg-deadline').value,
+      reg_deadline: (() => {
+        const d = overlay.querySelector('#es-reg-deadline').value;
+        const tm = overlay.querySelector('#es-reg-deadline-time').value;
+        return d ? (tm ? d + 'T' + tm : d) : '';
+      })(),
       checkin_time: overlay.querySelector('#es-checkin-time').value,
       event_date: overlay.querySelector('#es-event-date').value,
       description: overlay.querySelector('#es-description').value,

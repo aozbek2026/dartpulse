@@ -515,6 +515,7 @@ app.post('/api/tournaments', auth.requireOrganizer, (req, res) => {
         capacity: toInt(reg.capacity),
         event_date: toStr(reg.event_date),
         reg_deadline: toStr(reg.reg_deadline),
+        checkin_time: toStr(reg.checkin_time),
       });
     }
     scheduleBroadcast();
@@ -656,7 +657,9 @@ app.post('/api/tournaments/:id/register', auth.requireAuth, (req, res) => {
   const es = db.eventSettings(t.id);
   if (!es || !es.reg_enabled) return res.status(400).json({ error: 'Bu turnuvada online kayıt kapalı' });
   if (es.reg_deadline) {
-    const deadline = new Date(es.reg_deadline + 'T23:59:59');
+    // Saat verilmişse o saat, yoksa gün sonu — Türkiye saatiyle (sunucu UTC'de çalışır)
+    const dl = String(es.reg_deadline);
+    const deadline = new Date(dl.includes('T') ? dl.slice(0, 16) + ':00+03:00' : dl + 'T23:59:59+03:00');
     if (!isNaN(deadline) && Date.now() > deadline.getTime()) {
       return res.status(400).json({ error: 'Kayıt süresi sona erdi' });
     }
