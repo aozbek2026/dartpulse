@@ -1,0 +1,130 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Hesap Ayarları · Dart Core Pro</title>
+<link rel="stylesheet" href="/css/style.css" />
+<style>
+  .hs-wrap { max-width: 640px; margin: 0 auto; padding: 3.5rem 1rem 4rem; }
+  .hs-head { display:flex; align-items:center; justify-content:space-between; gap:1rem; flex-wrap:wrap; margin-bottom:1.25rem; }
+  .hs-head h1 { margin:0; font-size:1.5rem; }
+  .hs-back { color:var(--accent-2,#00d4ff); text-decoration:none; font-size:0.9rem; }
+  .hs-card { background:var(--surface,#1a1e2d); border:1px solid var(--border,#2a2f48); border-radius:12px; padding:1.1rem 1.3rem; margin-bottom:1.2rem; }
+  .hs-card h2 { font-size:1.05rem; margin:0 0 0.4rem; }
+  .hs-card p { color:#c8cee0; font-size:0.9rem; margin:0 0 0.8rem; line-height:1.55; }
+  .hs-row { display:flex; gap:0.5rem; flex-wrap:wrap; }
+  .hs-row input { flex:1; min-width:180px; margin:0; }
+  .hs-col input { width:100%; margin:0 0 0.5rem; box-sizing:border-box; }
+  .hs-btn { background:var(--accent-2,#00d4ff); color:#06121a; font-weight:700; border:none; border-radius:9px; padding:0.6rem 1.2rem; cursor:pointer; text-decoration:none; display:inline-block; font-size:0.92rem; }
+  .hs-btn.danger { background:#ef4444; color:#fff; }
+  .hs-msg { font-size:0.85rem; margin-top:0.5rem; min-height:1em; }
+  .hs-email { color:var(--muted,#9aa); font-size:0.9rem; }
+</style>
+</head>
+<body>
+<div class="hs-wrap">
+  <div class="hs-head">
+    <h1>⚙️ Hesap Ayarları</h1>
+    <a class="hs-back" href="/">← Anasayfa</a>
+  </div>
+  <div id="hs-guest" class="hs-card" style="display:none">
+    <p>Hesap ayarlarını görmek için giriş yapmalısın.</p>
+    <a class="hs-btn" href="/login.html">Giriş Yap</a>
+  </div>
+
+  <div id="hs-body" style="display:none">
+    <div class="hs-card">
+      <h2>Görünen Ad</h2>
+      <p>Braketlerde ve klasmanda görünen adın. Değiştirsen de tüm geçmiş ve yeni performansın e-posta hesabına bağlı kalır.</p>
+      <div class="hs-email">E-posta: <span id="hs-email"></span></div>
+      <div class="hs-row" style="margin-top:0.6rem">
+        <input id="hs-name" type="text" maxlength="60" placeholder="Ad Soyad" />
+        <button class="hs-btn" id="hs-name-save">Kaydet</button>
+      </div>
+      <div class="hs-msg" id="hs-name-msg"></div>
+    </div>
+
+    <div class="hs-card">
+      <h2>Şifre Değiştir</h2>
+      <div class="hs-col">
+        <input id="hs-pw-cur" type="password" placeholder="Mevcut şifre" autocomplete="current-password" />
+        <input id="hs-pw-new" type="password" placeholder="Yeni şifre (en az 6 karakter)" autocomplete="new-password" />
+        <input id="hs-pw-new2" type="password" placeholder="Yeni şifre (tekrar)" autocomplete="new-password" />
+      </div>
+      <button class="hs-btn" id="hs-pw-save">Şifreyi Değiştir</button>
+      <div class="hs-msg" id="hs-pw-msg"></div>
+    </div>
+
+    <div class="hs-card">
+      <h2>Performans</h2>
+      <p>Turnuva geçmişin ve istatistiklerin.</p>
+      <a class="hs-btn" href="/profil.html">📊 Performans & Başarımlar</a>
+    </div>
+
+    <div class="hs-card">
+      <h2>Verilerim</h2>
+      <p>KVKK kapsamında hakkındaki kişisel verileri indirebilirsin. Ayrıntılar: <a href="/gizlilik.html" style="color:var(--accent-2,#00d4ff)">Gizlilik Politikası</a>.</p>
+      <a class="hs-btn" href="/auth/export-data">⬇ Verilerimi İndir (JSON)</a>
+    </div>
+
+    <div class="hs-card" style="border-color:rgba(239,68,68,0.4)">
+      <h2 style="color:#ef4444">Hesabı Sil</h2>
+      <p>Hesabın kalıcı olarak silinir, bu işlem geri alınamaz. Onaylamak için şifreni gir.</p>
+      <div class="hs-row">
+        <input id="hs-del-pw" type="password" placeholder="Şifre" autocomplete="current-password" />
+        <button class="hs-btn danger" id="hs-del">Hesabımı Sil</button>
+      </div>
+      <div class="hs-msg" id="hs-del-msg"></div>
+    </div>
+  </div>
+</div>
+
+<script>
+(async () => {
+  const $ = (id) => document.getElementById(id);
+  const say = (el, text, ok) => { el.style.color = ok ? '#16a34a' : (ok === false ? '#ef4444' : '#9aa'); el.textContent = text; };
+  const call = async (url, method, body) => {
+    const r = await fetch(url, { method, credentials: 'same-origin',
+      headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body || {}) });
+    let d = {}; try { d = await r.json(); } catch (_) {}
+    if (!r.ok || d.error) throw new Error(d.error || 'İşlem başarısız');
+    return d;
+  };
+
+  let user = null;
+  try { const r = await fetch('/auth/me', { credentials: 'same-origin' }); const d = await r.json(); user = d.user; } catch (_) {}
+  if (!user) { $('hs-guest').style.display = ''; return; }
+  $('hs-body').style.display = '';
+  $('hs-email').textContent = user.email || '';
+  $('hs-name').value = user.name || '';
+
+  $('hs-name-save').onclick = async () => {
+    say($('hs-name-msg'), 'Kaydediliyor…');
+    try { const d = await call('/auth/name', 'PUT', { name: $('hs-name').value }); say($('hs-name-msg'), '✓ Adın güncellendi: ' + d.name, true); }
+    catch (e) { say($('hs-name-msg'), e.message, false); }
+  };
+
+  $('hs-pw-save').onclick = async () => {
+    const cur = $('hs-pw-cur').value, n1 = $('hs-pw-new').value, n2 = $('hs-pw-new2').value;
+    if (n1 !== n2) return say($('hs-pw-msg'), 'Yeni şifreler eşleşmiyor', false);
+    say($('hs-pw-msg'), 'Kaydediliyor…');
+    try {
+      await call('/auth/password', 'PUT', { current: cur, next: n1 });
+      $('hs-pw-cur').value = $('hs-pw-new').value = $('hs-pw-new2').value = '';
+      say($('hs-pw-msg'), '✓ Şifren değiştirildi', true);
+    } catch (e) { say($('hs-pw-msg'), e.message, false); }
+  };
+
+  $('hs-del').onclick = async () => {
+    if (!confirm('Hesabın kalıcı olarak silinecek. Emin misin?')) return;
+    say($('hs-del-msg'), 'Siliniyor…');
+    try { await call('/auth/delete-account', 'POST', { password: $('hs-del-pw').value }); location.href = '/'; }
+    catch (e) { say($('hs-del-msg'), e.message, false); }
+  };
+})();
+</script>
+<script src="/js/cookie-consent.js"></script>
+<script src="/js/common.js"></script>
+</body>
+</html>

@@ -100,7 +100,10 @@ window.formatLabel = (f) => ({
     '/', '/index.html',
     '/board.html', '/tv.html', '/scorer.html', '/bracket.html',
     '/login.html', '/forgot-password.html', '/reset-password.html', '/verify-email.html',
+    '/tanitim.html', '/tanitim-lig.html', '/tanitim-turnuva.html', '/dartcorepronedir.html',
   ]);
+  // Başka bir sayfanın içine gömülü (iframe) açıldıysa menü gösterme
+  if (window.self !== window.top) return;
   if (EXCLUDE.has(location.pathname)) return;
 
   function injectStyles() {
@@ -192,6 +195,7 @@ window.formatLabel = (f) => ({
         <a class="dcp-um-item" href="/liga.html"><span class="ico">🏅</span><span>Ligler &amp; Sezonlar</span></a>
         <a class="dcp-um-item" href="/turnuvalar.html"><span class="ico">🎯</span><span>Turnuvalar</span></a>
         <a class="dcp-um-item" href="/profil.html"><span class="ico">📊</span><span>Performans &amp; Başarımlar</span></a>
+        <a class="dcp-um-item" href="/hesap.html"><span class="ico">⚙️</span><span>Hesap Ayarları</span></a>
         ${adminItem}
         ${organizerItem}
         <div class="dcp-um-divider"></div>
