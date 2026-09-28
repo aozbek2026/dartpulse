@@ -450,7 +450,14 @@ app.patch('/api/boards/:id', auth.requireAuth, (req, res) => {
     // maç referansını temizle. Aksi halde eski turnuvanın maçı yeni turnuvada
     // seçilen tablette görünmeye devam eder (tab başka turnuvanın maçını gösterir bug'ı).
     const oldTid = b.tournament_id || null;
+    // Board'da CANLI maç varsa maçı bölme: board yeni turnuvaya işaretlenir ama tablet
+    // mevcut maçı bitirene kadar onda kalır; maç bitip "sonraki" denince yeni turnuvadan maç alır.
+    let liveKeep = false;
     if (oldTid !== tid && b.current_match_id) {
+      const cur = db.matchById(b.current_match_id);
+      if (cur && cur.status === 'live') liveKeep = true;
+    }
+    if (oldTid !== tid && b.current_match_id && !liveKeep) {
       try {
         const old = db.matchById(b.current_match_id);
         // Eski maç hâlâ bu board'a bağlı + henüz başlamamış (ready) ise havuza geri
@@ -464,6 +471,7 @@ app.patch('/api/boards/:id', auth.requireAuth, (req, res) => {
       db.setBoardMatch(b.id, null);
     }
     db.setBoardTournament(b.id, tid);
+    resumeOrphanLiveMatch(b.id);
     changedTournament = true;
   }
   // Board yeni bir turnuvaya baglandiysa scheduler'i tetikle — aksi halde
@@ -1123,6 +1131,21 @@ app.post('/api/matches/:id/set-sub-starters', (req, res) => {
 
 // Sonraki Maç: bitmiş maçı board'dan serbest bırak, scheduler'ı tetikle.
 // Tablet endpoint'i — auth gerekmez ama scheduler board'un sahibi için çalışır.
+// Bu board'a bağlı kalmış ama board'un göstermediği CANLI maç varsa (ör. board maç
+// sırasında başka turnuvaya aktarıldı) board boşken onu geri bağla — yarım maç kaybolmasın.
+function resumeOrphanLiveMatch(boardId) {
+  try {
+    const b = db.boardById(boardId);
+    if (!b || b.current_match_id) return false;
+    const orphan = db.db.prepare(
+      "SELECT id FROM matches WHERE board_id = ? AND status = 'live' ORDER BY id LIMIT 1"
+    ).get(boardId);
+    if (!orphan) return false;
+    db.setBoardMatch(boardId, orphan.id);
+    return true;
+  } catch (e) { console.warn('[resumeOrphanLiveMatch]', e.message); return false; }
+}
+
 app.post('/api/boards/:id/next', (req, res) => {
   try {
     const boardId = +req.params.id;
@@ -1138,8 +1161,10 @@ app.post('/api/boards/:id/next', (req, res) => {
         return res.status(400).json({ error: 'Maç henüz bitmemiş' });
       }
     }
-    // Board'un sahibi için (varsa) scope; yoksa global (legacy)
-    scheduler.assignPendingMatches(io, board.user_id || null);
+    // Önce bu board'da yarım kalmış canlı maç varsa ona dön; yoksa scheduler yeni maç versin
+    if (!resumeOrphanLiveMatch(boardId)) {
+      scheduler.assignPendingMatches(io, board.user_id || null);
+    }
     const refreshed = db.boardById(boardId);
     io.to(`board:${boardId}`).emit('board:state', {
       board: refreshed,
