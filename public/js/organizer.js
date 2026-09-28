@@ -1215,6 +1215,43 @@ function showParticipants(id) {
   });
 }
 
+// Hükmen (gelmedi) sonuçlarını listele, seçileni geri aç
+function showReopenWalkover(id) {
+  const t = state.tournaments.find(x => x.id === id);
+  if (!t) return;
+  const nm = (eid) => { const e = t.entries.find(x => x.id === eid); return e ? entryLabel(e) : '—'; };
+  const rows = t.matches.filter(m => m.is_walkover && m.status === 'finished')
+    .sort((a, b) => (b.round - a.round) || (a.match_index - b.match_index))
+    .map(m => {
+      const loser = m.entry1_id === m.winner_entry_id ? m.entry2_id : m.entry1_id;
+      return `<div style="display:flex;justify-content:space-between;align-items:center;gap:0.6rem;padding:0.5rem 0;border-bottom:1px solid var(--border);">
+        <span><b>${nm(m.winner_entry_id)}</b> hükmen kazandı — <span style="color:var(--text-dim)">${nm(loser)} "gelmedi"</span>
+        <span style="color:var(--text-dim);font-size:0.8rem"> · ${m.bracket} R${m.round}</span></span>
+        <button class="secondary" data-mid="${m.id}">↩ Geri Al</button></div>`;
+    }).join('');
+  const overlay = document.createElement('div');
+  overlay.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,0.75);display:flex;align-items:center;justify-content:center;z-index:9999;padding:1rem;';
+  overlay.innerHTML = `<div style="background:var(--surface);border-radius:16px;padding:1.5rem;max-width:620px;width:100%;max-height:90vh;overflow:auto;">
+    <h3 style="margin-bottom:0.3rem">↩ Hükmen Sonuç Geri Al — ${t.name.replace(/</g,'&lt;')}</h3>
+    <p style="color:var(--text-dim);font-size:0.85rem;margin-bottom:0.8rem">Geri alınan maç yeniden oynanmak üzere boş bir board'a düşer. Kazananın sonraki maçı başladıysa geri alınamaz.</p>
+    ${rows}
+    <div style="text-align:right;margin-top:0.8rem"><button class="secondary" data-act="close">Kapat</button></div></div>`;
+  document.body.appendChild(overlay);
+  const close = () => overlay.remove();
+  overlay.addEventListener('click', e => { if (e.target === overlay) close(); });
+  overlay.querySelector('[data-act="close"]').onclick = close;
+  overlay.querySelectorAll('button[data-mid]').forEach(btn => {
+    btn.onclick = async () => {
+      if (!await showOrgConfirm('Bu hükmen sonuç geri alınsın ve maç yeniden oynansın mı?', 'Geri Al', 'Vazgeç')) return;
+      const res = await api.post(`/api/matches/${btn.dataset.mid}/reopen`, {});
+      if (res && res.error) return toast('Hata: ' + res.error);
+      toast('Maç yeniden açıldı ✓');
+      close();
+    };
+  });
+}
+window.showReopenWalkover = showReopenWalkover;
+
 // Taslak turnuvada tur bazında leg/set — sihirbazdaki panelin aynısı, gerçek katılımcı sayısıyla
 function showRoundOvEditor(id) {
   const t = state.tournaments.find(x => x.id === id);
@@ -1968,6 +2005,7 @@ function renderTournament(t) {
           <button class="secondary" title="Online kayıt, check-in ve etkinlik ayarları" onclick="showEventSettings(${t.id})">🎫 Etkinlik</button>
           ${t.status === 'draft' ? `<button class="secondary" title="Online kayıtlar, check-in ve katılımcı onayı" onclick="showRegistrations(${t.id})">📋 Kayıtlar</button>` : ''}
           ${t.status === 'draft' && t.entries.length ? `<button class="secondary" title="Katılımcı listesi — çıkarma" onclick="showParticipants(${t.id})">👥 Katılımcılar (${t.entries.length})</button>` : ''}
+          ${t.status === 'running' && (t.matches || []).some(m => m.is_walkover && m.status === 'finished') ? `<button class="secondary" title="Yanlışlıkla 'gelmedi' basılan maçı geri aç" onclick="showReopenWalkover(${t.id})">↩ Hükmen Geri Al</button>` : ''}
           ${t.status === 'draft' && t.entries.length >= 2 ? `<button class="secondary" title="Çeyrek/yarı/final gibi turlarda farklı leg/set" onclick="showRoundOvEditor(${t.id})">🎯 Tur Leg'leri</button>` : ''}
           ${t.status === 'draft' && t.entries.length >= 4 && t.stages && t.stages[0] && t.stages[0].format === 'round_robin' ? `<button class="secondary" title="Katılımcıları sürükle-bırak ile gruplara yerleştir" onclick="showGroupEditor(${t.id})">🧩 Grupları Düzenle</button>` : ''}
           <button class="danger" onclick="deleteTournament(${t.id})">Sil</button>

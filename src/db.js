@@ -1358,6 +1358,47 @@ function setMatchEntry(id, slot, entryId) {
     db.prepare("UPDATE matches SET status = 'ready' WHERE id = ?").run(id);
   }
 }
+// Hükmen (walkover) sonucu geri al: maç tekrar 'ready' olur, kazananın ilerlediği
+// sonraki maçtan (henüz başlamamışsa) çıkarılır. Başlamış/bitmiş sonraki maç varsa reddeder.
+function reopenWalkoverMatch(matchId) {
+  const m = db.prepare('SELECT * FROM matches WHERE id = ?').get(matchId);
+  if (!m) throw new Error('Maç bulunamadı');
+  if (m.status !== 'finished') throw new Error('Maç bitmiş değil');
+  if (!m.is_walkover) throw new Error('Sadece hükmen (gelmedi) sonuçları geri alınabilir');
+  const blockers = [];
+  const checkNext = (nid, slot, entryId) => {
+    if (!nid || !entryId) return null;
+    const n = db.prepare('SELECT * FROM matches WHERE id = ?').get(nid);
+    if (!n) return null;
+    const col = slot === 1 ? 'entry1_id' : 'entry2_id';
+    if (n[col] !== entryId) return null;
+    const thrown = db.prepare('SELECT 1 FROM throws WHERE match_id = ? LIMIT 1').get(nid);
+    if (n.status === 'live' || n.status === 'finished' || thrown) blockers.push(nid);
+    return { n, col };
+  };
+  const loser = m.entry1_id === m.winner_entry_id ? m.entry2_id : m.entry1_id;
+  const w = checkNext(m.next_winner_match_id, m.next_winner_slot, m.winner_entry_id);
+  const l = checkNext(m.next_loser_match_id, m.next_loser_slot, loser);
+  if (blockers.length) throw new Error('Sonraki maç başlamış — hükmen sonuç geri alınamaz');
+  const tx = db.transaction(() => {
+    for (const x of [w, l]) {
+      if (!x) continue;
+      db.prepare(`UPDATE matches SET ${x.col} = NULL,
+                   status = CASE WHEN status = 'ready' THEN 'pending' ELSE status END,
+                   board_id = NULL WHERE id = ?`).run(x.n.id);
+      db.prepare("UPDATE boards SET current_match_id = NULL, status = 'idle' WHERE current_match_id = ?").run(x.n.id);
+    }
+    db.prepare("UPDATE boards SET current_match_id = NULL, status = 'idle' WHERE current_match_id = ?").run(m.id);
+    db.prepare(`UPDATE matches SET status = 'ready', winner_entry_id = NULL, p1_legs = 0, p2_legs = 0,
+                 p1_sets = 0, p2_sets = 0, is_walkover = 0, finished_at = NULL, board_id = NULL
+               WHERE id = ?`).run(m.id);
+    const st = db.prepare('SELECT * FROM stages WHERE id = ?').get(m.stage_id);
+    if (st && st.status === 'finished') db.prepare("UPDATE stages SET status = 'running' WHERE id = ?").run(st.id);
+    db.prepare("UPDATE tournaments SET status = 'running' WHERE id = ? AND status = 'finished'").run(m.tournament_id);
+  });
+  tx();
+  return db.prepare('SELECT * FROM matches WHERE id = ?').get(matchId);
+}
 // Bir maçı (ve bağlı throws/match_stats satırlarını) tamamen kaldır.
 // Çift elemede bye nedeniyle oluşan "ölü" loser-braket kutularını temizlemek için.
 function deleteMatch(id) {
@@ -2617,7 +2658,7 @@ module.exports = {
   playerCareerProfile, removeEntry,
   createTournament, allTournaments, publicRunningTournaments, setTournamentHiddenFromPublic, tournamentById, updateTournamentStatus, updateTournament, deleteTournament,
   addEntry, entriesForTournament, entryById, updateEntrySlots,
-  createStage, stagesForTournament, stageById, updateStageStatus, setStageConfig,
+  createStage, stagesForTournament, stageById, updateStageStatus, setStageConfig, reopenWalkoverMatch,
   createMatch, matchById, matchesForTournament, matchesForStage,
   activeMatches, pendingReadyMatches, updateMatch, setMatchEntry, deleteMatch, walkoverMatch,
   addThrow, throwsForMatch, lastThrow, deleteThrow,

@@ -1332,6 +1332,27 @@ app.post('/api/matches/:id/throw', (req, res) => {
 });
 
 // Walkover: rakip gelmedi / çekildi — dart atılmadan kazanan belirlenir
+// Hükmen (gelmedi) sonucu geri al — yanlışlıkla basıldıysa maç tekrar oynanabilir olur
+app.post('/api/matches/:id/reopen', auth.requireOrganizer, (req, res) => {
+  try {
+    const m = db.matchById(+req.params.id);
+    if (!m) return res.status(404).json({ error: 'Maç bulunamadı' });
+    const t = db.tournamentById(m.tournament_id);
+    if (!t || (t.user_id && t.user_id !== req.user.id)) return res.status(403).json({ error: 'Yetkisiz' });
+    db.reopenWalkoverMatch(m.id);
+    try { backup.triggerBackup(); } catch (_) {}
+    scheduler.assignPendingMatches(io, t.user_id || null);
+    for (const b of db.allBoards(t.user_id || null)) {
+      io.to(`board:${b.id}`).emit('board:state', { board: b, match: b.current_match_id ? db.matchById(b.current_match_id) : null });
+    }
+    io.emit('match:update', { matchId: m.id });
+    scheduleBroadcast();
+    res.json({ ok: true });
+  } catch (e) {
+    res.status(400).json({ error: e.message });
+  }
+});
+
 app.post('/api/matches/:id/walkover', (req, res) => {
   try {
     const matchId = +req.params.id;
