@@ -2414,10 +2414,12 @@ function openSessionRegistrations() {
 function sessionRegistrationsForUser(userId) {
   return db.prepare(
     `SELECT r.*, s.name AS session_name, s.session_date, s.reg_status, s.checkin_enabled,
+            s.tournament_id, t.status AS tournament_status,
             c.name AS competition_name, c.category
        FROM session_registrations r
        JOIN competition_sessions s ON s.id = r.session_id
        JOIN competitions c ON c.id = r.competition_id
+       LEFT JOIN tournaments t ON t.id = s.tournament_id
       WHERE r.user_id = ?
       ORDER BY r.id DESC`
   ).all(userId);

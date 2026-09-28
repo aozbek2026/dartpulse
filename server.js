@@ -1400,7 +1400,16 @@ io.engine.use((req, res, next) => sessionMiddleware(req, res, next));
 
 io.on('connection', (socket) => {
   const sess = socket.request && socket.request.session;
-  const uid = sess && sess.userId ? sess.userId : null;
+  let uid = sess && sess.userId ? sess.userId : null;
+  // Organizatör/yönetici olmayan giriş yapmış kullanıcı (ör. online kayıt olan oyuncu)
+  // kendi turnuvası olmadığı için izleyicide boş ekran görüyordu → herkese açık görünüm.
+  if (uid) {
+    try {
+      const u = db.userById(uid);
+      const owns = db.db.prepare('SELECT 1 FROM tournaments WHERE user_id = ? LIMIT 1').get(uid);
+      if (!u || (u.role !== 'admin' && u.organizer_status !== 'approved' && !owns)) uid = null;
+    } catch (_) { uid = null; }
+  }
   socket.data = socket.data || {};
   socket.data.userId = uid;
 

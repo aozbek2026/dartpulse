@@ -255,10 +255,11 @@ async function loadMine() {
           <div class="tn-card-top">
             <div style="min-width:0;">
               <div class="tn-title">${esc(r.tournament_name)} ${r.category ? `<span class="pill cat">${esc(r.category)}</span>` : ''}</div>
-              <div class="tn-meta">${date ? `<span>📅 ${date}</span>` : ''}</div>
+              <div class="tn-meta">${date ? `<span>📅 ${date}</span>` : ''}${tStatusText(r.tournament_status)}</div>
             </div>
             <div class="tn-actions">
               ${STATUS_PILL[r.status] || ''}
+              ${detailBtn(r.tournament_id, r.tournament_status)}
               ${['registered','waitlisted','checked_in'].includes(r.status) ? `<button class="tn-btn wd" onclick="withdrawMine(${r.tournament_id})">İptal</button>` : ''}
             </div>
           </div>
@@ -273,10 +274,11 @@ async function loadMine() {
               <div class="tn-title">${esc(r.competition_name)} — ${esc(r.session_name || 'Oturum')}
                 <span class="pill cat">SEZON</span>
                 ${r.category ? `<span class="pill cat">${esc(r.category)}</span>` : ''}</div>
-              <div class="tn-meta">${date ? `<span>📅 ${date}</span>` : ''}</div>
+              <div class="tn-meta">${date ? `<span>📅 ${date}</span>` : ''}${tStatusText(r.tournament_status)}</div>
             </div>
             <div class="tn-actions">
               ${STATUS_PILL[r.status] || ''}
+              ${detailBtn(r.tournament_id, r.tournament_status)}
               ${['registered','waitlisted','checked_in'].includes(r.status) ? `<button class="tn-btn wd" onclick="withdrawMineSession(${r.session_id})">İptal</button>` : ''}
             </div>
           </div>
@@ -284,6 +286,17 @@ async function loadMine() {
     }).join('');
     box.innerHTML = tCards + sCards;
   } catch (e) { box.innerHTML = `<div class="tn-empty">Hata: ${esc(e.message)}</div>`; }
+}
+// Turnuva başladıysa/bittiyse izleyici ekranında detay (braket, maçlar, klasman)
+function detailBtn(tid, status) {
+  if (!tid || !status || status === 'draft') return '';
+  return `<a class="tn-btn reg" style="text-decoration:none" href="/viewer.html?t=${tid}">${status === 'finished' ? '📊 Sonuçlar' : '🔴 Canlı / Detay'}</a>`;
+}
+function tStatusText(status) {
+  if (status === 'running') return '<span>🔴 Oynanıyor</span>';
+  if (status === 'finished') return '<span>✅ Tamamlandı</span>';
+  if (status === 'draft') return '<span>⏳ Braket henüz başlamadı</span>';
+  return '';
 }
 async function withdrawMine(id) {
   if (!confirm('Kaydınızı iptal etmek istediğinize emin misiniz?')) return;
