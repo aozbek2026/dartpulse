@@ -63,6 +63,7 @@ function onTourChange(val) {
   selectedTourId = (val === '' || val == null) ? null : +val;
   persistTourSelection();
   render();
+  resolveNumericTourFallback(true);
 }
 window.onTourChange = onTourChange;
 
@@ -146,7 +147,8 @@ function renderTourSelector() {
     }));
   sel.innerHTML = opts.join('');
   // Seçili turnuva artık mevcut değilse (silinmiş) Hepsi'ye düş
-  if (selectedTourId != null && !tourns.some(t => t.id === selectedTourId)) {
+  // (Başka organizatörün turnuvası public uçtan yüklenirken sıfırlama — yalnız gerçekten yoksa)
+  if (selectedTourId != null && !tourns.some(t => t.id === selectedTourId) && _pubMissing === selectedTourId) {
     selectedTourId = null;
     persistTourSelection();
   }
@@ -201,24 +203,32 @@ resolveShareToken();
 // Sayısal ?t=<id> paylaşım linki: turnuva, giriş yapmış (farklı) kullanıcının
 // socket snapshot'ında kendi user_id'sine kilitli olduğu için gelmeyebilir.
 // Bu durumda girişten bağımsız public uçtan çekip state'e merge et.
-let _numericFallbackTried = false;
-function resolveNumericTourFallback() {
-  if (shareToken) return;                 // token akışı ayrı hallediyor
-  if (selectedTourId == null) return;     // "Hepsi" seçili — gerek yok
-  if (_numericFallbackTried) return;
-  // Turnuva zaten state'te varsa yedek çözüme gerek yok
-  if ((state.tournaments || []).some(t => t.id === selectedTourId)) return;
-  _numericFallbackTried = true;
+// Başka organizatörün turnuvası socket'ten gelmez → public uçtan çekilir ve
+// canlı kalsın diye düzenli tazelenir (bitmiş turnuvada tazeleme durur).
+let _pubFetching = false, _pubLastFetch = 0, _pubMissing = null;
+function resolveNumericTourFallback(force) {
+  if (shareToken) return;
+  if (selectedTourId == null) return;
+  const inSocket = (state.tournaments || []).some(t => t.id === selectedTourId && t !== tokenTournament);
+  if (inSocket) return;
+  if (tokenTournament && tokenTournament.id === selectedTourId && tokenTournament.status === 'finished') return;
+  if (_pubFetching) return;
+  if (!force && Date.now() - _pubLastFetch < 2500) return;
+  _pubFetching = true; _pubLastFetch = Date.now();
   fetch('/api/public/tournament-by-id/' + encodeURIComponent(selectedTourId))
-    .then(r => r.ok ? r.json() : null)
+    .then(r => { if (!r.ok && r.status === 404) _pubMissing = selectedTourId; return r.ok ? r.json() : null; })
     .then(data => {
-      if (!data || data.id == null) return;
-      tokenTournament = data.tournament;  // mergeTokenTournament ile state'te kalıcı kalır
+      if (!data || data.id == null) { if (_pubMissing === selectedTourId) render(); return; }
+      // eski kopyayı state'ten çıkar, tazesini koy
+      if (tokenTournament) state.tournaments = (state.tournaments || []).filter(t => t !== tokenTournament);
+      tokenTournament = data.tournament;
       mergeTokenTournament();
       render();
     })
-    .catch(() => {});
+    .catch(() => {})
+    .finally(() => { _pubFetching = false; });
 }
+setInterval(() => { if (document.visibilityState === 'visible') resolveNumericTourFallback(); }, 4000);
 
 // Aynalanan maç güncellenince modalı yenile
 socket.on('match:update', (data) => {

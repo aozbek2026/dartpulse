@@ -2,7 +2,7 @@
 <html lang="tr">
 <head>
 <meta charset="UTF-8" />
-<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
 <title>İzleyici · Dart Core Pro</title>
 <link rel="stylesheet" href="/css/style.css" />
 <style>
@@ -146,6 +146,46 @@
     .btn-tv { padding: 0.45rem 0.65rem; }
     /* Nav / Paylaş / TV Modu / Ana sayfa: metin gizlenir, ikon kalır */
     .np-t { display: none; }
+  }
+
+  /* iOS/Android: yatay çevirince yazıların kendiliğinden büyümesini engelle */
+  html { -webkit-text-size-adjust: 100%; text-size-adjust: 100%; }
+  /* Çentikli telefonlar (yatay): içerik çentiğin altına girmesin */
+  .top-bar, .content {
+    padding-left: max(0.7rem, env(safe-area-inset-left));
+    padding-right: max(0.7rem, env(safe-area-inset-right));
+  }
+  @media (min-width: 641px) and (min-height: 501px) {
+    .top-bar { padding-left: max(1.5rem, env(safe-area-inset-left)); padding-right: max(1.5rem, env(safe-area-inset-right)); }
+    .content { padding-left: max(1.5rem, env(safe-area-inset-left)); padding-right: max(1.5rem, env(safe-area-inset-right)); }
+  }
+
+  /* Telefon dik: üst bar 3 satır yerine 2 satır —
+     1. satır: turnuva seçimi + paylaş + TV + ana sayfa, 2. satır: sekmeler */
+  @media (max-width: 640px) {
+    .top-bar { padding-top: 0.4rem; padding-bottom: 0.4rem; gap: 0.4rem; }
+    .tour-picker { flex: 1 1 0 !important; order: 1; min-width: 0; }
+    .top-bar-right { order: 2; flex: 0 0 auto; }
+    .top-bar-right .btn { padding: 0.4rem 0.6rem; }
+    .nav-pills { order: 3; }
+    .nav-pills a { padding: 0.35rem 0; font-size: 1.05rem; }
+    #tour-select, #share-btn { padding: 0.35rem 0.5rem !important; }
+    section.panel { scroll-margin-top: 100px; }
+  }
+
+  /* Telefon yatay (kısa ekran): her şey TEK satır, sadece ikonlar */
+  @media (max-height: 500px) and (orientation: landscape) {
+    .top-bar { padding-top: 0.3rem; padding-bottom: 0.3rem; gap: 0.5rem; flex-wrap: nowrap; }
+    .top-bar h2, .tour-picker label, .np-t { display: none; }
+    .tour-picker { flex: 0 1 220px; min-width: 0; }
+    #tour-select { min-width: 0 !important; width: 100%; padding: 0.3rem 0.5rem !important; }
+    #share-btn { padding: 0.3rem 0.5rem !important; }
+    .nav-pills { flex: 1 1 auto; flex-wrap: nowrap; gap: 0.3rem; min-width: 0; }
+    .nav-pills a { flex: 1; text-align: center; padding: 0.3rem 0; font-size: 1rem; }
+    .top-bar-right { gap: 0.3rem; flex: 0 0 auto; }
+    .btn-tv, .top-bar-right .btn { padding: 0.3rem 0.55rem; }
+    .content { padding-top: 0.8rem; }
+    section.panel { scroll-margin-top: 50px; margin-bottom: 1.2rem; }
   }
 
   /* Mobil: geniş tablolar sayfayı yatay kaydırmasın — kendi kutusunda kaysın */
@@ -342,17 +382,9 @@
   const tParam = new URLSearchParams(location.search).get('t');
   if (tParam) return; // scripts aşağıda normal yüklenecek
 
-  // Giriş var mı?
-  fetch('/auth/me', { credentials: 'same-origin' })
-    .then(r => r.json())
-    .then(d => {
-      if (d && d.user) return; // giriş var → normal viewer
-      // Giriş yok → public turnuva listesini çek + otomatik yenilemeyi başlat
-      return refreshPicker().then(startAutoRefresh);
-    })
-    .catch(() => {
-      refreshPicker().then(startAutoRefresh).catch(() => showPicker([]));
-    });
+  // Giriş durumundan bağımsız: herkes (ziyaretçi, oyuncu, organizatör) aynı
+  // herkese açık turnuva listesini görür, karttan seçince izleyici açılır.
+  refreshPicker().then(startAutoRefresh).catch(() => showPicker([]));
 })();
 </script>
 <script src="/socket.io/socket.io.js"></script>
