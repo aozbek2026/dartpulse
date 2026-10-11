@@ -1043,17 +1043,26 @@ function playerCareerProfile(accountUserId) {
   if (!playerIds.length) return empty;
 
   const ph = playerIds.map(() => '?').join(',');
-  // İstatistik açık turnuvalardaki entry'ler (tekli; p1 = oyuncu)
+  // Profile dahil olan turnuvalar (online kayıtla katılınanlar):
+  //  (a) organizatör turnuvası: online kayıt açık + istatistik açık
+  //  (b) sezon/lig oturumu: kullanıcı oturuma online kayıt olup onaylanmış
+  // Tekli + çiftler (player1 veya player2) dahil.
   const entries = db.prepare(
-    `SELECT e.id AS entry_id, e.tournament_id, e.player1_id,
+    `SELECT DISTINCT e.id AS entry_id, e.tournament_id, e.player1_id,
             t.name AS tournament_name, t.status AS tournament_status, t.game_mode,
-            es.event_date, es.category
+            COALESCE(es.event_date, cs.session_date) AS event_date, es.category
        FROM entries e
        JOIN tournaments t ON t.id = e.tournament_id
-       JOIN tournament_event_settings es ON es.tournament_id = t.id
-      WHERE es.stats_to_profile = 1 AND es.reg_enabled = 1
-        AND e.player1_id IN (${ph})`
-  ).all(...playerIds);
+       LEFT JOIN tournament_event_settings es ON es.tournament_id = t.id
+       LEFT JOIN competition_sessions cs ON cs.tournament_id = t.id
+      WHERE (e.player1_id IN (${ph}) OR e.player2_id IN (${ph}))
+        AND (
+          (es.stats_to_profile = 1 AND es.reg_enabled = 1)
+          OR EXISTS (SELECT 1 FROM session_registrations sr
+                      WHERE sr.session_id = cs.id AND sr.user_id = ?
+                        AND sr.player_id IS NOT NULL)
+        )`
+  ).all(...playerIds, ...playerIds, accountUserId);
   if (!entries.length) return empty;
 
   const tournaments = [];
