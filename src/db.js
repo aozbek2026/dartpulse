@@ -1142,9 +1142,22 @@ function publicRunningTournaments() {
       )
     ORDER BY status DESC, id DESC
   `).all();
+  // Liste asla boş kalmasın: oynanan/son 7 gün yoksa en son biten turnuvaları göster
+  let list = rows;
+  if (!list.length) {
+    list = db.prepare(`
+      SELECT id, name, format, game_mode, legs_to_win, sets_to_win, status, finished_at
+      FROM tournaments
+      WHERE name NOT LIKE '__team_pool_%'
+        AND hidden_from_public = 0
+        AND status IN ('running','finished')
+      ORDER BY COALESCE(finished_at, created_at) DESC, id DESC
+      LIMIT 12
+    `).all();
+  }
   const countStmt = db.prepare('SELECT COUNT(*) AS c FROM entries WHERE tournament_id = ?');
   const liveStmt  = db.prepare("SELECT COUNT(*) AS c FROM matches WHERE tournament_id = ? AND status = 'live'");
-  return rows.map(t => ({
+  return list.map(t => ({
     ...t,
     player_count: (countStmt.get(t.id) || {c:0}).c,
     live_match_count: (liveStmt.get(t.id) || {c:0}).c,
