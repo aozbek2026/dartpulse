@@ -1127,33 +1127,24 @@ function allTournaments(userId = null) {
 // Herkese açık özet — izleyici seçim ekranı için
 // Running: her zaman göster. Finished: bitti + 7 gün içi + gizlenmemiş.
 function publicRunningTournaments() {
-  const rows = db.prepare(`
-    SELECT id, name, format, game_mode, legs_to_win, sets_to_win, status, finished_at
-    FROM tournaments
-    WHERE name NOT LIKE '__team_pool_%'
-      AND hidden_from_public = 0
-      AND (
-        status = 'running'
-        OR (
-          status = 'finished'
-          AND finished_at IS NOT NULL
-          AND (julianday('now') - julianday(finished_at)) <= 7
-        )
-      )
-    ORDER BY status DESC, id DESC
-  `).all();
-  // Liste asla boş kalmasın: oynanan/son 7 gün yoksa en son biten turnuvaları göster
-  let list = rows;
+  // Not: tournaments tablosunda format/finished_at kolonu YOK — format stages'tan,
+  // bitiş zamanı maçların en son finished_at'inden türetilir.
+  const base = `
+    SELECT t.id, t.name, t.game_mode, t.legs_to_win, t.sets_to_win, t.status, t.created_at,
+      (SELECT s.format FROM stages s WHERE s.tournament_id = t.id ORDER BY s.id LIMIT 1) AS format,
+      (SELECT MAX(m.finished_at) FROM matches m WHERE m.tournament_id = t.id) AS finished_at
+    FROM tournaments t
+    WHERE t.name NOT LIKE '__team_pool_%'
+      AND COALESCE(t.hidden_from_public, 0) = 0`;
+  let list = db.prepare(`SELECT * FROM (${base}) x
+    WHERE status IN ('running','draft')
+       OR (status = 'finished'
+           AND (julianday('now') - julianday(COALESCE(finished_at, created_at))) <= 7)
+    ORDER BY CASE status WHEN 'running' THEN 0 WHEN 'draft' THEN 1 ELSE 2 END, id DESC`).all();
+  // Liste asla boş kalmasın: hiçbiri yoksa en son biten turnuvalar
   if (!list.length) {
-    list = db.prepare(`
-      SELECT id, name, format, game_mode, legs_to_win, sets_to_win, status, finished_at
-      FROM tournaments
-      WHERE name NOT LIKE '__team_pool_%'
-        AND hidden_from_public = 0
-        AND status IN ('running','finished')
-      ORDER BY COALESCE(finished_at, created_at) DESC, id DESC
-      LIMIT 12
-    `).all();
+    list = db.prepare(`SELECT * FROM (${base}) x WHERE status = 'finished'
+      ORDER BY COALESCE(finished_at, created_at) DESC, id DESC LIMIT 12`).all();
   }
   const countStmt = db.prepare('SELECT COUNT(*) AS c FROM entries WHERE tournament_id = ?');
   const liveStmt  = db.prepare("SELECT COUNT(*) AS c FROM matches WHERE tournament_id = ? AND status = 'live'");
@@ -1162,6 +1153,17 @@ function publicRunningTournaments() {
     player_count: (countStmt.get(t.id) || {c:0}).c,
     live_match_count: (liveStmt.get(t.id) || {c:0}).c,
   }));
+}
+
+// Yedek: yalnız kesin var olan kolonlarla en basit liste (ana sorgu patlarsa)
+function publicTournamentsFallback() {
+  return db.prepare(`
+    SELECT id, name, game_mode, legs_to_win, sets_to_win, status
+    FROM tournaments
+    WHERE name NOT LIKE '__team_pool_%'
+    ORDER BY CASE status WHEN 'running' THEN 0 WHEN 'draft' THEN 1 ELSE 2 END, id DESC
+    LIMIT 30
+  `).all();
 }
 
 function setTournamentHiddenFromPublic(id, userId) {
@@ -2678,7 +2680,7 @@ module.exports = {
   createRegistration, withdrawRegistration, registrationsForUser, upcomingTournaments,
   registrationById, setRegistrationStatus, playerByAccountUser, confirmRegistrations, setUserName, syncAccountPlayerNames,
   playerCareerProfile, removeEntry,
-  createTournament, allTournaments, publicRunningTournaments, setTournamentHiddenFromPublic, tournamentById, updateTournamentStatus, updateTournament, deleteTournament,
+  createTournament, allTournaments, publicRunningTournaments, publicTournamentsFallback, setTournamentHiddenFromPublic, tournamentById, updateTournamentStatus, updateTournament, deleteTournament,
   addEntry, entriesForTournament, entryById, updateEntrySlots,
   createStage, stagesForTournament, stageById, updateStageStatus, setStageConfig, reopenWalkoverMatch,
   createMatch, matchById, matchesForTournament, matchesForStage,

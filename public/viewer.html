@@ -360,11 +360,20 @@
   }
 
   let pickerTimer = null;
+  let _pickerOk = false;
   function refreshPicker() {
     return fetch('/api/tournaments/public')
-      .then(r => r.ok ? r.json() : [])
-      .then(list => showPicker(list))
-      .catch(() => {});
+      .then(r => { if (!r.ok) throw new Error('HTTP ' + r.status); return r.json(); })
+      .then(list => { _pickerOk = true; showPicker(list); })
+      .catch(() => {
+        // Sunucuya ulaşılamadı: "turnuva yok" DEME, birazdan tekrar dene
+        if (!_pickerOk) {
+          document.querySelector('.viewer').style.display = 'none';
+          document.getElementById('tour-picker-screen').classList.add('show');
+          document.getElementById('tp-grid').innerHTML = '<div class="tp-empty" style="grid-column:1/-1"><div class="ico">⏳</div><h3>Turnuvalar yükleniyor…</h3><p>Sunucuya bağlanılıyor, birkaç saniye içinde tekrar denenecek.</p></div>';
+        }
+        setTimeout(refreshPicker, 5000);
+      });
   }
   function startAutoRefresh() {
     if (pickerTimer) return;

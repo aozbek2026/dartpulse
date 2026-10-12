@@ -503,7 +503,18 @@ app.get('/api/tournaments', (req, res) => {
 
 // Herkese açık — running + son 7 gün içi finished turnuvalar
 app.get('/api/tournaments/public', (req, res) => {
-  res.json(db.publicRunningTournaments());
+  // Bu uç ASLA hata dönmemeli: izleyici ekranı her koşulda turnuvaları görmeli.
+  try {
+    return res.json(db.publicRunningTournaments());
+  } catch (e) {
+    console.error('GET /api/tournaments/public (ana sorgu):', e.message);
+  }
+  try {
+    return res.json(db.publicTournamentsFallback());
+  } catch (e) {
+    console.error('GET /api/tournaments/public (yedek sorgu):', e.message);
+    return res.json([]);
+  }
 });
 
 // Organizatör: turnuvayı izleyici listesinden gizle
