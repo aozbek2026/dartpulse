@@ -70,9 +70,9 @@ window.toast = (msg, ms = 2500) => {
 
 window.entryLabel = (entry) => {
   if (!entry) return '—';
-  const p1 = entry.player1?.nickname || entry.player1?.name || '?';
+  const p1 = (entry.player1 && (entry.player1.nickname || entry.player1.name)) || '?';
   if (entry.player2) {
-    const p2 = entry.player2?.nickname || entry.player2?.name || '?';
+    const p2 = (entry.player2 && (entry.player2.nickname || entry.player2.name)) || '?';
     return `${p1} / ${p2}`;
   }
   return p1;
@@ -212,7 +212,7 @@ window.formatLabel = (f) => ({
 
     const logoutBtn = box.querySelector('#dcp-um-logout');
     logoutBtn.addEventListener('click', async () => {
-      try { await fetch('/auth/logout', { method: 'POST', credentials: 'same-origin' }); } catch {}
+      try { await fetch('/auth/logout', { method: 'POST', credentials: 'same-origin' }); } catch (_e) {}
       location.href = '/';
     });
 
@@ -232,7 +232,7 @@ window.formatLabel = (f) => ({
           alert(d.message || 'Başvurunuz alındı.');
           applyBtn.outerHTML = `<button class="dcp-um-item disabled" data-locked="1">
             <span class="ico">🎫</span><span>Başvurunuz değerlendirmede</span></button>`;
-        } catch { alert('Başvuru gönderilemedi, bağlantınızı kontrol edin.'); }
+        } catch (_e) { alert('Başvuru gönderilemedi, bağlantınızı kontrol edin.'); }
       });
     }
   }

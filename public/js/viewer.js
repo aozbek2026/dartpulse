@@ -30,7 +30,7 @@ function readInitialTourSelection() {
       shareToken = v.trim();
       return null;
     }
-  } catch {}
+  } catch (_e) {}
   // 2) Sonra localStorage
   try {
     const v = localStorage.getItem('viewer.selectedTourId');
@@ -38,7 +38,7 @@ function readInitialTourSelection() {
       const n = +v;
       if (!isNaN(n)) return n;
     }
-  } catch {}
+  } catch (_e) {}
   return null;
 }
 
@@ -51,11 +51,11 @@ function persistTourSelection() {
     if (selectedTourId == null) url.searchParams.delete('t');
     else url.searchParams.set('t', String(selectedTourId));
     window.history.replaceState({}, '', url.toString());
-  } catch {}
+  } catch (_e) {}
   try {
     if (selectedTourId == null) localStorage.removeItem('viewer.selectedTourId');
     else localStorage.setItem('viewer.selectedTourId', String(selectedTourId));
-  } catch {}
+  } catch (_e) {}
 }
 
 // Dropdown change handler (HTML'den çağrılıyor)
@@ -101,7 +101,7 @@ function fallbackCopy(text, done) {
     const ok = document.execCommand('copy');
     ta.remove();
     done(ok);
-  } catch {
+  } catch (_e) {
     done(false);
     window.prompt('Linki kopyalayın:', text);
   }
@@ -138,7 +138,7 @@ function renderTourSelector() {
   if (!sel) return;
   // Draft (taslak) turnuvaları seçeneklerden hariç tut
   const tourns = (state.tournaments || []).filter(t => t.status !== 'draft');
-  const order = (s) => ({ live: 0, running: 0, ready: 1, finished: 2 }[s] ?? 3);
+  const order = (s) => { const v = { live: 0, running: 0, ready: 1, finished: 2 }[s]; return v == null ? 3 : v; };
   tourns.sort((a, b) => order(a.status) - order(b.status) || (b.id - a.id));
   const opts = [`<option value="">Hepsi (${tourns.length})</option>`]
     .concat(tourns.map(t => {
@@ -163,7 +163,7 @@ function escapeHtml(s) {
 }
 
 function parseCfg(json) {
-  try { return json ? JSON.parse(json) : {}; } catch { return {}; }
+  try { return json ? JSON.parse(json) : {}; } catch (_e) { return {}; }
 }
 
 socket.on('state', (s) => {
@@ -337,7 +337,7 @@ function buildGroupStandings(t, stageMatches) {
     const rows = Object.values(stats).map(s => ({
       ...s,
       leg_diff: s.legs_for - s.legs_against,
-      average_3dart: +avg3Map[s.entry?.id] || 0,
+      average_3dart: +avg3Map[s.entry && s.entry.id] || 0,
     }));
     // Eşitlik: kazanılan maç → alınan leg (legs_for) → 3-ok ort. → head-to-head
     rows.sort((a, b) =>
@@ -425,8 +425,8 @@ function renderLive() {
                 <div style="font-weight: 600; ${m.current_turn === 2 && m.status === 'live' ? 'color: var(--accent);' : ''}">${entryLabel(m.entry2)}</div>
               </div>
               <div style="text-align: right;">
-                <div style="font-variant-numeric: tabular-nums; font-size: 1.2rem; font-weight: 700;">${m.p1_leg_score ?? '-'}</div>
-                <div style="font-variant-numeric: tabular-nums; font-size: 1.2rem; font-weight: 700;">${m.p2_leg_score ?? '-'}</div>
+                <div style="font-variant-numeric: tabular-nums; font-size: 1.2rem; font-weight: 700;">${m.p1_leg_score != null ? m.p1_leg_score : '-'}</div>
+                <div style="font-variant-numeric: tabular-nums; font-size: 1.2rem; font-weight: 700;">${m.p2_leg_score != null ? m.p2_leg_score : '-'}</div>
               </div>
               <div style="text-align: right; min-width: 80px;">
                 <div style="color: var(--text-dim); font-size: 0.75rem;">Set-Leg</div>
@@ -637,7 +637,7 @@ function renderElim(stage, matches) {
     const [ba, ra] = a.split('-'); const [bb, rb] = b.split('-');
     const order = { winners: 0, losers: 1, final: 2 };
     // NOT: `|| 99` kullanma — winners=0 falsy olduğu için 99 olur ve Final sola kaçar.
-    return ((order[ba] ?? 99) - (order[bb] ?? 99)) || (+ra - +rb);
+    return (((order[ba] != null) ? order[ba] : 99) - ((order[bb] != null) ? order[bb] : 99)) || (+ra - +rb);
   });
   const allKeys = sortKeys(Object.keys(rounds));
   const isDoubleElim = stage.format === 'double_elim';
@@ -1068,7 +1068,7 @@ function closeWatchModal() {
   watchFlashKeys = new Set();
   watchPrevScores = {};
   watchLastThrows = {};
-  document.getElementById('watch-modal')?.remove();
+  { const _wm = document.getElementById('watch-modal'); if (_wm) _wm.remove(); }
   document.removeEventListener('keydown', watchEscHandler, true);
 }
 
@@ -1089,8 +1089,8 @@ async function refreshWatchModal(matchId) {
     const showSets = (m.sets_to_win || 1) > 1;
     const stats1 = (m.stats || []).find(s => s.player_slot === 1) || {};
     const stats2 = (m.stats || []).find(s => s.player_slot === 2) || {};
-    const rem1 = m.p1_leg_score ?? startScore(m);
-    const rem2 = m.p2_leg_score ?? startScore(m);
+    const rem1 = (m.p1_leg_score != null ? m.p1_leg_score : startScore(m));
+    const rem2 = (m.p2_leg_score != null ? m.p2_leg_score : startScore(m));
     const setLeg = showSets
       ? `Set: ${m.p1_sets}-${m.p2_sets} · Leg: ${m.p1_legs}-${m.p2_legs}`
       : `Leg: ${m.p1_legs}-${m.p2_legs}`;
@@ -1150,7 +1150,7 @@ function watchPlayerCard(name, remaining, stats, active, legs, sets, showSets, f
 }
 
 function startScore(m) {
-  const mode = m?.game_mode;
+  const mode = m && m.game_mode;
   if (mode === '501') return 501;
   if (mode === '701') return 701;
   if (mode === '1001') return 1001;

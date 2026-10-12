@@ -11,7 +11,7 @@
     .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
 
   // entryLabel common.js'ten gelir; yoksa basit fallback.
-  const lbl = (entry) => (window.entryLabel ? window.entryLabel(entry) : (entry?.player1?.name || '—'));
+  const lbl = (entry) => (window.entryLabel ? window.entryLabel(entry) : ((entry && entry.player1 && entry.player1.name) || '—'));
 
   function openPrintWindow(docHtml) {
     const w = window.open('', '_blank');
@@ -99,8 +99,8 @@
     const w1 = m.winner_entry_id && m.winner_entry_id === m.entry1_id;
     const w2 = m.winner_entry_id && m.winner_entry_id === m.entry2_id;
     const hasSets = (m.p1_sets > 0 || m.p2_sets > 0);
-    const s1 = m.entry1_id ? (hasSets ? `${m.p1_sets}(${m.p1_legs})` : `${m.p1_legs ?? ''}`) : '';
-    const s2 = m.entry2_id ? (hasSets ? `${m.p2_sets}(${m.p2_legs})` : `${m.p2_legs ?? ''}`) : '';
+    const s1 = m.entry1_id ? (hasSets ? `${m.p1_sets}(${m.p1_legs})` : `${m.p1_legs != null ? m.p1_legs : ''}`) : '';
+    const s2 = m.entry2_id ? (hasSets ? `${m.p2_sets}(${m.p2_legs})` : `${m.p2_legs != null ? m.p2_legs : ''}`) : '';
     const row = (name, score, win) =>
       `<div style="display:flex;justify-content:space-between;gap:4px;padding:3px 6px;
         ${win ? 'font-weight:700;background:#fff0f3;' : ''}border-bottom:1px solid #eee;">

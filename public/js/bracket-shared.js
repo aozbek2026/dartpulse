@@ -159,7 +159,7 @@
       : [{ label: '', cols: columns }];
     if (split.length <= 1) return renderElimBracketSVG(columns, matchFn);
     const id = 'bt' + (++_btSeq);
-    let active = _btSelected[id] ?? 0;
+    let active = _btSelected[id] != null ? _btSelected[id] : 0;
     if (active >= split.length) active = 0; // dilim sayısı azaldıysa güvenli düş
     _btSelected[id] = active;
     const bar = split.map((p, i) =>
