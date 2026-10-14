@@ -61,7 +61,7 @@
 
 <script>
 const esc = (s) => String(s == null ? '' : s).replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
-async function api(url) {
+async function profilApi(url) {
   const r = await fetch(url, { credentials: 'same-origin' });
   const d = await r.json().catch(() => ({}));
   if (!r.ok) throw new Error(d.error || 'İşlem başarısız');
@@ -109,10 +109,10 @@ function render(data) {
 
 (async function init() {
   let me = null;
-  try { me = (await api('/auth/me')).user; } catch {}
+  try { me = (await profilApi('/auth/me')).user; } catch {}
   if (!me) { location.href = '/login.html'; return; }
   try {
-    const data = await api('/api/my-profile');
+    const data = await profilApi('/api/my-profile');
     document.getElementById('pf-loading').hidden = true;
     document.getElementById('pf-main').hidden = false;
     render(data);
