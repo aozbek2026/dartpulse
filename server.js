@@ -823,6 +823,56 @@ app.get('/api/my-session-registrations', auth.requireAuth, (req, res) => {
 });
 
 // Katılımcı kariyer profili (Dilim G) — yalnızca istatistik açık turnuvalar
+// Anasayfa "Merhaba" şeridi için tek, hafif özet (Ekim 2026)
+app.get('/api/home-summary', auth.requireAuth, (req, res) => {
+  try {
+    const u = req.user;
+    const isOrg = u.role === 'admin' || u.organizer_status === 'approved';
+    const out = { is_organizer: isOrg, organizer_status: u.organizer_status || 'none', tournaments: [], registrations: [], open: [], profile: null };
+    if (isOrg) {
+      const rows = db.db.prepare(
+        `SELECT t.*, es.reg_enabled, es.event_date, es.capacity,
+           (SELECT COUNT(*) FROM matches m WHERE m.tournament_id = t.id AND (m.status != 'finished' OR (m.entry1_id IS NOT NULL AND m.entry2_id IS NOT NULL))) AS total_matches,
+           (SELECT COUNT(*) FROM matches m WHERE m.tournament_id = t.id AND m.status = 'finished' AND m.entry1_id IS NOT NULL AND m.entry2_id IS NOT NULL) AS done_matches,
+           (SELECT COUNT(*) FROM boards b WHERE b.tournament_id = t.id) AS boards,
+           (SELECT COUNT(*) FROM entries e WHERE e.tournament_id = t.id) AS entries
+         FROM tournaments t LEFT JOIN tournament_event_settings es ON es.tournament_id = t.id
+         WHERE t.user_id = ? AND t.status != 'finished' AND t.name NOT LIKE '__team_pool_%'
+         ORDER BY CASE t.status WHEN 'running' THEN 0 ELSE 1 END, t.id DESC LIMIT 12`).all(u.id);
+      out.tournaments = rows.map(t => {
+        let hold = false; try { hold = !!(t.config_json && JSON.parse(t.config_json).dispatch_hold); } catch (_) {}
+        const kind = t.status === 'running' ? (hold ? 'hold' : 'live') : (t.reg_enabled ? 'reg' : 'draft');
+        const o = { id: t.id, name: t.name, kind, done: t.done_matches, total: t.total_matches, boards: t.boards,
+          entries: t.entries, event_date: t.event_date, capacity: t.capacity };
+        if (kind === 'reg') {
+          o.reg_count = db.countRegistrations(t.id, ['registered', 'checked_in', 'confirmed']);
+          o.wait_count = db.countRegistrations(t.id, ['waitlisted']);
+        }
+        return o;
+      });
+    }
+    // Katılımcı tarafı: aktif kayıtlarım (bitmemiş turnuvalar)
+    const regs = db.registrationsForUser(u.id).filter(r => r.tournament_status !== 'finished' && !['withdrawn', 'no_show'].includes(r.status));
+    out.registrations = regs.map(r => {
+      let pos = null;
+      if (r.status === 'waitlisted') {
+        pos = db.db.prepare(`SELECT COUNT(*) AS n FROM registrations WHERE tournament_id = ? AND status = 'waitlisted'
+                               AND (reg_order < ? OR (reg_order = ? AND id < ?))`).get(r.tournament_id, r.reg_order, r.reg_order, r.id).n + 1;
+      }
+      return { tournament_id: r.tournament_id, name: r.tournament_name, status: r.status, event_date: r.event_date, wait_pos: pos };
+    });
+    const mine = new Set(out.registrations.map(r => r.tournament_id));
+    out.open = db.upcomingTournaments().filter(t => t.status === 'draft' && !mine.has(t.id)
+      && (!t.capacity || t.active_count < t.capacity)).slice(0, 3)
+      .map(t => ({ id: t.id, name: t.name, event_date: t.event_date, active: t.active_count, capacity: t.capacity, owner: t.owner_name }));
+    try { const pr = db.playerCareerProfile(u.id); out.profile = pr && pr.totals; } catch (_) {}
+    res.json(out);
+  } catch (e) {
+    console.error('GET /api/home-summary:', e);
+    res.status(500).json({ error: e.message });
+  }
+});
+
 app.get('/api/my-profile', auth.requireAuth, (req, res) => {
   res.json(db.playerCareerProfile(req.user.id));
 });

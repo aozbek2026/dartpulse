@@ -1645,3 +1645,10 @@ Kullanıcı onayıyla (korumalı modüller). `scorer.html` kapsam dışı.
 
 ## Organizatör görünüm yenilemesi (Ekim 2026)
 `organizer.js` `renderTournament`: kart başına aşama rozeti (Taslak/Beklemede/Canlı/Bitti) + ilerleme çubuğu + **tek ana buton** (Braketi Kur → Tabletlere Gönder → Kontrol Paneli → Turnuvayı Bitir/Sonuçlar) + gruplu "⋯" menü (Hazırlık / Turnuva / Paylaş / Düzeltme / Sil). Menü: `ov2ToggleMenu`/`ov2CloseMenus`, açık menü `window._ov2Open` ile socket yeniden çiziminde korunur. Kontrol Paneli sekmeli (`window._dashTab`: boards/matches/rounds/players), board kartları + maç satırlarında "⋯". Stiller `ov2Styles()` ile JS'ten enjekte (`.ov2-*`), organizer.html değişmedi. Yeni buton eklerken karta değil "⋯" menüsündeki uygun gruba ekle.
+
+## Ortak kullanıcı menüsü — `public/js/user-menu.js` (Ekim 2026)
+Avatar + açılır menü artık TEK dosyada. `common.js` bu dosyayı otomatik yükler (sağ üstte sabit); `index.html` doğrudan yükler ve nav içindeki `#dcp-um-mount`'a yerleştirir (`.dcp-um.inline`). Anasayfanın eski `hp-user` menüsü ve JS'i kaldırıldı (CSS kalıntısı zararsız). Menü öğesi eklemek/değiştirmek için yalnız `user-menu.js`'i düzenle. Not: menü yalnız Türkçe (anasayfa EN modunda da TR görünür).
+
+## Anasayfa yenilemesi — "Merhaba" şeridi (Ekim 2026)
+- `GET /api/home-summary` (requireAuth): organizatörse kendi bitmemiş turnuvaları (`kind`: live/hold/reg/draft + maç/board/kayıt sayaçları), herkes için aktif kayıtları (yedekse `wait_pos`), kayıt olmadığı açık turnuvalar (≤3), `playerCareerProfile` toplamları.
+- `index.html`: `#hp-mine` şeridi (`loadMine`, `applyAuth` içinden), organizatör/katılımcı için farklı hızlı geçişler. Hero'da tek ana buton + metin bağlantılar (`.hp-seclinks`); organizatör olmayanın ana butonu "Turnuvalara Göz At". Oyun modları 6/3'lük ızgara. Önizleme braketi grid ile hizalı (`.hp-pv-grid`, her maç beslendiği iki maçın ortasında). Şerit metinleri yalnız TR.

@@ -428,9 +428,9 @@
 
   .hp-modes {
     display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+    grid-template-columns: repeat(6, 1fr);
     gap: 0.75rem;
-    max-width: 820px;
+    max-width: 920px;
     margin: 0 auto;
   }
   .hp-mode {
@@ -542,6 +542,50 @@
     .hp-user-name-short { display: none; }
     .hp-user-trigger { padding-right: 0.55rem; }
   }
+
+  /* ── Ekim 2026: sade hero + Merhaba şeridi ── */
+  .hp-seclinks { display:flex; gap:1.1rem; align-items:center; flex-wrap:wrap; font-size:0.92rem; }
+  .hp-seclinks a { color: var(--text-dim); }
+  .hp-seclinks a::after { content: " →"; }
+  .hp-seclinks a:hover { color: var(--text); }
+  .hp-cta { align-items: center; gap: 1.2rem; }
+  .hp-pv-grid { display:grid !important; grid-template-columns:1fr 1fr 1fr; grid-template-rows:repeat(8,26px); column-gap:12px; }
+  .hp-pv-m { align-self:center; margin:3px 0; border-radius:8px; overflow:hidden; }
+  .hp-pv-m .hp-pv-row { margin:0; border-radius:0; }
+  .hp-pv-m.live { outline:1px solid var(--accent); }
+  .hp-mine { max-width:1080px; margin:1.6rem auto 0; padding:1.2rem 1.25rem; background:var(--surface); border:1px solid var(--border); border-radius:16px; width:calc(100% - 2rem); }
+  .hp-mine-h { display:flex; align-items:center; gap:0.8rem; flex-wrap:wrap; }
+  .hp-mine-h h2 { margin:0; font-size:1.25rem; flex:1; }
+  .hp-quick { display:flex; gap:0.5rem; flex-wrap:wrap; }
+  .hp-q { padding:0.5rem 0.85rem; border-radius:10px; border:1px solid var(--border); font-size:0.85rem; font-weight:600; color:var(--text); background:transparent; cursor:pointer; font-family:inherit; }
+  .hp-q:hover { border-color: var(--accent-2); }
+  .hp-q.p { background: var(--hp-grad); border-color: transparent; color:#fff; }
+  .hp-cards { display:grid; grid-template-columns:repeat(auto-fill,minmax(240px,1fr)); gap:0.75rem; margin-top:1rem; }
+  .hp-tc { display:block; background:var(--surface-2); border-radius:12px; padding:0.85rem 0.95rem; border-left:4px solid #3a4155; color:var(--text); }
+  .hp-tc:hover { filter:brightness(1.08); }
+  .hp-tc .s { font-size:0.7rem; font-weight:700; letter-spacing:.06em; color:var(--text-dim); }
+  .hp-tc .n { font-weight:700; margin:0.2rem 0 0.1rem; }
+  .hp-tc .m { color:var(--text-dim); font-size:0.82rem; }
+  .hp-tc .go { margin-top:0.55rem; font-size:0.82rem; font-weight:700; color:var(--accent-2); }
+  .hp-tc .bar { height:5px; background:rgba(255,255,255,.08); border-radius:5px; margin-top:0.6rem; overflow:hidden; }
+  .hp-tc .bar i { display:block; height:100%; background:var(--accent); }
+  .hp-tc.live { border-color:var(--accent); } .hp-tc.live .s { color:var(--accent); }
+  .hp-tc.hold { border-color:#ffbe00; } .hp-tc.hold .s { color:#ffbe00; }
+  .hp-tc.reg, .hp-tc.open { border-color:var(--accent-2); } .hp-tc.reg .s, .hp-tc.open .s { color:var(--accent-2); }
+  .hp-tc.me { border-color:#22c55e; } .hp-tc.me .s { color:#22c55e; }
+  .hp-tc.wait { border-color:#ffbe00; } .hp-tc.wait .s { color:#ffbe00; }
+  .hp-tc.stats .row { display:flex; gap:1rem; margin-top:0.35rem; flex-wrap:wrap; }
+  .hp-tc.stats .row div b { display:block; font-size:1.1rem; }
+  .hp-tc.stats .row div small { color:var(--text-dim); font-size:0.72rem; }
+  @media (max-width: 800px) { .hp-modes { grid-template-columns: repeat(3, 1fr); } }
+  /* Mobil nav: marka tek satır, sıkışmasın */
+  .hp-brand { white-space: nowrap; }
+  @media (max-width: 480px) {
+    .hp-nav { padding-left: 12px; padding-right: 12px; }
+    .hp-nav-right { gap: 6px; }
+    .hp-brand { font-size: 0.95rem; }
+    .hp-nav-right a.hp-nav-link[href="/turnuvalar.html"] { display: none; }
+  }
 </style>
 </head>
 <body>
@@ -556,43 +600,11 @@
     <a class="hp-nav-link" href="/turnuvalar.html">Turnuvalar</a>
     <a class="hp-nav-link" href="/dartcorepronedir" id="hp-about" data-i18n="nav_about">DartCorePro Nedir?</a>
     <a id="hp-auth-link" class="hp-nav-link" href="/login.html" data-i18n="nav_login">Giriş Yap</a>
-    <div class="hp-user" id="hp-user">
-      <button class="hp-user-trigger" onclick="toggleUserMenu(event)">
-        <span class="hp-user-avatar" id="hp-user-avatar">·</span>
-        <span class="hp-user-name-short" id="hp-user-name-short">—</span>
-        <span class="hp-user-arrow">▾</span>
-      </button>
-      <div class="hp-user-dropdown" onclick="event.stopPropagation()">
-        <div class="hp-user-info">
-          <div class="full-name" id="hp-user-fullname">—</div>
-          <div class="email" id="hp-user-email">—</div>
-        </div>
-        <a class="hp-user-item" href="/organizer.html">
-          <span class="ico">🏆</span><span data-i18n="menu_panel">Panel</span>
-        </a>
-        <a class="hp-user-item" href="/board.html">
-          <span class="ico">📲</span><span data-i18n="menu_boards">Board'lar</span>
-        </a>
-        <a class="hp-user-item" id="hp-admin-link" href="/admin.html" style="display:none;">
-          <span class="ico">🛡️</span><span>Yönetici Paneli</span>
-        </a>
-        <button class="hp-user-item" id="hp-organizer-apply" style="display:none;" onclick="applyOrganizer(event)">
-          <span class="ico">🎫</span><span id="hp-organizer-apply-label">Organizatör Ol</span>
-        </button>
-        <a class="hp-user-item" href="/profil.html">
-          <span class="ico">📊</span><span data-i18n="menu_perf">Performans &amp; Başarımlar</span>
-        </a>
-        <a class="hp-user-item" href="/hesap.html">
-          <span class="ico">⚙️</span><span data-i18n="menu_settings">Hesap Ayarları</span>
-        </a>
-        <div class="hp-user-divider"></div>
-        <button class="hp-user-item danger" onclick="logout()">
-          <span class="ico">⏻</span><span data-i18n="menu_logout">Çıkış Yap</span>
-        </button>
-      </div>
-    </div>
+    <div id="dcp-um-mount"></div>
   </div>
 </nav>
+
+<div id="hp-mine" class="hp-mine" hidden></div>
 
 <section class="hp-hero">
   <div class="hp-hero-text">
@@ -607,9 +619,11 @@
     </p>
     <div class="hp-cta">
       <a id="hp-cta-primary" class="hp-btn primary" href="/login.html" data-i18n="hero_cta_primary">Ücretsiz Başla →</a>
-      <a class="hp-btn outline" href="/scorer.html" data-i18n="hero_cta_scorer">Hızlı Skor</a>
-      <a class="hp-btn outline" href="/bracket.html" data-i18n="hero_cta_bracket">Hızlı Bracket</a>
-      <a class="hp-btn outline" href="/viewer.html" data-i18n="hero_cta_viewer">📺 İzleyici Ekranı</a>
+      <div class="hp-seclinks">
+        <a href="/scorer.html" data-i18n="hero_cta_scorer">Hızlı Skor</a>
+        <a href="/bracket.html" data-i18n="hero_cta_bracket">Hızlı Bracket</a>
+        <a href="/viewer.html" data-i18n="hero_cta_viewer">İzleyici</a>
+      </div>
     </div>
     <div class="hp-trust" data-i18n-html="hero_trust">
       <strong>Tablet uyumlu</strong> · <strong>Gerçek zamanlı</strong> · <strong>Türkçe arayüz</strong>
@@ -621,27 +635,14 @@
       <span class="hp-preview-label" data-i18n="preview_label">Canlı Bracket</span>
       <span class="hp-preview-live"><span class="d"></span> <span data-i18n="preview_live">CANLI</span></span>
     </div>
-    <div class="hp-preview-body">
-      <div class="hp-pv-col">
-        <div class="hp-pv-pair">
-          <div class="hp-pv-row win"><span>Ahmet Ö.</span><b>3</b></div>
-          <div class="hp-pv-row"><span>Mehmet K.</span><b>1</b></div>
-        </div>
-        <div class="hp-pv-pair">
-          <div class="hp-pv-row"><span>Can D.</span><b>2</b></div>
-          <div class="hp-pv-row win"><span>Burak T.</span><b>3</b></div>
-        </div>
-      </div>
-      <div class="hp-pv-col">
-        <div class="hp-pv-final-label" data-i18n="preview_final">Final</div>
-        <div class="hp-pv-row gold"><span>Ahmet Ö.</span><b>—</b></div>
-        <div class="hp-pv-row"><span>Burak T.</span><b>—</b></div>
-        <div class="hp-pv-score">
-          <div class="t" data-i18n="preview_score_mode">SKOR · 501</div>
-          <div class="n">180</div>
-          <div class="b">Board 2 — Ahmet</div>
-        </div>
-      </div>
+    <div class="hp-preview-body hp-pv-grid">
+      <div class="hp-pv-m" style="grid-area:1/1/3/2"><div class="hp-pv-row win"><span>Ahmet Ö.</span><b>3</b></div><div class="hp-pv-row"><span>Mehmet K.</span><b>1</b></div></div>
+      <div class="hp-pv-m" style="grid-area:3/1/5/2"><div class="hp-pv-row"><span>Can D.</span><b>2</b></div><div class="hp-pv-row win"><span>Burak T.</span><b>3</b></div></div>
+      <div class="hp-pv-m live" style="grid-area:5/1/7/2"><div class="hp-pv-row"><span>Emre T.</span><b>1</b></div><div class="hp-pv-row"><span>Serhan Ö.</span><b>1</b></div></div>
+      <div class="hp-pv-m" style="grid-area:7/1/9/2"><div class="hp-pv-row win"><span>Mert K.</span><b>3</b></div><div class="hp-pv-row"><span>Ali V.</span><b>0</b></div></div>
+      <div class="hp-pv-m live" style="grid-area:2/2/4/3"><div class="hp-pv-row"><span>Ahmet Ö.</span><b>2</b></div><div class="hp-pv-row"><span>Burak T.</span><b>2</b></div></div>
+      <div class="hp-pv-m" style="grid-area:6/2/8/3"><div class="hp-pv-row"><span>—</span><b></b></div><div class="hp-pv-row"><span>Mert K.</span><b></b></div></div>
+      <div class="hp-pv-m" style="grid-area:4/3/6/4"><div class="hp-pv-row gold"><span data-i18n="preview_final">Final</span><b></b></div><div class="hp-pv-row"><span>—</span><b></b></div></div>
     </div>
   </div>
 </section>
@@ -662,7 +663,7 @@
     </div>
     <div class="hp-step">
       <div class="num n3">3</div>
-      <h3 data-i18n="step3_h">Maça başla</h3>
+      <h3 data-i18n="step3_h">Braketi kur, gönder</h3>
       <p data-i18n="step3_p">Bracket otomatik üretilir, board'lar otomatik atanır. TV'ye yansıt, izleyiciye link gönder.</p>
     </div>
   </div>
@@ -789,8 +790,8 @@
       hero_sub: 'Tek eleme, çift eleme, round robin. Tabletten skor girişi, TV\'de canlı bracket, organizatör panelinden tek tıkla maç akışı.',
       hero_cta_primary: 'Ücretsiz Başla →',
       hero_cta_scorer: 'Hızlı Skor',
-      hero_cta_bracket: 'Hızlı Bracket',
-      hero_cta_viewer: '📺 İzleyici Ekranı',
+      hero_cta_bracket: 'Hızlı Braket',
+      hero_cta_viewer: 'İzleyici',
       hero_cta_secondary: 'Nasıl Çalışır',
       hero_trust: '<strong>Tablet uyumlu</strong> · <strong>Gerçek zamanlı</strong> · <strong>Türkçe arayüz</strong>',
       preview_label: 'Canlı Bracket',
@@ -818,8 +819,8 @@
       step1_p: 'Format, oyun modu, leg ve set sayısını seç. Oyuncuları tek tek veya yapıştırarak ekle.',
       step2_h: 'Tabletleri bağla',
       step2_p: 'Her dart tahtası için bir tablet aç, hangi board olduğunu seç. Skor girişine hazır.',
-      step3_h: 'Maça başla',
-      step3_p: 'Bracket otomatik üretilir, board\'lar otomatik atanır. TV\'ye yansıt, izleyiciye link gönder.',
+      step3_h: 'Braketi kur, gönder',
+      step3_p: 'Braket otomatik üretilir; kontrol et, tek dokunuşla maçlar tabletlere dağılsın. TV\'ye yansıt, izleyiciye link gönder.',
       band_h: 'Ücretsiz başlat, dakikalar içinde yayında ol',
       band_p: 'Kayıt olmak 30 saniye, ilk turnuvayı kurmak 5 dakika.',
       band_cta: 'Ücretsiz Hesap Aç',
@@ -842,7 +843,7 @@
       hero_cta_primary: 'Get Started Free →',
       hero_cta_scorer: 'Quick Score',
       hero_cta_bracket: 'Quick Bracket',
-      hero_cta_viewer: '📺 Viewer Screen',
+      hero_cta_viewer: 'Viewer',
       hero_cta_secondary: 'How it works',
       hero_trust: '<strong>Tablet-friendly</strong> · <strong>Real-time</strong> · <strong>Turkish-first UI</strong>',
       preview_label: 'Live Bracket',
@@ -870,8 +871,8 @@
       step1_p: 'Pick the format, game mode, leg and set count. Add players one by one or paste a list.',
       step2_h: 'Connect tablets',
       step2_p: 'Open one tablet per dart board, choose which board it is. Ready for scoring.',
-      step3_h: 'Start matches',
-      step3_p: 'Bracket is generated automatically, boards are assigned. Cast to TV, share viewer link.',
+      step3_h: 'Build & send',
+      step3_p: 'Bracket is generated automatically; check it, then send matches to the tablets in one tap. Cast to TV, share the viewer link.',
       band_h: 'Start free, go live in minutes',
       band_p: 'Signup takes 30 seconds, first tournament takes 5 minutes.',
       band_cta: 'Create Free Account',
@@ -912,7 +913,6 @@
   function applyAuth(user) {
     currentUser = user;
     const link = document.getElementById('hp-auth-link');
-    const userBox = document.getElementById('hp-user');
     const cp = document.getElementById('hp-cta-primary');
     const cb = document.getElementById('hp-cta-bottom');
     const lang = (localStorage.getItem('dcp_lang') || 'tr');
@@ -921,22 +921,15 @@
     if (user) {
       link.style.display = 'none';
       link.dataset.loggedIn = '1';
-      userBox.classList.add('show');
-      const display = (user.name || user.email || '?').trim();
-      const initial = display.charAt(0).toUpperCase();
-      document.getElementById('hp-user-avatar').textContent = initial || '·';
-      document.getElementById('hp-user-name-short').textContent = display.split(/\s+/)[0] || display;
-      document.getElementById('hp-user-fullname').textContent = user.name || display;
-      document.getElementById('hp-user-email').textContent = user.email || '';
-      cp.textContent = (lang === 'tr' ? 'Panele Git →' : 'Go to Panel →');
-      cp.href = '/organizer.html';
-      cb.textContent = (lang === 'tr' ? 'Panele Git' : 'Go to Panel');
-      cb.href = '/organizer.html';
-      updateOrganizerMenu(user);
+      const isOrg = user.role === 'admin' || user.organizer_status === 'approved';
+      cp.textContent = isOrg ? (lang === 'tr' ? 'Panele Git →' : 'Go to Panel →') : (lang === 'tr' ? 'Turnuvalara Göz At →' : 'Browse Tournaments →');
+      cp.href = isOrg ? '/organizer.html' : '/turnuvalar.html';
+      cb.textContent = isOrg ? (lang === 'tr' ? 'Panele Git' : 'Go to Panel') : (lang === 'tr' ? 'Turnuvalara Göz At' : 'Browse Tournaments');
+      cb.href = isOrg ? '/organizer.html' : '/turnuvalar.html';
+      loadMine(user);
     } else {
       link.style.display = '';
       link.dataset.loggedIn = '0';
-      userBox.classList.remove('show');
       cp.textContent = dict.hero_cta_primary;
       cp.href = '/login.html';
       cb.textContent = dict.band_cta;
@@ -944,70 +937,84 @@
     }
   }
 
-  // Organizatör başvuru menüsü — duruma göre göster/gizle (Dilim B)
-  function updateOrganizerMenu(user) {
-    const adminLink = document.getElementById('hp-admin-link');
-    if (adminLink) adminLink.style.display = (user.role === 'admin') ? '' : 'none';
-    const item = document.getElementById('hp-organizer-apply');
-    const label = document.getElementById('hp-organizer-apply-label');
-    if (!item || !user) return;
-    const status = user.organizer_status || 'none';
-    // Admin veya onaylı organizatör → öğe gizli (zaten yetkili)
-    if (user.role === 'admin' || status === 'approved') {
-      item.style.display = 'none';
-      return;
-    }
-    item.style.display = '';
-    if (status === 'pending') {
-      label.textContent = 'Başvurunuz değerlendirmede';
-      item.classList.add('disabled');
-      item.dataset.locked = '1';
-    } else {
-      label.textContent = (status === 'rejected') ? 'Tekrar Organizatör Ol' : 'Organizatör Ol';
-      item.classList.remove('disabled');
-      item.dataset.locked = '0';
-    }
+  // ── "Merhaba" şeridi (Ekim 2026): giriş yapan kullanıcıya özel kartlar ──
+  function hpEsc(x) { return String(x == null ? '' : x).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c])); }
+  function hpDate(d) {
+    if (!d) return '';
+    try { return new Date(d).toLocaleDateString('tr-TR', { day: 'numeric', month: 'long' }); } catch { return d; }
   }
-
-  async function applyOrganizer(e) {
-    e && e.preventDefault();
-    const item = document.getElementById('hp-organizer-apply');
-    if (item && item.dataset.locked === '1') return;
+  async function loadMine(user) {
+    const box = document.getElementById('hp-mine');
+    if (!box) return;
+    let d;
+    try { d = await (await fetch('/api/home-summary', { credentials: 'same-origin' })).json(); } catch { return; }
+    if (!d || d.error) return;
+    const first = ((user.name || user.email || '').trim().split(/\s+/)[0]) || '';
+    const card = (cls, s, n, m, go, href, extra = '') =>
+      `<a class="hp-tc ${cls}" href="${href}"><div class="s">${s}</div><div class="n">${hpEsc(n)}</div><div class="m">${m}</div>${extra}<div class="go">${go} →</div></a>`;
+    const cards = [];
+    // Organizatör: kendi turnuvaları
+    for (const t of (d.tournaments || [])) {
+      const href = `/organizer.html?focus=${t.id}`;
+      if (t.kind === 'live') {
+        const pct = t.total ? Math.round(100 * t.done / t.total) : 0;
+        cards.push(card('live', '● CANLI', t.name, `${t.done}/${t.total} maç bitti · ${t.boards} board`, 'Kontrol Paneli', href, `<div class="bar"><i style="width:${pct}%"></i></div>`));
+      } else if (t.kind === 'hold') {
+        cards.push(card('hold', '⏸ BEKLEMEDE', t.name, 'Braket kuruldu · tabletlere gönderilmedi', 'Tabletlere Gönder', href));
+      } else if (t.kind === 'reg') {
+        cards.push(card('reg', '🎫 KAYIT AÇIK', t.name,
+          [hpDate(t.event_date), `${t.reg_count}${t.capacity ? '/' + t.capacity : ''} kayıt`, t.wait_count ? `${t.wait_count} yedek` : ''].filter(Boolean).join(' · '),
+          'Kayıtları gör', href));
+      } else {
+        cards.push(card('', 'TASLAK', t.name, `${t.entries} katılımcı`, 'Braketi kur', href));
+      }
+    }
+    // Katılımcı: kayıtlarım
+    for (const r of (d.registrations || [])) {
+      const w = r.status === 'waitlisted';
+      cards.push(card(w ? 'wait' : 'me', w ? `⏳ YEDEK · ${r.wait_pos}. SIRA` : '✓ KAYITLISIN', r.name,
+        hpDate(r.event_date) || 'Tarih belirtilmedi', 'Turnuvalarım', '/turnuvalar.html'));
+    }
+    // Kaydı açık turnuvalar (kayıtlı olmadıkları)
+    for (const t of (d.open || [])) {
+      cards.push(card('open', '🎫 KAYIT AÇIK', t.name,
+        [hpDate(t.event_date), `${t.active}${t.capacity ? '/' + t.capacity : ''} kayıt`].filter(Boolean).join(' · '), 'Kayıt ol', '/turnuvalar.html'));
+    }
+    // Katılımcı performans özeti
+    const pr = d.profile;
+    if (!d.is_organizer && pr && pr.tournaments_played) {
+      cards.push(`<a class="hp-tc stats" href="/profil.html"><div class="s">📊 PERFORMANSIN</div>
+        <div class="row"><div><b>${pr.tournaments_played}</b><small>Turnuva</small></div>
+        <div><b>${pr.matches_won}-${pr.matches_lost}</b><small>Maç G-M</small></div>
+        <div><b>${pr.avg_3da || 0}</b><small>3-ok ort.</small></div>
+        <div><b>${pr.best_checkout || '—'}</b><small>En iyi çıkış</small></div></div>
+        <div class="go">Detay →</div></a>`);
+    }
+    if (!cards.length) {
+      cards.push(d.is_organizer
+        ? card('', 'BAŞLA', 'Henüz aktif turnuvan yok', 'Yeni bir turnuva ya da lig/sezon oluştur.', 'Yeni turnuva', '/organizer.html#new')
+        : card('open', 'TURNUVALAR', 'Henüz bir turnuvaya kayıtlı değilsin', 'Yaklaşan turnuvalara göz at, tek tıkla kayıt ol.', 'Turnuvalar', '/turnuvalar.html'));
+    }
+    const quick = d.is_organizer
+      ? `<a class="hp-q p" href="/organizer.html">+ Yeni Turnuva</a><a class="hp-q" href="/liga.html">🏅 Ligler</a><a class="hp-q" href="/scorer.html">⚡ Hızlı Skor</a><a class="hp-q" href="/board.html">📲 Board aç</a>`
+      : `<a class="hp-q p" href="/turnuvalar.html">🎯 Turnuvalar</a><a class="hp-q" href="/profil.html">📊 Performansım</a><a class="hp-q" href="/scorer.html">⚡ Hızlı Skor</a>`
+        + (d.organizer_status === 'none' || d.organizer_status === 'rejected' ? `<button class="hp-q" onclick="hpApplyOrganizer(this)">🎫 Organizatör Ol</button>` : '');
+    box.innerHTML = `<div class="hp-mine-h"><h2>Merhaba ${hpEsc(first)} 👋</h2><div class="hp-quick">${quick}</div></div><div class="hp-cards">${cards.join('')}</div>`;
+    box.hidden = false;
+  }
+  async function hpApplyOrganizer(btn) {
     const note = prompt('İsterseniz başvurunuza kısa bir not ekleyin (kulüp/mekan, neden organizatör olmak istediğiniz vb.):', '');
-    if (note === null) return; // iptal
+    if (note === null) return;
     try {
-      const r = await fetch('/auth/organizer-apply', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        credentials: 'same-origin',
-        body: JSON.stringify({ note }),
-      });
+      const r = await fetch('/auth/organizer-apply', { method: 'POST', headers: { 'Content-Type': 'application/json' }, credentials: 'same-origin', body: JSON.stringify({ note }) });
       const d = await r.json();
       if (!r.ok) { alert(d.error || 'Başvuru gönderilemedi.'); return; }
       alert(d.message || 'Başvurunuz alındı.');
-      if (currentUser) { currentUser.organizer_status = 'pending'; updateOrganizerMenu(currentUser); }
-    } catch {
-      alert('Başvuru gönderilemedi, bağlantınızı kontrol edin.');
-    }
+      btn.remove();
+    } catch { alert('Başvuru gönderilemedi, bağlantınızı kontrol edin.'); }
   }
 
-  function toggleUserMenu(e) {
-    e && e.stopPropagation();
-    document.getElementById('hp-user').classList.toggle('open');
-  }
-  document.addEventListener('click', () => {
-    document.getElementById('hp-user').classList.remove('open');
-  });
-  document.addEventListener('keydown', (e) => {
-    if (e.key === 'Escape') document.getElementById('hp-user').classList.remove('open');
-  });
-
-  async function logout() {
-    try {
-      await fetch('/auth/logout', { method: 'POST', credentials: 'same-origin' });
-    } catch {}
-    location.reload();
-  }
+  // Kullanıcı menüsü ortak dosyada: /js/user-menu.js (#dcp-um-mount)
 
   // Boot: dil + auth
   (function init() {
@@ -1019,6 +1026,7 @@
       .catch(() => applyAuth(null));
   })();
 </script>
+<script src="/js/user-menu.js"></script>
 <script src="/js/cookie-consent.js"></script>
 </body>
 </html>
