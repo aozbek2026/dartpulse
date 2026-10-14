@@ -1618,3 +1618,10 @@ Bracket çizen HER çıktı (uygulama içi görünüm VE üretilen rapor/mockup/
 **Dosyalar:** `src/scheduler.js` (assignForUser: cfgFor stage cache + activeGroupForBoardIndex + pin atama + kazanan-scorer), `src/db.js` (`boards.last_winner_entry_id` kolon+migration, `setBoardLastWinner`), `server.js` (bitiş/walkover hook), `public/js/organizer.js` (`wizSetPinGroups`/`wizSetWinnerScores` + iki checkbox; organizer.html değişmedi — checkbox'lar JS'de üretiliyor).
 
 **Uyarı:** pin gruplu RR içindir; grup kurmadan (tek havuz, group 0) işaretlenirse tüm maçlar board 0'a serileşir. **Test:** headless scheduler (pin izolasyon + sıralı akış + kazanan-scorer + pool default korundu) ve gerçek sunucu (migration + boot + config_json round-trip + in-server pin) — hepsi geçti. Commit `51fa840`.
+
+## Geri Al genişletmesi — önceki leg + başlangıç ekranı + maç bitirme onayı (Ekim 2026)
+
+Kullanıcı onayıyla (korumalı modüller). `scorer.html` kapsam dışı.
+- **`match-engine.js` `undoLastThrow`:** Son atış mevcut leg'de değilse (önceki leg'i bitiren checkout) leg/set geçişini geri sarar: leg skorları setteki kalan `is_finish` atışlarından yeniden sayılır, set değiştiyse kazananın seti −1, `current_leg/current_set` geri, `starter_slot` ters çevrilir, stats `legs_won/sets_won/darts_in_finished_legs` düşülür. Biten maçta (`status!=='live'`) hata verir. Dönüş `{ok, legReverted}`. Sınır: eşli maçta alt-oyuncu sırası (`pX_sub_turn`) geri yüklenmez.
+- **`server.js`:** `/undo` atış yoksa `{code:'NO_THROWS'}` döner + `board:state` yayınlar. Yeni `POST /api/matches/:id/unbegin`: hiç atış/visit yok + leg/set 0-0 ise live → ready (sıra/starter/cricket state sıfırlanır).
+- **`board.js`:** X01 "Geri Al" → atış → önceki leg → başlangıç ekranı (`confirmUnbegin`). Cricket/FB/Karambol "← GERİ" tahta boşken (`cricketPristine`) başlangıca döner (çoklu visit geri alma YOK, tek seviye — sonra bakılacak). X01'de maçı bitirecek checkout gönderilmeden önce onay sorulur (cricket modlarında yok). `showConfirm(msg, yesLabel, noLabel)` etiket parametresi aldı (walkover butonu artık doğru yazıyor).

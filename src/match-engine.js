@@ -424,13 +424,54 @@ function undoLastThrow(matchId) {
   const tournament = db.tournamentById(match.tournament_id);
   const startScore = START_SCORES[tournament.game_mode];
 
-  // Simple undo: delete throw, restore remaining, swap turn back, adjust stats approximately.
-  // Note: does not unwind leg/set transitions - keep usage to "last throw in current leg".
+  // Biten maç geri sarılmaz (kazanan sonraki tura geçmiş olabilir).
+  if (match.status !== 'live') throw new Error('Maç bitti, atış geri alınamaz');
+
+  // Son atış mevcut leg'de değilse → önceki leg'i bitiren checkout'tur.
+  // Bu durumda leg (ve gerekiyorsa set) geçişi geri sarılır (Ekim 2026).
+  const legReverted = (last.leg_index !== match.current_leg || last.set_index !== match.current_set);
+  const legIdx = last.leg_index;
+  const setIdx = last.set_index;
+
+  // Leg-bitiş istatistiği (darts_in_finished_legs) recordThrow'daki hesabın aynısı.
+  let finishedLegDarts = 0;
+  if (legReverted && last.is_finish) {
+    const legThrowsW = db.throwsForMatch(matchId).filter(t =>
+      t.leg_index === legIdx && t.set_index === setIdx && t.player_slot === last.player_slot);
+    finishedLegDarts = Math.max(0, legThrowsW.length - 1) * 3 + (last.darts_used || 3);
+  }
+
   db.deleteThrow(last.id);
+
+  if (legReverted) {
+    const w = last.player_slot;
+    const setChanged = setIdx !== match.current_set;
+    // Bu setteki leg skorlarını kalan checkout atışlarından yeniden say
+    const remaining = db.throwsForMatch(matchId);
+    const legsIn = { 1: 0, 2: 0 };
+    for (const t of remaining) if (t.is_finish && t.set_index === setIdx) legsIn[t.player_slot] += 1;
+    const upd = {
+      p1_legs: legsIn[1],
+      p2_legs: legsIn[2],
+      current_leg: legIdx,
+      current_set: setIdx,
+      starter_slot: match.starter_slot === 1 ? 2 : 1, // finishLeg starter'ı değiştirmişti
+    };
+    if (setChanged) {
+      const setsCol = w === 1 ? 'p1_sets' : 'p2_sets';
+      upd[setsCol] = Math.max(0, (match[setsCol] || 0) - 1);
+    }
+    db.updateMatch(matchId, upd);
+    db.updateStats(matchId, w, {
+      legs_won: -1,
+      sets_won: setChanged ? -1 : 0,
+      darts_in_finished_legs: -finishedLegDarts,
+    });
+  }
 
   // Recompute remaining from scratch for the leg
   const throwsLeft = db.throwsForMatch(matchId).filter(t =>
-    t.leg_index === match.current_leg && t.set_index === match.current_set);
+    t.leg_index === legIdx && t.set_index === setIdx);
   const bySlot = { 1: 0, 2: 0 };
   for (const t of throwsLeft) bySlot[t.player_slot] += t.score;
 
@@ -472,7 +513,7 @@ function undoLastThrow(matchId) {
   // finish atışlarından yeniden hesapla (silinen yüksek çıkış hayalet kalmasın).
   db.recomputeBestCheckout(matchId, last.player_slot);
 
-  return { ok: true };
+  return { ok: true, legReverted };
 }
 
 function average(stats) {

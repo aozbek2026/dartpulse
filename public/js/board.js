@@ -893,7 +893,7 @@ function renderCricketMatch(m) {
 
   const bottomBar = isReadonly ? '' : `
     <div class="cr-bottom-bar">
-      <button class="cr-undo-btn" onclick="cricketUndoDart()" ${cricketDarts.length === 0 && !m.cricket_undo_json ? 'disabled' : ''}>← GERİ</button>
+      <button class="cr-undo-btn" onclick="cricketUndoDart()" ${cricketDarts.length === 0 && !m.cricket_undo_json && !cricketPristine(m) ? 'disabled' : ''}>← GERİ</button>
       <div class="cr-dots">${dotsHtml}</div>
       <button class="cr-miss-btn" onclick="submitCricketDarts()" ${cricketDarts.length === 0 ? 'disabled' : ''}>Enter</button>
     </div>
@@ -960,7 +960,10 @@ function cricketUndoDart() {
 // Cricket/FB/Karambol için ortak: önceki visit'i onaylı geri al
 async function cricketConfirmAndUndoLastVisit() {
   if (!currentMatch) return;
-  if (!currentMatch.cricket_undo_json) return toast('Geri alınacak visit yok');
+  if (!currentMatch.cricket_undo_json) {
+    if (cricketPristine(currentMatch)) return confirmUnbegin();
+    return toast('Geri alınacak visit yok');
+  }
   const ok = await cricketConfirm('Önceki visit geri alınsın mı?');
   if (!ok) return;
   const res = await api.post(`/api/matches/${currentMatch.id}/cricket-undo`, {});
@@ -1145,7 +1148,7 @@ function renderFBCezaliMatch(m) {
   const bottomBar = isReadonly ? '' : `
     ${modeBar}
     <div class="cr-bottom-bar">
-      <button class="cr-undo-btn" onclick="fbUndoDart()" ${fbDarts.length === 0 && !m.cricket_undo_json ? 'disabled' : ''}>← GERİ</button>
+      <button class="cr-undo-btn" onclick="fbUndoDart()" ${fbDarts.length === 0 && !m.cricket_undo_json && !cricketPristine(m) ? 'disabled' : ''}>← GERİ</button>
       <div class="cr-dots">${dotsHtml}</div>
       <button class="cr-miss-btn" onclick="submitFBCezaliDarts()" ${fbDarts.length === 0 ? 'disabled' : ''}>Enter</button>
     </div>`;
@@ -1456,7 +1459,7 @@ function renderKarambolMatch(m) {
 
   const bottomBar = isReadonly ? '' : `
     <div class="cr-bottom-bar">
-      <button class="cr-undo-btn" onclick="karambolUndoDart()" ${karambolDarts.length === 0 && !m.cricket_undo_json ? 'disabled' : ''}>← GERİ</button>
+      <button class="cr-undo-btn" onclick="karambolUndoDart()" ${karambolDarts.length === 0 && !m.cricket_undo_json && !cricketPristine(m) ? 'disabled' : ''}>← GERİ</button>
       <div class="cr-dots">${dotsHtml}</div>
       <button class="cr-miss-btn" onclick="submitKarambolDarts()" ${karambolDarts.length === 0 ? 'disabled' : ''}>Enter</button>
     </div>`;
@@ -1699,6 +1702,21 @@ async function submitScore() {
   // (1 → mümkün sadece belli skorlarda, ama oyuncu en iyi bilir; UI'a güveniyoruz.)
   let finishDarts = null;
   if (isX01 && score > 0 && score === rem) {
+    // Bu checkout maçı bitirecekse önce onay iste (yanlış giriş maçı bitirmesin)
+    const t = allTournaments.find(tt => tt.id === m.tournament_id);
+    const legsToWin = m.legs_to_win || t?.legs_to_win || 2;
+    const setsToWin = m.sets_to_win || t?.sets_to_win || 1;
+    const myLegs = (slot === 1 ? m.p1_legs : m.p2_legs) || 0;
+    const mySets = (slot === 1 ? m.p1_sets : m.p2_sets) || 0;
+    const winsMatch = myLegs + 1 >= legsToWin && (setsToWin <= 1 || mySets + 1 >= setsToWin);
+    if (winsMatch) {
+      const name = entryLabel(slot === 1 ? m.entry1 : m.entry2);
+      let res1, res2;
+      if (setsToWin > 1) { res1 = slot === 1 ? mySets + 1 : (m.p1_sets || 0); res2 = slot === 2 ? mySets + 1 : (m.p2_sets || 0); }
+      else { res1 = slot === 1 ? myLegs + 1 : (m.p1_legs || 0); res2 = slot === 2 ? myLegs + 1 : (m.p2_legs || 0); }
+      const ok = await showConfirm(`Bu atış maçı bitirecek.\n${name} ${res1}-${res2} kazanır.`, 'Evet, bitir', 'İptal');
+      if (!ok) return;
+    }
     finishDarts = await askFinishDarts(score);
     if (finishDarts === null) return; // Kullanıcı vazgeçti
   }
@@ -2002,23 +2020,56 @@ function legSummarySide(name, p, isWinner) {
 
 async function undoThrow() {
   if (!currentMatch) return;
-  const confirmed = await showConfirm('Son atışı geri almak istediğinizden emin misiniz?');
+  const m = currentMatch;
+  const throws = Array.isArray(m.throws) ? m.throws : null;
+  // Hiç atış yok → maç başlangıç ekranına dön (yanlış oyuncu/ilk atan seçildiyse)
+  if (throws && throws.length === 0) return confirmUnbegin();
+  // Mevcut leg boş ama önceki leg'de atış var → önceki leg geri açılır
+  const legEmpty = throws && !throws.some(t => t.leg_index === m.current_leg && t.set_index === m.current_set);
+  const msg = legEmpty
+    ? 'Önceki leg geri açılsın mı?\nLegi bitiren atış silinecek.'
+    : 'Son atışı geri almak istediğinizden emin misiniz?';
+  const confirmed = await showConfirm(msg);
   if (!confirmed) return;
-  const res = await api.post(`/api/matches/${currentMatch.id}/undo`, {});
+  const res = await api.post(`/api/matches/${m.id}/undo`, {});
+  if (res.code === 'NO_THROWS') return confirmUnbegin();
   if (res.error) toast('Hata: ' + res.error);
-  else toast('Son atış geri alındı');
+  else toast(res.legReverted ? 'Önceki leg geri açıldı' : 'Son atış geri alındı');
 }
 
-function showConfirm(message) {
+// Maçta atış yokken: canlı maçı başlangıç (oyuncu/ilk atan seçimi) ekranına döndür
+async function confirmUnbegin() {
+  if (!currentMatch) return;
+  const ok = await showConfirm('Maçın başlangıç ekranına dönülsün mü?\nBaşlayan oyuncu yeniden seçilebilir.', 'Evet, dön', 'İptal');
+  if (!ok) return;
+  const res = await api.post(`/api/matches/${currentMatch.id}/unbegin`, {});
+  if (res.error) return toast('Hata: ' + res.error);
+  cricketDarts = []; fbDarts = []; karambolDarts = [];
+  currentInput = '';
+  toast('Maç başlangıç ekranına dönüldü');
+}
+
+// Cricket/FB/Karambol: maçta hiç visit yok mu? (tahta boş, leg/set 0)
+function cricketPristine(m) {
+  if (!m || m.status !== 'live') return false;
+  if ((m.p1_legs || 0) || (m.p2_legs || 0) || (m.p1_sets || 0) || (m.p2_sets || 0)) return false;
+  if (!m.cricket_state_json) return true;
+  let st = null;
+  try { st = JSON.parse(m.cricket_state_json); } catch { return false; }
+  if ((st.p1_score || 0) || (st.p2_score || 0)) return false;
+  return !Object.values(st.marks || {}).some(v => (v?.p1 || 0) || (v?.p2 || 0));
+}
+
+function showConfirm(message, yesLabel = 'Geri Al', noLabel = 'İptal') {
   return new Promise((resolve) => {
     const overlay = document.createElement('div');
     overlay.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,0.75);display:flex;align-items:center;justify-content:center;z-index:9999;padding:1.5rem;';
     overlay.innerHTML = `
       <div style="background:var(--surface);border:1px solid var(--border);border-radius:16px;padding:2rem;max-width:380px;width:100%;text-align:center;">
-        <div style="font-size:1.1rem;font-weight:600;margin-bottom:1.5rem;">${message}</div>
+        <div style="font-size:1.1rem;font-weight:600;margin-bottom:1.5rem;white-space:pre-line;">${message}</div>
         <div style="display:flex;gap:1rem;justify-content:center;">
-          <button id="confirm-no" style="flex:1;padding:0.85rem;border-radius:10px;border:1px solid var(--border);background:var(--surface-2);color:var(--text);font-size:1rem;cursor:pointer;">İptal</button>
-          <button id="confirm-yes" style="flex:1;padding:0.85rem;border-radius:10px;border:none;background:var(--danger);color:white;font-size:1rem;font-weight:700;cursor:pointer;">Geri Al</button>
+          <button id="confirm-no" style="flex:1;padding:0.85rem;border-radius:10px;border:1px solid var(--border);background:var(--surface-2);color:var(--text);font-size:1rem;cursor:pointer;">${noLabel}</button>
+          <button id="confirm-yes" style="flex:1;padding:0.85rem;border-radius:10px;border:none;background:var(--danger);color:white;font-size:1rem;font-weight:700;cursor:pointer;">${yesLabel}</button>
         </div>
       </div>
     `;

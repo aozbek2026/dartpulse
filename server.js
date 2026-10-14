@@ -1436,9 +1436,55 @@ app.post('/api/tournament/:id/create-reset-final', auth.requireAuth, (req, res) 
 
 app.post('/api/matches/:id/undo', (req, res) => {
   try {
-    const result = engine.undoLastThrow(+req.params.id);
+    const id = +req.params.id;
+    if (!db.lastThrow(id)) return res.status(400).json({ error: 'Geri alınacak atış yok', code: 'NO_THROWS' });
+    const result = engine.undoLastThrow(id);
+    const updated = db.matchById(id);
+    if (updated?.board_id) {
+      io.to(`board:${updated.board_id}`).emit('board:state', { board: db.boardById(updated.board_id), match: updated });
+    }
     scheduleBroadcast();
     res.json(result);
+  } catch (e) {
+    res.status(400).json({ error: e.message });
+  }
+});
+
+// Maç başlangıç ekranına dön (Ekim 2026): yanlış oyuncu/ilk atan seçilip başlatıldıysa.
+// Yalnız maçta HİÇ atış/visit yokken ve skor 0-0 iken izin verilir → live → ready.
+app.post('/api/matches/:id/unbegin', (req, res) => {
+  try {
+    const id = +req.params.id;
+    const m = db.matchById(id);
+    if (!m) return res.status(404).json({ error: 'Maç bulunamadı' });
+    if (m.status !== 'live') return res.status(400).json({ error: 'Maç canlı değil' });
+    if (db.lastThrow(id)) return res.status(400).json({ error: 'Maçta atış var, önce atışları geri alın' });
+    if ((m.p1_legs || 0) || (m.p2_legs || 0) || (m.p1_sets || 0) || (m.p2_sets || 0))
+      return res.status(400).json({ error: 'Maçta biten leg var, önce geri alın' });
+    if (m.cricket_state_json) {
+      let st = null;
+      try { st = JSON.parse(m.cricket_state_json); } catch {}
+      const dirty = st && ((st.p1_score || 0) || (st.p2_score || 0) ||
+        Object.values(st.marks || {}).some(v => (v?.p1 || 0) || (v?.p2 || 0)));
+      if (dirty) return res.status(400).json({ error: 'Maçta visit var, önce geri alın' });
+    }
+    db.updateMatch(id, {
+      status: 'ready',
+      current_turn: 1,
+      starter_slot: 1,
+      current_leg: 1,
+      current_set: 1,
+      p1_sub_turn: 1,
+      p2_sub_turn: 1,
+      cricket_state_json: null,
+      cricket_undo_json: null,
+    });
+    const updated = db.matchById(id);
+    if (updated?.board_id) {
+      io.to(`board:${updated.board_id}`).emit('board:state', { board: db.boardById(updated.board_id), match: updated });
+    }
+    scheduleBroadcast();
+    res.json({ ok: true });
   } catch (e) {
     res.status(400).json({ error: e.message });
   }
