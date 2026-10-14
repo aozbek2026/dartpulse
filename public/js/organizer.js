@@ -18,6 +18,7 @@ const socket = io();
 socket.on('state', (s) => {
   state = s;
   render();
+  if (window._ov2Open) { const mm = document.getElementById('ov2-menu-' + window._ov2Open); if (mm) mm.hidden = false; }
   if (window._dashTid) renderDashboard();
 });
 
@@ -2036,47 +2037,85 @@ function renderPastTournaments() {
 }
 
 function renderTournament(t) {
-  const statusChip = t.status === 'running' ? '<span class="chip live">DEVAM EDİYOR</span>' :
-    t.status === 'finished' ? '<span class="chip success">TAMAMLANDI</span>' :
-    '<span class="chip warn">TASLAK</span>';
+  const hold = t.status === 'running' && tourHold(t);
+  const stage = t.status === 'draft' ? 0 : hold ? 1 : t.status === 'running' ? 2 : 3;
+  const badge = ['<span class="ov2-badge b-draft">TASLAK</span>', '<span class="ov2-badge b-hold">BEKLEMEDE</span>',
+    '<span class="ov2-badge b-live">CANLI</span>', '<span class="ov2-badge b-done">BİTTİ</span>'][stage];
+  const st0 = (t.stages || [])[0];
+  const fmt = { single_elim: 'Tek eleme', double_elim: 'Çift eleme', round_robin: 'Round robin' }[st0?.format] || '';
+  // Panel ile aynı sayım: BYE ile bitenler hariç tüm maçlar
+  const playable = (t.matches || []).filter(m => (m.entry1_id && m.entry2_id) || m.status !== 'finished');
+  const done = playable.filter(m => m.status === 'finished').length;
+  const nBoards = (state.boards || []).filter(b => b.tournament_id === t.id).length;
+  const champ = t.status === 'finished' ? (() => {
+    const fm = (t.matches || []).filter(m => m.bracket === 'final' && m.status === 'finished').sort((x, y) => (y.is_reset_final || 0) - (x.is_reset_final || 0))[0];
+    const w = fm && (fm.winner_entry_id === fm.entry1_id ? fm.entry1 : fm.entry2);
+    return w ? ' · 🏆 ' + escapeHtml(entryLabel(w)) : '';
+  })() : '';
+  const meta = [modeLabel(t.game_mode), fmt, t.team_mode === 'singles' ? null : 'Çiftli',
+    `Bo${t.legs_to_win * 2 - 1}${t.sets_to_win > 1 ? ` · ${t.sets_to_win * 2 - 1} set` : ''}`,
+    `${t.entries.length} katılımcı`, t.status !== 'draft' && nBoards ? `${nBoards} board` : null,
+    stage === 2 ? `${done}/${playable.length} maç bitti` : null].filter(Boolean).join(' · ') + champ;
 
+  // Aşamaya göre TEK ana buton
+  let primary = '';
+  if (stage === 0) primary = `<button class="ov2-btn primary" onclick="startTournament(${t.id})">🧱 Braketi Kur</button>`;
+  else if (stage === 1) primary = `<button class="ov2-btn primary" onclick="dispatchTournament(${t.id})">📤 Tabletlere Gönder</button>`;
+  else if (canFinishTournament(t)) primary = `<button class="ov2-btn primary" style="background:#22c55e;color:#000" onclick="showTournamentStats(${t.id})">🏆 Turnuvayı Bitir</button>`;
+  else if (stage === 2) primary = `<button class="ov2-btn primary" onclick="openDashboard(${t.id})">📟 Kontrol Paneli</button>`;
+  else primary = `<button class="ov2-btn ghost" onclick="toggleReport(${t.id})">🏆 Sonuçlar</button>`;
+
+  // ⋯ menüsü — gruplu
+  const it = (label, fn, show = true, cls = '') => show ? `<div class="ov2-it ${cls}" onclick="ov2CloseMenus();${fn}">${label}</div>` : '';
+  const grp = (title, items) => items.join('') ? `<div class="ov2-grp">${title}</div>${items.join('')}` : '';
+  const D = t.status === 'draft', R = t.status === 'running';
+  const isRR = st0 && st0.format === 'round_robin';
+  const groups = [
+    grp('Hazırlık', [
+      it('⚙️ Ayarlar', `showTournamentSettings(${t.id})`, D),
+      it(`👥 Katılımcılar (${t.entries.length})`, `showParticipants(${t.id})`, D && t.entries.length),
+      it('📋 Kayıtlar & check-in', `showRegistrations(${t.id})`, D),
+      it('🔀 Eşleşmeler / kura', `showMatchEditModal(${t.id})`, D && t.entries.length >= 2),
+      it("🎯 Tur leg'leri", `showRoundOvEditor(${t.id})`, D && t.entries.length >= 2),
+      it('🧩 Grupları düzenle', `showGroupEditor(${t.id})`, D && t.entries.length >= 4 && isRR),
+    ]),
+    grp('Turnuva', [
+      it('📟 Kontrol Paneli', `openDashboard(${t.id})`, R && (stage === 1 || canFinishTournament(t))),
+      it('📊 Rapor', `toggleReport(${t.id})`, !D && stage !== 3),
+    ]),
+    grp('Paylaş', [
+      it('🔗 İzleyici linki', `openTournamentShareModal(${t.id})`, !D),
+      it('🖨️ Braket PDF', `printTournamentBracket(${t.id})`, !D),
+      it('🎫 Etkinlik ayarları', `showEventSettings(${t.id})`),
+      it('👁 Listeden kaldır', `hideFromPublic(${t.id}, this)`, t.status === 'finished' && !t.hidden_from_public),
+    ]),
+    grp('Düzeltme', [
+      it('↩ Taslağa geri dön', `revertTournamentToDraft(${t.id})`, R && tourUnplayed(t)),
+      it('↩ Hükmen geri al', `showReopenWalkover(${t.id})`, R && (t.matches || []).some(m => m.is_walkover && m.status === 'finished')),
+    ]),
+  ].filter(Boolean).join('<hr>');
+  const menu = `${groups}<hr>${it('🗑 Turnuvayı sil', `deleteTournament(${t.id})`, true, 'danger')}`;
+
+  const steps = [0, 1, 2, 3].map(i => `<span class="${i <= stage ? 'on' : ''}"></span>`).join('');
   return `
-    <div class="card" id="tournament-${t.id}">
-      <div class="row between">
-        <div>
-          <h3 style="margin-bottom: 0.3rem;">${t.name} ${statusChip}</h3>
-          <div style="color: var(--text-dim); font-size: 0.88rem;">
-            ${modeLabel(t.game_mode)} · ${t.team_mode === 'singles' ? 'Teklik' : 'Çiftli'} ·
-            Best of ${t.legs_to_win * 2 - 1} leg${t.sets_to_win > 1 ? ` · Best of ${t.sets_to_win * 2 - 1} set` : ''} ·
-            ${t.entries.length} katılımcı
+    <div class="card ov2-card" id="tournament-${t.id}">
+      <div class="ov2-head">
+        <div style="min-width:0">
+          <div class="ov2-title">${escapeHtml(t.name)} ${badge}</div>
+          <div class="ov2-meta">${meta}</div>
+          <div class="ov2-steps">${steps}</div>
+          <div class="ov2-steplbl"><span>Taslak</span><span>Kuruldu</span><span>Canlı</span><span>Bitti</span></div>
+        </div>
+        <div class="ov2-actions">
+          ${primary}
+          <div class="ov2-menuwrap">
+            <button class="ov2-btn ghost ov2-more" title="Diğer işlemler" onclick="ov2ToggleMenu(event, ${t.id})">⋯</button>
+            <div class="ov2-menu" id="ov2-menu-${t.id}" hidden>${menu}</div>
           </div>
         </div>
-        <div class="row">
-          ${t.status === 'draft' ? `<button class="secondary" onclick="showTournamentSettings(${t.id})">⚙️ Ayarlar</button>` : ''}
-          ${t.status === 'draft' && t.entries.length >= 2 ? `<button class="secondary" onclick="showMatchEditModal(${t.id})">🔀 Eşleşmeleri Düzenle</button>` : ''}
-          ${t.status === 'draft' ? `<button class="primary" onclick="startTournament(${t.id})">🧱 Braketi Kur</button>` : ''}
-          ${t.status === 'running' && tourHold(t) ? `<button class="primary" onclick="dispatchTournament(${t.id})">📤 Tabletlere Gönder – Başlat</button>` : ''}
-          ${t.status === 'running' ? `<button class="primary" title="Canlı durum, board'lar, leg sayıları, sonuç düzeltme" onclick="openDashboard(${t.id})">📟 Kontrol Paneli</button>` : ''}
-          ${t.status === 'running' && tourUnplayed(t) ? `<button class="secondary" title="Hiç maç oynanmadıysa braketi silip taslağa döner" onclick="revertTournamentToDraft(${t.id})">↩ Taslağa Geri Dön</button>` : ''}
-          ${t.status !== 'draft' ? `<button class="secondary" onclick="toggleReport(${t.id})">📊 Rapor</button>` : ''}
-          ${t.status !== 'draft' ? `<button class="secondary" title="Braketi A4 (yatay) PDF olarak yazdır" onclick="printTournamentBracket(${t.id})">🖨️ Braket PDF</button>` : ''}
-          ${t.status !== 'draft' ? `<button class="secondary" title="Üyelik gerektirmeyen izleyici linki — braket ve klasman paylaşılır" onclick="openTournamentShareModal(${t.id})">🔗 İzleyici Linki</button>` : ''}
-          ${canFinishTournament(t) ? `<button class="btn" style="background: #22c55e; color: #000; font-weight: 700;" onclick="showTournamentStats(${t.id})">🏆 Turnuvayı Bitir</button>` : ''}
-          ${t.status === 'finished' && !t.hidden_from_public ? `<button class="secondary" title="İzleyici listesinden kaldır" onclick="hideFromPublic(${t.id}, this)">👁 Listeden Kaldır</button>` : ''}
-          <button class="secondary" title="Online kayıt, check-in ve etkinlik ayarları" onclick="showEventSettings(${t.id})">🎫 Etkinlik</button>
-          ${t.status === 'draft' ? `<button class="secondary" title="Online kayıtlar, check-in ve katılımcı onayı" onclick="showRegistrations(${t.id})">📋 Kayıtlar</button>` : ''}
-          ${t.status === 'draft' && t.entries.length ? `<button class="secondary" title="Katılımcı listesi — çıkarma" onclick="showParticipants(${t.id})">👥 Katılımcılar (${t.entries.length})</button>` : ''}
-          ${t.status === 'running' && (t.matches || []).some(m => m.is_walkover && m.status === 'finished') ? `<button class="secondary" title="Yanlışlıkla 'gelmedi' basılan maçı geri aç" onclick="showReopenWalkover(${t.id})">↩ Hükmen Geri Al</button>` : ''}
-          ${t.status === 'draft' && t.entries.length >= 2 ? `<button class="secondary" title="Çeyrek/yarı/final gibi turlarda farklı leg/set" onclick="showRoundOvEditor(${t.id})">🎯 Tur Leg'leri</button>` : ''}
-          ${t.status === 'draft' && t.entries.length >= 4 && t.stages && t.stages[0] && t.stages[0].format === 'round_robin' ? `<button class="secondary" title="Katılımcıları sürükle-bırak ile gruplara yerleştir" onclick="showGroupEditor(${t.id})">🧩 Grupları Düzenle</button>` : ''}
-          <button class="danger" onclick="deleteTournament(${t.id})">Sil</button>
-        </div>
       </div>
+      ${hold ? `<div class="ov2-note">⏸ Braket kuruldu, tabletlere henüz gitmedi. Hata varsa ⋯ → Taslağa geri dön.</div>` : ''}
 
-      ${t.status === 'running' && tourHold(t) ? `
-        <div style="margin-top:0.9rem;padding:0.75rem 1rem;border:1px solid #ffbe00;border-radius:10px;background:rgba(255,190,0,0.1);font-size:0.9rem;">
-          ⏸ <strong>Braket kuruldu, tabletlere henüz gönderilmedi.</strong> Kontrol et; hata varsa "↩ Taslağa Geri Dön", her şey doğruysa "📤 Tabletlere Gönder – Başlat".
-        </div>` : ''}
       ${(() => {
         const gf = pendingResetFinal(t);
         if (!gf) return '';
@@ -2830,6 +2869,7 @@ function renderDashboard() {
   const ov = document.getElementById('dash-overlay');
   const t = state.tournaments.find(x => x.id === window._dashTid);
   if (!ov || !t) return closeDashboard();
+  const tab = window._dashTab || 'boards';
   const E = (e) => escapeHtml(entryLabel(e) || '—');
   const ms = t.matches || [];
   const real = (m) => m.entry1_id && m.entry2_id;
@@ -2841,113 +2881,186 @@ function renderDashboard() {
   const waiting = ms.filter(m => (m.status === 'ready' && !onBoard.has(m.id)) || m.status === 'pending');
   const totalReal = ms.filter(m => real(m) || m.status !== 'finished').length;
   const hold = tourHold(t);
-  // Uzun süren maç uyarısı için: maç 'live' + kaç dk? (başlama zamanı tutulmuyor → yok)
-  const warn = [];
-  if (hold) warn.push('⏸ Yeni maç ataması duraklatıldı — board\'lara yeni maç gitmiyor.');
-  if (!boards.length) warn.push('Bu turnuvaya atanmış board yok.');
   const idleBoards = boards.filter(b => !b.current_match_id);
+  const rname = (m) => escapeHtml(_dashRoundName(t, m, ms.filter(y => y.stage_id === m.stage_id)));
+  const score = (m) => (m.sets_to_win || 1) > 1 ? `${m.p1_sets || 0}–${m.p2_sets || 0}` : `${m.p1_legs || 0}–${m.p2_legs || 0}`;
+
+  const warn = [];
+  if (hold) warn.push('Yeni maç ataması durduruldu — boşalan board\'lara yeni maç gitmiyor.');
+  if (!boards.length) warn.push('Bu turnuvaya atanmış board yok.');
   if (idleBoards.length && waiting.some(m => m.status === 'ready') && !hold)
-    warn.push(`${idleBoards.length} board boşta ama hazır maç bekliyor (oyuncular başka maçta meşgul olabilir).`);
+    warn.push(`${idleBoards.length} board boşta ama hazır maç bekliyor (oyuncular başka maçta olabilir).`);
 
-  const card = (n, label, color) => `<div style="flex:1;min-width:110px;padding:0.7rem 0.9rem;border-radius:10px;background:var(--surface-2);border:1px solid var(--border)">
-      <div style="font-size:1.6rem;font-weight:800;color:${color}">${n}</div><div style="font-size:0.8rem;color:var(--text-dim)">${label}</div></div>`;
+  const pool = ms.filter(x => x.status === 'ready' && real(x) && !x.board_id && !onBoard.has(x.id));
+  const swapSel = (b, label) => pool.length ? `<select class="ov2-swap" onchange="dashSwap(${b.id}, this)">
+      <option value="">🔀 ${label}</option>${pool.map(x => `<option value="${x.id}">${E(x.entry1)} vs ${E(x.entry2)} · ${rname(x)}</option>`).join('')}</select>` : '';
 
-  const boardRows = boards.length ? boards.map(b => {
-    const m = b.current_match_id ? ms.find(x => x.id === b.current_match_id) : null;
-    let body = '<span style="color:var(--text-dim)">Boşta</span>';
-    if (m) {
-      const sc = (m.sets_to_win || 1) > 1 ? `Set ${m.p1_sets || 0}-${m.p2_sets || 0} · Leg ${m.p1_legs || 0}-${m.p2_legs || 0}` : `Leg ${m.p1_legs || 0}-${m.p2_legs || 0}`;
-      const chip = m.status === 'live' ? '<span class="chip live">CANLI</span>' : '<span class="chip warn">HAZIR</span>';
-      body = `${chip} ${E(m.entry1)} <span style="color:var(--text-dim)">vs</span> ${E(m.entry2)} <span style="color:var(--text-dim);margin-left:0.4rem">${sc}</span>`;
+  let body = '';
+  if (tab === 'boards') {
+    body = boards.length ? `<div class="ov2-boards">${boards.map(b => {
+      const m = b.current_match_id ? ms.find(x => x.id === b.current_match_id) : null;
+      const st = !m ? 'idle' : m.status === 'live' ? 'live' : 'ready';
+      const lbl = { idle: '○ BOŞTA', live: '● CANLI', ready: '● HAZIR' }[st];
+      return `<div class="ov2-bd ${st}">
+        <div class="n"><span>${escapeHtml(b.name)}</span><span class="s">${lbl}</span></div>
+        ${m ? `<div class="p">${E(m.entry1)}</div><div class="vs">vs</div><div class="p">${E(m.entry2)}</div>
+               <div class="sc">${score(m)} <small>${rname(m)}</small></div>`
+            : `<div class="p dim">Maç bekleniyor</div>`}
+        ${st !== 'live' ? swapSel(b, m ? 'Maç değiştir' : 'Maç ata') : ''}
+      </div>`;
+    }).join('')}</div>` : '<div class="empty">Bu turnuvaya board atanmamış.</div>';
+  } else if (tab === 'matches') {
+    const row = (m, dot, extra, items) => `<div class="ov2-row">
+        <span class="dot" style="background:${dot}"></span>
+        <div class="x">${extra}</div>
+        ${items ? `<div class="ov2-menuwrap"><button class="ov2-btn ghost ov2-more" onclick="ov2ToggleMenu(event,'m${m.id}')">⋯</button>
+          <div class="ov2-menu" id="ov2-menu-m${m.id}" hidden>${items}</div></div>` : ''}
+      </div>`;
+    const it = (label, fn, cls = '') => `<div class="ov2-it ${cls}" onclick="ov2CloseMenus();${fn}">${label}</div>`;
+    const act = [...live, ...ms.filter(m => m.status === 'ready' && real(m))].map(m => {
+      const bd = boards.find(b => b.current_match_id === m.id);
+      return row(m, m.status === 'live' ? 'var(--accent)' : '#ffbe00',
+        `${E(m.entry1)} <span class="dim">vs</span> ${E(m.entry2)}<div class="d">${rname(m)} · ${m.status === 'live' ? 'canlı ' + score(m) : 'hazır'}${bd ? ' · ' + escapeHtml(bd.name) : ''}</div>`,
+        `<div class="ov2-grp">Hükmen</div>${it(`🏳 ${E(m.entry1)} kazanır`, `dashWalkover(${m.id},1)`)}${it(`🏳 ${E(m.entry2)} kazanır`, `dashWalkover(${m.id},2)`)}`);
+    }).join('');
+    const finR = fin.slice().sort((a, b) => String(b.finished_at || '').localeCompare(String(a.finished_at || '')) || b.id - a.id).map(m => {
+      const w = m.winner_entry_id === m.entry1_id ? 1 : 2;
+      return row(m, '#22c55e',
+        `${w === 1 ? '<b>' + E(m.entry1) + '</b>' : E(m.entry1)} <span class="dim">${score(m)}</span> ${w === 2 ? '<b>' + E(m.entry2) + '</b>' : E(m.entry2)}
+         <div class="d">${rname(m)} · ${m.is_walkover ? 'hükmen' : 'bitti'}</div>`,
+        it('↩ Yeniden aç (sonucu düzelt)', `dashReopen(${m.id})`));
+    }).join('');
+    const pend = ms.filter(m => m.status === 'pending').map(m => row(m, '#3a4155',
+      `${m.entry1 ? E(m.entry1) : '<span class="dim">bekleniyor</span>'} <span class="dim">vs</span> ${m.entry2 ? E(m.entry2) : '<span class="dim">bekleniyor</span>'}<div class="d">${rname(m)} · Bo${(m.legs_to_win || t.legs_to_win) * 2 - 1}</div>`, '')).join('');
+    body = `<div class="ov2-sub">Canlı / hazır</div>${act || '<div class="empty">Yok</div>'}
+            <div class="ov2-sub">Bitenler (son biten üstte)</div>${finR || '<div class="empty">Henüz yok</div>'}
+            ${pend ? `<div class="ov2-sub">Sırası gelecek</div>${pend}` : ''}`;
+  } else if (tab === 'rounds') {
+    const groups = {};
+    for (const m of ms) {
+      if (!(m.status === 'pending' || m.status === 'ready')) continue;
+      const key = `${m.stage_id}|${m.bracket}|${m.bracket === 'rr' ? '' : m.round}`;
+      if (!groups[key]) groups[key] = { stage_id: m.stage_id, bracket: m.bracket, round: m.bracket === 'rr' ? null : m.round,
+        label: m.bracket === 'rr' ? 'Round robin' : _dashRoundName(t, m, ms.filter(x => x.stage_id === m.stage_id)),
+        legs: m.legs_to_win || t.legs_to_win, sets: m.sets_to_win || t.sets_to_win || 1, n: 0 };
+      groups[key].n++;
     }
-    // Maç değiştir: canlı olmayan board'a, board'a atanmamış hazır bir maçı ata (/swap-match)
-    const pool = ms.filter(x => x.status === 'ready' && real(x) && !x.board_id && !onBoard.has(x.id));
-    const swap = (!m || m.status !== 'live') && pool.length ? `
-      <select onchange="dashSwap(${b.id}, this)" style="max-width:260px">
-        <option value="">🔀 Maç değiştir…</option>
-        ${pool.map(x => `<option value="${x.id}">${E(x.entry1)} vs ${E(x.entry2)} · ${escapeHtml(_dashRoundName(t, x, ms.filter(y => y.stage_id === x.stage_id)))}</option>`).join('')}
-      </select>` : '';
-    return `<div style="padding:0.5rem 0.7rem;border-bottom:1px solid var(--border);display:flex;gap:0.6rem;align-items:center;flex-wrap:wrap">
-      <b style="min-width:90px">📟 ${escapeHtml(b.name)}</b><div style="flex:1">${body}</div>${swap}</div>`;
-  }).join('') : '<div class="empty">Board yok</div>';
-
-  // Başlamamış turlar → leg düzenleme
-  const groups = {};
-  for (const m of ms) {
-    if (!(m.status === 'pending' || m.status === 'ready')) continue;
-    const key = `${m.stage_id}|${m.bracket}|${m.bracket === 'rr' ? '' : m.round}`;
-    if (!groups[key]) {
-      const stageMs = ms.filter(x => x.stage_id === m.stage_id);
-      groups[key] = { stage_id: m.stage_id, bracket: m.bracket, round: m.bracket === 'rr' ? null : m.round,
-        label: _dashRoundName(t, m, stageMs).replace(/^Grup .*/, 'Round robin'), legs: m.legs_to_win || t.legs_to_win, sets: m.sets_to_win || t.sets_to_win || 1, n: 0 };
-    }
-    groups[key].n++;
+    body = `<div class="ov2-hint">Sadece henüz başlamamış maçlar değişir.</div>` + (Object.values(groups).map((g, i) => `
+      <div class="ov2-row">
+        <div class="x">${escapeHtml(g.label)}<div class="d">${g.n} maç bekliyor</div></div>
+        <label class="ov2-in">İlk <input id="dl-l-${i}" type="number" min="1" value="${g.legs}"> leg</label>
+        <label class="ov2-in">Set <input id="dl-s-${i}" type="number" min="1" value="${g.sets}"></label>
+        <button class="ov2-btn ghost" onclick='dashSetLegs(${t.id}, ${JSON.stringify({ stage_id: g.stage_id, bracket: g.bracket, round: g.round })}, ${i})'>Uygula</button>
+      </div>`).join('') || '<div class="empty">Bekleyen tur yok</div>');
+  } else {
+    const players = [];
+    for (const e of (t.entries || [])) for (const p of [e.player1, e.player2]) if (p && !players.some(x => x.id === p.id)) players.push(p);
+    body = players.sort((a, b) => a.name.localeCompare(b.name, 'tr')).map(p => `
+      <div class="ov2-row"><div class="x">${escapeHtml(p.name)}${p.nickname ? ` <span class="dim">(${escapeHtml(p.nickname)})</span>` : ''}</div>
+      <button class="ov2-btn ghost" onclick="dashRename(${p.id})">✏️ Düzelt</button></div>`).join('');
   }
-  const legRows = Object.entries(groups).map(([k, g], i) => `
-    <div style="display:flex;gap:0.5rem;align-items:center;padding:0.4rem 0;border-bottom:1px solid var(--border);flex-wrap:wrap">
-      <div style="flex:1;min-width:140px">${escapeHtml(g.label)} <span style="color:var(--text-dim);font-size:0.8rem">(${g.n} maç bekliyor)</span></div>
-      <label style="font-size:0.85rem">İlk <input id="dl-l-${i}" type="number" min="1" value="${g.legs}" style="width:56px"> leg</label>
-      <label style="font-size:0.85rem">Set <input id="dl-s-${i}" type="number" min="1" value="${g.sets}" style="width:50px"></label>
-      <button class="secondary" onclick='dashSetLegs(${t.id}, ${JSON.stringify({ stage_id: g.stage_id, bracket: g.bracket, round: g.round })}, ${i})'>Uygula</button>
-    </div>`).join('') || '<div class="empty">Bekleyen tur yok</div>';
 
-  // Canlı/hazır maçlar → hükmen
-  const activeRows = [...live, ...ms.filter(m => m.status === 'ready' && real(m))].map(m => `
-    <div style="display:flex;gap:0.5rem;align-items:center;padding:0.4rem 0;border-bottom:1px solid var(--border);flex-wrap:wrap">
-      <div style="flex:1;min-width:180px">${m.status === 'live' ? '<span class="chip live">CANLI</span>' : '<span class="chip warn">HAZIR</span>'} ${E(m.entry1)} vs ${E(m.entry2)}</div>
-      <button class="secondary" title="${E(m.entry2)} gelmedi/çekildi" onclick="dashWalkover(${m.id}, 1)">🏳 ${E(m.entry1)} hükmen</button>
-      <button class="secondary" title="${E(m.entry1)} gelmedi/çekildi" onclick="dashWalkover(${m.id}, 2)">🏳 ${E(m.entry2)} hükmen</button>
-    </div>`).join('') || '<div class="empty">Canlı veya hazır maç yok</div>';
-
-  // Biten maçlar → yeniden aç (son bitenler üstte)
-  const finRows = fin.slice().sort((a, b) => String(b.finished_at || '').localeCompare(String(a.finished_at || '')) || b.id - a.id).map(m => {
-    const w = m.winner_entry_id === m.entry1_id ? 1 : 2;
-    const sc = (m.sets_to_win || 1) > 1 ? `${m.p1_sets || 0}-${m.p2_sets || 0} set` : `${m.p1_legs || 0}-${m.p2_legs || 0}`;
-    return `<div style="display:flex;gap:0.5rem;align-items:center;padding:0.4rem 0;border-bottom:1px solid var(--border);flex-wrap:wrap">
-      <div style="flex:1;min-width:180px">${w === 1 ? '<b>' + E(m.entry1) + '</b>' : E(m.entry1)} ${sc} ${w === 2 ? '<b>' + E(m.entry2) + '</b>' : E(m.entry2)}${m.is_walkover ? ' <span style="color:var(--text-dim);font-size:0.8rem">(hükmen)</span>' : ''}</div>
-      <button class="secondary" title="Sonucu sil, maçı yeniden oynat ya da hükmen düzelt" onclick="dashReopen(${m.id})">↩ Yeniden Aç</button>
-    </div>`;
-  }).join('') || '<div class="empty">Henüz biten maç yok</div>';
-
-  // Oyuncular → ad düzeltme
-  const players = [];
-  for (const e of (t.entries || [])) for (const p of [e.player1, e.player2]) if (p && !players.some(x => x.id === p.id)) players.push(p);
-  const playerRows = players.sort((a, b) => a.name.localeCompare(b.name, 'tr')).map(p => `
-    <div style="display:flex;gap:0.5rem;align-items:center;padding:0.3rem 0;border-bottom:1px solid var(--border)">
-      <div style="flex:1">${escapeHtml(p.name)}${p.nickname ? ` <span style="color:var(--text-dim)">(${escapeHtml(p.nickname)})</span>` : ''}</div>
-      <button class="secondary" style="padding:0.25rem 0.6rem" onclick="dashRename(${p.id})">✏️ Düzelt</button>
-    </div>`).join('');
-
-  const sec = (title, inner, open) => `<details ${open ? 'open' : ''} style="margin-top:0.9rem;background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:0.6rem 0.9rem">
-      <summary style="cursor:pointer;font-weight:700">${title}</summary><div style="margin-top:0.5rem">${inner}</div></details>`;
-  // Açık/kapalı bölümleri yeniden çizimde koru
-  const openState = {};
-  ov.querySelectorAll('details[data-k]').forEach(d => { openState[d.dataset.k] = d.open; });
-  const secK = (k, title, inner, def) => sec(title, inner, openState[k] ?? def).replace('<details ', `<details data-k="${k}" `);
-
-  ov.innerHTML = `<div style="max-width:980px;margin:0 auto;background:var(--bg);border:1px solid var(--border);border-radius:16px;padding:1.1rem 1.2rem">
-    <div style="display:flex;gap:0.6rem;align-items:center;flex-wrap:wrap">
-      <h2 style="flex:1;margin:0">📟 ${escapeHtml(t.name)}</h2>
+  const stat = (v, l, c) => `<div class="ov2-stat"><b style="color:${c}">${v}</b><small>${l}</small></div>`;
+  const tabB = (k, l) => `<div class="ov2-tab ${tab === k ? 'on' : ''}" onclick="window._dashTab='${k}';renderDashboard()">${l}</div>`;
+  const keepScroll = ov.scrollTop;
+  ov.innerHTML = `<div class="ov2-panel">
+    <div class="ov2-ph">
+      <div class="t">${escapeHtml(t.name)}</div>
       ${t.status === 'running' ? (hold
-        ? `<button class="primary" onclick="dashResume(${t.id})">▶ Maç Atamaya Devam</button>`
-        : `<button class="secondary" title="Devam eden maçlar sürer, yeni maç atanmaz" onclick="dashPause(${t.id})">⏸ Yeni Maç Atamayı Durdur</button>`) : ''}
-      <button class="secondary" onclick="closeDashboard()">✕ Kapat</button>
+        ? `<button class="ov2-btn primary" onclick="dashResume(${t.id})">▶ Maç atamaya devam</button>`
+        : `<button class="ov2-btn ghost" onclick="dashPause(${t.id})">⏸ Yeni maç atamayı durdur</button>`) : ''}
+      <button class="ov2-btn ghost" onclick="closeDashboard()">✕</button>
     </div>
-    <div style="display:flex;gap:0.6rem;margin-top:0.9rem;flex-wrap:wrap">
-      ${card(fin.length + ' / ' + totalReal, 'Biten maç', '#22c55e')}
-      ${card(live.length, 'Canlı', '#ff3860')}
-      ${card(readyOn.length, 'Board\'da hazır', '#ffbe00')}
-      ${card(waiting.length, 'Sırada bekleyen', 'var(--text)')}
-      ${card(boards.length - idleBoards.length + ' / ' + boards.length, 'Dolu board', '#00d4ff')}
+    <div class="ov2-stats">
+      ${stat(fin.length + ' / ' + totalReal, 'Biten', '#22c55e')}
+      ${stat(live.length, 'Canlı', 'var(--accent)')}
+      ${stat(readyOn.length, "Board'da hazır", '#ffbe00')}
+      ${stat(waiting.length, 'Sırada', 'var(--text)')}
+      ${stat((boards.length - idleBoards.length) + ' / ' + boards.length, 'Dolu board', 'var(--accent-2)')}
     </div>
-    ${warn.length ? `<div style="margin-top:0.8rem;padding:0.6rem 0.8rem;border-radius:10px;background:rgba(255,190,0,0.1);border:1px solid #ffbe00;font-size:0.9rem">${warn.map(w => '⚠️ ' + w).join('<br>')}</div>` : ''}
-    ${secK('b', '📟 Board\'lar', boardRows, true)}
-    ${secK('a', '🎯 Canlı / hazır maçlar — hükmen', activeRows, false)}
-    ${secK('l', '📐 Başlamamış turların leg sayısı', legRows, false)}
-    ${secK('f', '↩ Biten maçlar — sonuç düzeltme', finRows, false)}
-    ${secK('p', '✏️ Oyuncu adları', playerRows, false)}
+    <div class="ov2-tabs">${tabB('boards', "Board'lar")}${tabB('matches', 'Maçlar')}${tabB('rounds', 'Turlar')}${tabB('players', 'Oyuncular')}</div>
+    ${warn.map(w => `<div class="ov2-alert">⚠️ ${w}</div>`).join('')}
+    <div class="ov2-body">${body}</div>
   </div>`;
+  ov.scrollTop = keepScroll;
+  if (window._ov2Open) { const mm = document.getElementById('ov2-menu-' + window._ov2Open); if (mm) mm.hidden = false; }
 }
+
+// ⋯ menüleri
+function ov2CloseMenus() {
+  window._ov2Open = null;
+  document.querySelectorAll('.ov2-menu').forEach(m => { m.hidden = true; });
+}
+function ov2ToggleMenu(ev, id) {
+  ev.stopPropagation();
+  const m = document.getElementById('ov2-menu-' + id);
+  if (!m) return;
+  const wasOpen = !m.hidden;
+  ov2CloseMenus();
+  if (!wasOpen) { m.hidden = false; window._ov2Open = id; }
+}
+document.addEventListener('click', (e) => { if (!e.target.closest('.ov2-menu')) ov2CloseMenus(); });
+
+// Yeni görünüm stilleri (organizer.html'e dokunmadan enjekte edilir)
+(function ov2Styles() {
+  if (document.getElementById('ov2-style')) return;
+  const st = document.createElement('style');
+  st.id = 'ov2-style';
+  st.textContent = `
+  .ov2-card{padding:1.1rem 1.25rem}
+  .ov2-head{display:grid;grid-template-columns:1fr auto;gap:1rem;align-items:center}
+  .ov2-title{font-size:1.1rem;font-weight:700;display:flex;align-items:center;gap:.6rem;flex-wrap:wrap}
+  .ov2-meta{color:var(--text-dim);font-size:.85rem;margin-top:.15rem}
+  .ov2-badge{font-size:.68rem;font-weight:700;letter-spacing:.05em;padding:.18rem .55rem;border-radius:99px}
+  .b-draft{background:rgba(255,255,255,.08);color:#c3c9d8}.b-hold{background:rgba(255,190,0,.15);color:#ffbe00}
+  .b-live{background:rgba(255,56,96,.15);color:var(--accent)}.b-done{background:rgba(34,197,94,.15);color:#22c55e}
+  .ov2-steps{display:flex;gap:6px;margin-top:.75rem;max-width:420px}
+  .ov2-steps span{flex:1;height:4px;border-radius:4px;background:rgba(255,255,255,.07)}
+  .ov2-steps span.on{background:var(--accent-2)}
+  .ov2-steplbl{display:flex;gap:6px;font-size:.68rem;color:var(--text-dim);margin-top:.3rem;max-width:420px}.ov2-steplbl span{flex:1}
+  .ov2-actions{display:flex;gap:.5rem;align-items:center}
+  .ov2-btn{border:0;border-radius:10px;padding:.6rem 1rem;font-weight:700;font-size:.9rem;cursor:pointer;font-family:inherit;white-space:nowrap}
+  .ov2-btn.primary{background:var(--accent);color:#fff}
+  .ov2-btn.ghost{background:transparent;border:1px solid var(--border);color:var(--text)}
+  .ov2-btn.ghost:hover{background:rgba(255,255,255,.05)}
+  .ov2-more{width:42px;padding:.6rem 0;text-align:center}
+  .ov2-menuwrap{position:relative}
+  .ov2-menu{position:absolute;right:0;top:calc(100% + 6px);z-index:50;width:260px;background:var(--surface-2,#1b2030);border:1px solid var(--border);border-radius:12px;padding:6px;box-shadow:0 14px 40px rgba(0,0,0,.55);text-align:left}
+  .ov2-menu hr{border:0;border-top:1px solid var(--border);margin:6px 0}
+  .ov2-grp{font-size:.68rem;color:var(--text-dim);text-transform:uppercase;letter-spacing:.08em;padding:.45rem .65rem .2rem}
+  .ov2-it{padding:.45rem .65rem;border-radius:7px;font-size:.9rem;cursor:pointer}.ov2-it:hover{background:rgba(255,255,255,.06)}
+  .ov2-it.danger{color:var(--accent)}
+  .ov2-note{margin-top:.8rem;padding-top:.7rem;border-top:1px solid var(--border);font-size:.85rem;color:#ffbe00}
+  .ov2-panel{max-width:1040px;margin:0 auto;background:var(--surface);border:1px solid var(--border);border-radius:16px;overflow:visible}
+  .ov2-ph{display:flex;align-items:center;gap:.6rem;padding:1rem 1.2rem;border-bottom:1px solid var(--border);flex-wrap:wrap}
+  .ov2-ph .t{flex:1;font-size:1.15rem;font-weight:700}
+  .ov2-stats{display:grid;grid-template-columns:repeat(5,1fr);gap:1px;background:var(--border)}
+  .ov2-stat{background:var(--surface);padding:.75rem 1.1rem}.ov2-stat b{font-size:1.35rem;display:block}.ov2-stat small{color:var(--text-dim);font-size:.75rem}
+  .ov2-tabs{display:flex;gap:2px;padding:.5rem 1rem 0;border-bottom:1px solid var(--border);overflow-x:auto}
+  .ov2-tab{padding:.55rem .9rem;font-size:.9rem;color:var(--text-dim);border-bottom:2px solid transparent;cursor:pointer;white-space:nowrap}
+  .ov2-tab.on{color:var(--text);border-color:var(--accent);font-weight:600}
+  .ov2-alert{margin:.8rem 1.1rem 0;padding:.55rem .75rem;border-radius:9px;background:rgba(255,190,0,.08);color:#ffbe00;font-size:.85rem}
+  .ov2-body{padding:1rem 1.1rem 1.2rem}
+  .ov2-boards{display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:.75rem}
+  .ov2-bd{background:var(--surface-2,#1b2030);border-radius:12px;padding:.85rem;border-left:4px solid #3a4155}
+  .ov2-bd.live{border-color:var(--accent)}.ov2-bd.ready{border-color:#ffbe00}
+  .ov2-bd .n{font-size:.75rem;color:var(--text-dim);display:flex;justify-content:space-between;text-transform:uppercase;letter-spacing:.04em}
+  .ov2-bd.live .s{color:var(--accent)}.ov2-bd.ready .s{color:#ffbe00}
+  .ov2-bd .p{font-weight:600;margin-top:.45rem}.ov2-bd .vs{color:var(--text-dim);font-size:.75rem}
+  .ov2-bd .sc{font-size:1.25rem;font-weight:800;margin-top:.35rem}.ov2-bd .sc small{font-size:.72rem;font-weight:500;color:var(--text-dim);margin-left:.3rem}
+  .ov2-swap{margin-top:.6rem;width:100%;background:transparent;color:var(--accent-2);border:1px solid var(--border);border-radius:8px;padding:.35rem;font-size:.82rem}
+  .ov2-sub{font-size:.72rem;color:var(--text-dim);text-transform:uppercase;letter-spacing:.08em;margin:1rem 0 .2rem}.ov2-sub:first-child{margin-top:0}
+  .ov2-row{display:flex;align-items:center;gap:.7rem;padding:.6rem 0;border-bottom:1px solid var(--border);flex-wrap:wrap}
+  .ov2-row .x{flex:1;min-width:180px}.ov2-row .d{color:var(--text-dim);font-size:.78rem}
+  .ov2-row .dot{width:8px;height:8px;border-radius:50%;flex:none}
+  .ov2-in{font-size:.85rem;color:var(--text-dim)}.ov2-in input{width:56px;margin:0 .25rem}
+  .ov2-hint{font-size:.8rem;color:var(--text-dim);margin-bottom:.4rem}
+  .ov2-panel .dim,.ov2-card .dim{color:var(--text-dim)}
+  @media (max-width:640px){.ov2-head{grid-template-columns:1fr}.ov2-actions{justify-content:flex-start}
+    .ov2-stats{grid-template-columns:repeat(3,1fr)}.ov2-menu{position:fixed;left:8px;right:8px;bottom:8px;top:auto;width:auto;max-height:70vh;overflow:auto}}
+  `;
+  document.head.appendChild(st);
+})();
 
 async function dashPause(tid) {
   if (!await showOrgConfirm('Yeni maç ataması durdurulsun mu?\nDevam eden ve board\'a atanmış maçlar sürer, boşalan board\'lara yeni maç gitmez.', '⏸ Durdur', 'İptal')) return;

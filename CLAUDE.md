@@ -1642,3 +1642,6 @@ Kullanıcı onayıyla (korumalı modüller). `scorer.html` kapsam dışı.
 - `POST /api/tournaments/:id/round-legs` → `db.setPendingRoundLegs` (yalnız atışsız pending/ready maçlar) + stage `round_overrides`'a yazar. SE finalinin bracket'ı `'final'`.
 - `POST /api/tournaments/:id/pause` → `dispatch_hold=true` (devam = `/dispatch`). `PATCH /api/players/:id/name` → `db.renamePlayer` (oyuncu kaydı tüm turnuvalarda değişir).
 - Maç süresi uyarısı YOK (maçta başlama zamanı tutulmuyor) — istenirse `matches.started_at` kolonu eklenmeli.
+
+## Organizatör görünüm yenilemesi (Ekim 2026)
+`organizer.js` `renderTournament`: kart başına aşama rozeti (Taslak/Beklemede/Canlı/Bitti) + ilerleme çubuğu + **tek ana buton** (Braketi Kur → Tabletlere Gönder → Kontrol Paneli → Turnuvayı Bitir/Sonuçlar) + gruplu "⋯" menü (Hazırlık / Turnuva / Paylaş / Düzeltme / Sil). Menü: `ov2ToggleMenu`/`ov2CloseMenus`, açık menü `window._ov2Open` ile socket yeniden çiziminde korunur. Kontrol Paneli sekmeli (`window._dashTab`: boards/matches/rounds/players), board kartları + maç satırlarında "⋯". Stiller `ov2Styles()` ile JS'ten enjekte (`.ov2-*`), organizer.html değişmedi. Yeni buton eklerken karta değil "⋯" menüsündeki uygun gruba ekle.
