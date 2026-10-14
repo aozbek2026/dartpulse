@@ -1189,7 +1189,50 @@ function createLeagueRoundTournament(data) {
   return t;
 }
 
+// --- Taslağa geri dön (Ekim 2026) ---
+// Turnuva kurulmuş ama hiçbir maçta oynanmamışsa (atış/visit yok, gerçek maç
+// bitmemiş — BYE'lar hariç) tüm maçları siler, aşama+turnuvayı draft'a alır.
+// Var olan bracket üretim kodu DEĞİŞMEDİ; bu yalnız ek bir fonksiyon.
+function revertCheck(tournamentId) {
+  const t = db.tournamentById(tournamentId);
+  if (!t) return { ok: false, error: 'Turnuva bulunamadı' };
+  if (t.status !== 'running') return { ok: false, error: 'Turnuva kurulmuş durumda değil' };
+  const matches = db.db.prepare('SELECT * FROM matches WHERE tournament_id = ?').all(tournamentId);
+  const thr = db.db.prepare(
+    'SELECT COUNT(*) AS n FROM throws WHERE match_id IN (SELECT id FROM matches WHERE tournament_id = ?)'
+  ).get(tournamentId);
+  if (thr && thr.n > 0) return { ok: false, error: 'Maçlar başladı (atış girilmiş) — taslağa dönülemez' };
+  for (const m of matches) {
+    if (m.status === 'finished' && m.entry1_id && m.entry2_id)
+      return { ok: false, error: 'Biten maç var — taslağa dönülemez' };
+    if ((m.p1_legs || 0) || (m.p2_legs || 0) || (m.p1_sets || 0) || (m.p2_sets || 0))
+      return { ok: false, error: 'Leg kazanılmış maç var — taslağa dönülemez' };
+    if (m.cricket_state_json) {
+      let st = null; try { st = JSON.parse(m.cricket_state_json); } catch (_) {}
+      const dirty = st && ((st.p1_score || 0) || (st.p2_score || 0) ||
+        Object.values(st.marks || {}).some(v => (v && (v.p1 || v.p2))));
+      if (dirty) return { ok: false, error: 'Visit girilmiş maç var — taslağa dönülemez' };
+    }
+  }
+  return { ok: true, t, matches };
+}
+
+function revertToDraft(tournamentId) {
+  const chk = revertCheck(tournamentId);
+  if (!chk.ok) throw new Error(chk.error);
+  const run = db.db.transaction(() => {
+    for (const m of chk.matches) db.deleteMatch(m.id);
+    for (const st of db.stagesForTournament(tournamentId)) db.updateStageStatus(st.id, 'pending');
+    db.updateTournamentStatus(tournamentId, 'draft');
+    db.setTournamentConfigKey(tournamentId, 'dispatch_hold', undefined);
+  });
+  run();
+  return { ok: true, deleted: chk.matches.length };
+}
+
 module.exports = {
+  revertCheck,
+  revertToDraft,
   createTournament,
   startTournament,
   onMatchFinished,

@@ -1186,6 +1186,18 @@ function adminAllTournaments() {
 function updateTournamentStatus(id, status) {
   db.prepare('UPDATE tournaments SET status = ? WHERE id = ?').run(status, id);
 }
+// Turnuva config_json'unda tek anahtar yaz/sil (şema değişmez). value===undefined → sil.
+function setTournamentConfigKey(id, key, value) {
+  const row = db.prepare('SELECT config_json FROM tournaments WHERE id = ?').get(id);
+  let cfg = {};
+  try { cfg = row && row.config_json ? JSON.parse(row.config_json) : {}; } catch (_) {}
+  if (value === undefined) delete cfg[key]; else cfg[key] = value;
+  db.prepare('UPDATE tournaments SET config_json = ? WHERE id = ?').run(JSON.stringify(cfg), id);
+}
+function tournamentDispatchHold(id) {
+  const row = db.prepare('SELECT config_json FROM tournaments WHERE id = ?').get(id);
+  try { return !!(row && row.config_json && JSON.parse(row.config_json).dispatch_hold); } catch (_) { return false; }
+}
 // Draft turnuva ayarlarını güncelle (name, game_mode, legs_to_win, sets_to_win)
 function updateTournament(id, fields) {
   const allowed = ['name', 'game_mode', 'legs_to_win', 'sets_to_win'];
@@ -2667,6 +2679,7 @@ function avg3ByEntry(tournamentId) {
 
 module.exports = {
   db, init,
+  setTournamentConfigKey, tournamentDispatchHold,
   createUser, userByEmail, userById, allUsers,
   setUserRole, setOrganizerStatus, usersByOrganizerStatus, usersByRole, countAdmins,
   setVerifyToken, verifyEmailToken,

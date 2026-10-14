@@ -1068,16 +1068,73 @@ async function createTournament() {
 }
 
 // ---- Tournament controls ----
+// Ekim 2026: Başlatma iki adım — (1) "Braketi Kur" (tabletlere gitmez), (2) "Tabletlere Gönder".
+function tourHold(t) {
+  try { return !!(t.config_json && JSON.parse(t.config_json).dispatch_hold); } catch (_) { return false; }
+}
+// Hiç gerçek maç bitmemiş mi? (BYE'lar sayılmaz). Atış kontrolünü sunucu ayrıca yapar.
+function tourUnplayed(t) {
+  return !(t.matches || []).some(m => m.status === 'finished' && m.entry1_id && m.entry2_id);
+}
+
+// Turnuva özeti + uyarılar (Braketi Kur / Tabletlere Gönder onay penceresinde)
+function tourSummaryHtml(t) {
+  const legsTxt = `Best of ${t.legs_to_win * 2 - 1} leg` + (t.sets_to_win > 1 ? ` · Best of ${t.sets_to_win * 2 - 1} set` : '');
+  const st0 = (t.stages || [])[0];
+  let cfg = {}; try { cfg = st0 && st0.config_json ? JSON.parse(st0.config_json) : {}; } catch (_) {}
+  const fmtName = { single_elim: 'Tek eleme', double_elim: 'Çift eleme', round_robin: 'Round robin' }[st0?.format] || (st0?.format || '-');
+  const ov = cfg.round_overrides || {};
+  const ovKeys = Object.keys(ov);
+  const ovTxt = ovKeys.length ? ovKeys.map(k => `${k}: ${ov[k].legs ? 'ilk ' + ov[k].legs + ' leg' : ''}${ov[k].sets ? ' / ' + ov[k].sets + ' set' : ''}`).join(', ') : 'yok (hepsi varsayılan)';
+  const seeded = (t.entries || []).filter(e => e.seed != null && e.seed !== '').length;
+  const boards = (state.boards || []).filter(b => b.tournament_id === t.id).length;
+  const warn = [];
+  if (boards === 0) warn.push('Bu turnuvaya atanmış board yok — maçlar tabletlere düşmez.');
+  if (st0?.format !== 'round_robin' && seeded === 0) warn.push('Hiç seri başı atanmamış.');
+  if ((t.entries || []).length < 2) warn.push('En az 2 katılımcı gerekli.');
+  return `<div style="text-align:left;font-size:0.92rem;line-height:1.6;white-space:normal;">
+    <div><b>${t.name}</b></div>
+    <div>👥 ${(t.entries || []).length} katılımcı · ${modeLabel(t.game_mode)} · ${fmtName}</div>
+    <div>🎯 ${legsTxt}</div>
+    <div>📐 Tur bazında leg: ${ovTxt}</div>
+    <div>🌱 Seri başı: ${seeded ? seeded + ' oyuncu' : 'yok'}</div>
+    <div>📟 Board: ${boards}</div>
+    ${warn.length ? `<div style="margin-top:0.6rem;padding:0.5rem 0.7rem;border-radius:8px;background:rgba(255,190,0,0.12);border:1px solid #ffbe00;">${warn.map(w => '⚠️ ' + w).join('<br>')}</div>` : ''}
+  </div>`;
+}
+
 async function startTournament(id) {
-  let msg = 'Turnuvayı başlatmak istediğinizden emin misiniz?';
-  if (state.boards.length === 0) {
-    msg = '⚠️ Henüz hiç board eklenmemiş!\n\nMaçlar board olmadan oynanamaz. "Board\'lar" sekmesinden board ekledikten sonra başlatmanı öneririz.\n\nYine de şimdi başlatmak istiyor musun?';
-  }
-  const devam = await showOrgConfirm(msg, 'Başlat', 'İptal');
-  if (!devam) return;
-  const res = await api.post(`/api/tournaments/${id}/start`, {});
+  const t = state.tournaments.find(x => x.id === id);
+  if (!t) return;
+  const msg = `${tourSummaryHtml(t)}<div style="margin-top:0.8rem;font-size:0.88rem;color:var(--text-dim);white-space:normal;">Braket kurulacak ama <b>tabletlere gönderilmeyecek</b>. Kontrol edip "Tabletlere Gönder" ile başlatırsın; hata varsa "Taslağa Geri Dön" ile düzeltebilirsin.</div>`;
+  const ok = await showOrgConfirm(msg, '🧱 Braketi Kur', 'İptal');
+  if (!ok) return;
+  const res = await api.post(`/api/tournaments/${id}/start`, { hold: true });
   if (res.error) return toast('Hata: ' + res.error);
-  toast('Turnuva başladı');
+  toast('Braket kuruldu — tabletlere henüz gönderilmedi');
+}
+
+async function dispatchTournament(id) {
+  const t = state.tournaments.find(x => x.id === id);
+  if (!t) return;
+  const msg = `${tourSummaryHtml(t)}<div style="margin-top:0.8rem;font-weight:700;white-space:normal;">Maçlar tabletlere gönderilsin ve turnuva başlasın mı?</div>`;
+  const ok = await showOrgConfirm(msg, '📤 Tabletlere Gönder – Başlat', 'İptal');
+  if (!ok) return;
+  const res = await api.post(`/api/tournaments/${id}/dispatch`, {});
+  if (res.error) return toast('Hata: ' + res.error);
+  toast('Turnuva başladı — maçlar tabletlere gönderildi');
+}
+
+async function revertTournamentToDraft(id) {
+  const chk = await api.get(`/api/tournaments/${id}/revert-check`);
+  if (chk && chk.error && !chk.ok) return toast(chk.error);
+  const ok = await showOrgConfirm(
+    'Turnuva taslağa geri alınsın mı?\n\nKurulan braket ve tüm maçlar silinir, tabletler bekleme ekranına döner. Katılımcılar, kayıtlar ve ayarlar korunur. Düzeltmeleri yapıp yeniden "Braketi Kur" diyebilirsin.',
+    '↩ Taslağa Dön', 'İptal');
+  if (!ok) return;
+  const res = await api.post(`/api/tournaments/${id}/revert-to-draft`, {});
+  if (res.error) return toast('Hata: ' + res.error);
+  toast('Turnuva taslağa alındı');
 }
 
 // Etkinlik / Kayıt ayarları modalı (Dilim D) — ayrı tabloda saklanır, tournaments'a dokunmaz
@@ -1996,7 +2053,9 @@ function renderTournament(t) {
         <div class="row">
           ${t.status === 'draft' ? `<button class="secondary" onclick="showTournamentSettings(${t.id})">⚙️ Ayarlar</button>` : ''}
           ${t.status === 'draft' && t.entries.length >= 2 ? `<button class="secondary" onclick="showMatchEditModal(${t.id})">🔀 Eşleşmeleri Düzenle</button>` : ''}
-          ${t.status === 'draft' ? `<button class="primary" onclick="startTournament(${t.id})">Başlat</button>` : ''}
+          ${t.status === 'draft' ? `<button class="primary" onclick="startTournament(${t.id})">🧱 Braketi Kur</button>` : ''}
+          ${t.status === 'running' && tourHold(t) ? `<button class="primary" onclick="dispatchTournament(${t.id})">📤 Tabletlere Gönder – Başlat</button>` : ''}
+          ${t.status === 'running' && tourUnplayed(t) ? `<button class="secondary" title="Hiç maç oynanmadıysa braketi silip taslağa döner" onclick="revertTournamentToDraft(${t.id})">↩ Taslağa Geri Dön</button>` : ''}
           ${t.status !== 'draft' ? `<button class="secondary" onclick="toggleReport(${t.id})">📊 Rapor</button>` : ''}
           ${t.status !== 'draft' ? `<button class="secondary" title="Braketi A4 (yatay) PDF olarak yazdır" onclick="printTournamentBracket(${t.id})">🖨️ Braket PDF</button>` : ''}
           ${t.status !== 'draft' ? `<button class="secondary" title="Üyelik gerektirmeyen izleyici linki — braket ve klasman paylaşılır" onclick="openTournamentShareModal(${t.id})">🔗 İzleyici Linki</button>` : ''}
@@ -2012,6 +2071,10 @@ function renderTournament(t) {
         </div>
       </div>
 
+      ${t.status === 'running' && tourHold(t) ? `
+        <div style="margin-top:0.9rem;padding:0.75rem 1rem;border:1px solid #ffbe00;border-radius:10px;background:rgba(255,190,0,0.1);font-size:0.9rem;">
+          ⏸ <strong>Braket kuruldu, tabletlere henüz gönderilmedi.</strong> Kontrol et; hata varsa "↩ Taslağa Geri Dön", her şey doğruysa "📤 Tabletlere Gönder – Başlat".
+        </div>` : ''}
       ${(() => {
         const gf = pendingResetFinal(t);
         if (!gf) return '';

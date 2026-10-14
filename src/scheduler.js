@@ -92,7 +92,10 @@ function assignForUser(io, userId) {
   // AŞAMA 1: maçları board'lara ata. Bir maç YALNIZCA kendi turnuvasına atanmış
   // board'lara gider (federasyon izolasyonu). pin_groups açıksa RR maçı grup→board
   // sabit eşlemeyle o board'a gider (g % N); kapalıysa boş board havuzuna dağıtılır.
-  const readyMatches = db.pendingReadyMatches(userId).filter(m => !m.board_id);
+  // "Braketi Kur" sonrası tabletlere gönderim beklemede olan turnuvalar atlanır (Ekim 2026)
+  const holdCache = {};
+  const onHold = (tid) => (holdCache[tid] !== undefined ? holdCache[tid] : (holdCache[tid] = db.tournamentDispatchHold(tid)));
+  const readyMatches = db.pendingReadyMatches(userId).filter(m => !m.board_id && !onHold(m.tournament_id));
   const newlyAssigned = [];
   const usedBoards = new Set();
   for (const match of readyMatches) {

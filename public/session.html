@@ -203,6 +203,11 @@ async function loadAndRender() {
       const tm = await apiGet(`/api/matches/for-tournament/${ses.tournament_id}`);
       STATE.matches = Array.isArray(tm) ? tm : [];
       STATE.roundMatches = {};
+      // Braketi Kur / Tabletlere Gönder / Taslağa Dön durumu (Ekim 2026)
+      STATE.revert = null;
+      if (ses.tournament_status === 'running') {
+        try { STATE.revert = await apiGet(`/api/tournaments/${ses.tournament_id}/revert-check`); } catch (_) {}
+      }
     } else {
       STATE.matches = [];
       STATE.roundMatches = {};
@@ -273,6 +278,20 @@ function render() {
   const content = document.getElementById('page-content');
   let html = '';
 
+  // Braket kuruldu ama tabletlere gönderilmedi / hiç oynanmadı → kontrol çubuğu
+  const rv = STATE.revert;
+  if (s.tournament_id && tournStatus === 'running' && rv && (rv.hold || rv.ok)) {
+    html += `
+      <div style="margin-top:1rem;padding:0.9rem 1.1rem;border:1px solid ${rv.hold ? '#ffbe00' : 'var(--border)'};border-radius:12px;background:${rv.hold ? 'rgba(255,190,0,0.08)' : 'transparent'};display:flex;gap:0.75rem;align-items:center;flex-wrap:wrap">
+        <div style="flex:1;min-width:220px;font-size:0.9rem">
+          ${rv.hold ? '⏸ <strong>Braket kuruldu, tabletlere henüz gönderilmedi.</strong> Kontrol et; hata varsa taslağa dön, düzeltmeleri "Organize" ekranından yap.'
+                    : 'Henüz hiç maç oynanmadı — gerekirse taslağa dönüp düzeltebilirsin.'}
+        </div>
+        ${rv.hold ? `<button class="primary" onclick="sessionDispatch(${s.tournament_id})" style="background:#16a34a;border-color:#16a34a">📤 Tabletlere Gönder – Başlat</button>` : ''}
+        ${rv.ok ? `<button class="secondary" onclick="sessionRevert(${s.tournament_id})">↩ Taslağa Geri Dön</button>` : ''}
+      </div>`;
+  }
+
   if (s.tournament_id && matches.length > 0) {
     const sessionType = s.session_type || 'bracket';
     if (sessionType === 'league_round') {
@@ -292,10 +311,10 @@ function render() {
       <div style="margin-top:1.5rem;padding:1.5rem;background:rgba(34,197,94,0.05);border:1px solid rgba(34,197,94,0.25);border-radius:12px;text-align:center">
         <p style="margin:0 0 0.5rem 0;font-size:1.05rem;font-weight:600">Turnuva henüz başlatılmadı</p>
         <p style="margin:0 0 1rem 0;color:var(--text-dim);font-size:0.88rem">
-          "Başlat" tıklayınca bracket maçları oluşturulur ve boş board'lara dağıtılır. Tabletlerden skor girişi başlayabilir.
+          "Braketi Kur" tıklayınca bracket maçları oluşturulur ama tabletlere gönderilmez. Kontrol ettikten sonra "Tabletlere Gönder – Başlat" ile maçlar board'lara dağıtılır.
         </p>
         <button id="start-tournament-btn" class="primary" style="padding:0.7rem 1.4rem;font-size:1rem;background:#16a34a;border-color:#16a34a">
-          ▶ Turnuvayı Başlat
+          🧱 Braketi Kur
         </button>
       </div>
     `;
@@ -314,23 +333,24 @@ function render() {
   const startBtn = document.getElementById('start-tournament-btn');
   if (startBtn) {
     startBtn.addEventListener('click', async () => {
+      if (!confirm('Braket kurulsun mu?\n\nMaçlar oluşturulur ama tabletlere gönderilmez. Kontrol ettikten sonra "Tabletlere Gönder – Başlat" ile başlatırsın.')) return;
       startBtn.disabled = true;
-      startBtn.textContent = 'Başlatılıyor…';
+      startBtn.textContent = 'Kuruluyor…';
       try {
-        const res = await apiPost(`/api/tournaments/${s.tournament_id}/start`, {});
+        const res = await apiPost(`/api/tournaments/${s.tournament_id}/start`, { hold: true });
         if (res && res.error) {
           toast('Hata: ' + res.error);
           startBtn.disabled = false;
-          startBtn.textContent = '▶ Turnuvayı Başlat';
+          startBtn.textContent = '🧱 Braketi Kur';
           return;
         }
-        toast('Turnuva başlatıldı ✓');
+        toast('Braket kuruldu — tabletlere henüz gönderilmedi');
         await loadAndRender();
       } catch (e) {
         console.error(e);
         toast('Sunucu hatası: ' + (e.message || e));
         startBtn.disabled = false;
-        startBtn.textContent = '▶ Turnuvayı Başlat';
+        startBtn.textContent = '🧱 Braketi Kur';
       }
     });
   }
@@ -456,7 +476,9 @@ function renderLeagueRoundRow(round, session, comp) {
         ▶ Başlat
       </button>`;
   } else if (running) {
+    const noneFinished = !((STATE.roundMatches || {})[round.tournament_id] || []).some(m => m.status === 'finished' && m.entry1_id && m.entry2_id);
     actions = `
+      ${noneFinished ? `<button class="secondary" onclick="unstartRound(${session.competition_id}, ${round.round_number})" style="padding:0.4rem 0.8rem;font-size:0.85rem;margin-right:0.4rem">↩ Geri Al</button>` : ''}
       <a href="/organizer.html?focus=${round.tournament_id}" class="btn"
         style="text-decoration:none;display:inline-block;padding:0.4rem 0.8rem;font-size:0.85rem;background:rgba(74,222,128,0.15);border:1px solid rgba(74,222,128,0.3);border-radius:6px;color:#4ade80">
         🎯 Organizatör
@@ -817,8 +839,43 @@ function renderBracketSimple(matches, comp) {
   return renderBracketWithTabs(columns, '');
 }
 
+// ── Sezon oturumu: Tabletlere gönder / Taslağa dön (Ekim 2026) ─────
+async function sessionDispatch(tid) {
+  const n = STATE.matches.filter(m => m.entry1_id && m.entry2_id && m.status !== 'finished').length;
+  if (!confirm(`Maçlar tabletlere gönderilsin ve turnuva başlasın mı?\n\n${STATE.matches.length} maç · ilk turda oynanacak ${n} maç`)) return;
+  const res = await apiPost(`/api/tournaments/${tid}/dispatch`, {});
+  if (res && res.error) return toast('Hata: ' + res.error);
+  toast('Turnuva başladı — maçlar tabletlere gönderildi');
+  await loadAndRender();
+}
+window.sessionDispatch = sessionDispatch;
+
+async function sessionRevert(tid) {
+  if (!confirm('Turnuva taslağa geri alınsın mı?\n\nKurulan braket ve maçlar silinir, tabletler bekleme ekranına döner. Katılımcılar ve oturum korunur. Düzeltmeleri "Organize" ekranından yapıp yeniden "Braketi Kur" diyebilirsin.')) return;
+  const res = await apiPost(`/api/tournaments/${tid}/revert-to-draft`, {});
+  if (res && res.error) return toast('Hata: ' + res.error);
+  toast('Turnuva taslağa alındı');
+  await loadAndRender();
+}
+window.sessionRevert = sessionRevert;
+
+// ── Lig round'unu geri al (hiç oynanmadıysa) ─────────────────────
+async function unstartRound(compId, roundNumber) {
+  if (!confirm(`Round ${roundNumber} geri alınsın mı?\n\nRound'un maçları silinir, tabletler boşa çıkar ve round "oynanabilir" listesine döner. Sadece hiç atış girilmediyse yapılabilir.`)) return;
+  const res = await apiPost(`/api/competitions/${compId}/rounds/${roundNumber}/unstart`, {});
+  if (res && res.error) return toast('Hata: ' + res.error);
+  toast(`Round ${roundNumber} geri alındı`);
+  await loadAndRender();
+}
+window.unstartRound = unstartRound;
+
 // ── Round başlat ──────────────────────────────────────────────────
 async function startRound(sid, compId, roundNumber) {
+  const rd = (STATE.schedule || []).find(r => r.round_number === roundNumber);
+  const pc = rd && rd.pairs ? rd.pairs.length : 0;
+  const c = STATE.comp || {};
+  const bo = c.legs_to_win ? ` · Best of ${c.legs_to_win * 2 - 1}` : '';
+  if (!confirm(`Round ${roundNumber} · ${pc} maç${bo}\n\nMaçlar tabletlere gönderilsin mi?`)) return;
   try {
     toast('Round başlatılıyor…');
     const res = await apiPost(

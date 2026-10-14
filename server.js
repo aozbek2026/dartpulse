@@ -575,10 +575,88 @@ app.post('/api/tournaments/:id/start', auth.requireOrganizer, (req, res) => {
       }
     }
     tournament.startTournament(+req.params.id);
+    // "Braketi Kur": body.hold → braket kurulur ama tabletlere gönderilmez (Ekim 2026)
+    if (req.body && req.body.hold) db.setTournamentConfigKey(+req.params.id, 'dispatch_hold', true);
+    scheduler.assignPendingMatches(io, req.user.id);
+    scheduleBroadcast();
+    res.json({ ok: true, hold: !!(req.body && req.body.hold) });
+  } catch (e) {
+    res.status(400).json({ error: e.message });
+  }
+});
+
+// Turnuva sahipliği kontrolü (yeni uçlar için ortak)
+function ownTournament(req, res) {
+  const t = db.tournamentById(+req.params.id);
+  if (!t) { res.status(404).json({ error: 'Turnuva bulunamadı' }); return null; }
+  if (t.user_id && t.user_id !== req.user.id) { res.status(403).json({ error: 'Yetkiniz yok' }); return null; }
+  return t;
+}
+
+// Bir turnuvanın board'larını boşalt + tabletlere bekleme ekranı yayınla
+function releaseTournamentBoards(userId, tid) {
+  const boards = db.clearTournamentBoards(userId, tid) || [];
+  for (const b of boards) {
+    io.to(`board:${b.id}`).emit('board:state', { board: db.boardById(b.id), match: null });
+  }
+}
+
+// "Tabletlere Gönder – Başlat": beklemedeki turnuvanın maçlarını board'lara dağıt
+app.post('/api/tournaments/:id/dispatch', auth.requireOrganizer, (req, res) => {
+  try {
+    const t = ownTournament(req, res); if (!t) return;
+    if (t.status !== 'running') return res.status(400).json({ error: 'Önce braketi kurun' });
+    db.setTournamentConfigKey(t.id, 'dispatch_hold', undefined);
     scheduler.assignPendingMatches(io, req.user.id);
     scheduleBroadcast();
     res.json({ ok: true });
   } catch (e) {
+    res.status(400).json({ error: e.message });
+  }
+});
+
+// Taslağa geri dönülebilir mi? (buton görünürlüğü için)
+app.get('/api/tournaments/:id/revert-check', auth.requireOrganizer, (req, res) => {
+  const t = ownTournament(req, res); if (!t) return;
+  const r = tournament.revertCheck(t.id);
+  res.json({ ok: r.ok, error: r.error || null, hold: db.tournamentDispatchHold(t.id) });
+});
+
+// Taslağa geri dön: hiç oynanmamış turnuvanın maçlarını sil, draft'a al
+app.post('/api/tournaments/:id/revert-to-draft', auth.requireOrganizer, (req, res) => {
+  try {
+    const t = ownTournament(req, res); if (!t) return;
+    const r = tournament.revertToDraft(t.id);
+    releaseTournamentBoards(req.user.id, t.id);
+    scheduleBroadcast();
+    res.json(r);
+  } catch (e) {
+    res.status(400).json({ error: e.message });
+  }
+});
+
+// Lig round'unu geri al: hiç oynanmamışsa round turnuvasını sil, round'u "oynanabilir"e döndür
+app.post('/api/competitions/:id/rounds/:roundNumber/unstart', auth.requireOrganizer, (req, res) => {
+  try {
+    const userId = req.session.userId;
+    const compId = +req.params.id;
+    const roundNumber = +req.params.roundNumber;
+    const comp = db.competitionById(compId, userId);
+    if (!comp) return res.status(404).json({ error: 'Bulunamadi' });
+    const rd = (db.leagueSchedule(compId) || []).find(r => r.round_number === roundNumber);
+    if (!rd || !rd.tournament_id) return res.status(400).json({ error: 'Bu round başlatılmamış' });
+    if (rd.results_recorded) return res.status(400).json({ error: 'Round sonuçları klasmana işlenmiş — geri alınamaz' });
+    const chk = tournament.revertCheck(rd.tournament_id);
+    if (!chk.ok) return res.status(400).json({ error: chk.error });
+    releaseTournamentBoards(userId, rd.tournament_id);
+    db.db.prepare('UPDATE league_schedule SET tournament_id = NULL WHERE competition_id = ? AND round_number = ?')
+      .run(compId, roundNumber);
+    db.deleteTournament(rd.tournament_id);
+    scheduler.assignPendingMatches(io, userId);
+    scheduleBroadcast();
+    res.json({ ok: true });
+  } catch (e) {
+    console.error('POST rounds/:rn/unstart:', e);
     res.status(400).json({ error: e.message });
   }
 });
