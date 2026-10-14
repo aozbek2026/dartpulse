@@ -1435,6 +1435,85 @@ function reopenWalkoverMatch(matchId) {
   tx();
   return db.prepare('SELECT * FROM matches WHERE id = ?').get(matchId);
 }
+// Biten (gerçek) maçın sonucunu düzelt / maçı yeniden aç (Ekim 2026, dashboard).
+// Atışlar silinir, istatistik sıfırlanır, maç 'ready' olur; kazananın/kaybedenin ilerlediği
+// sonraki maçlardan (başlamamışsa) çıkarılır. Sonraki maç başlamışsa, sonraki aşama
+// kurulmuşsa, reset final varsa ya da sonuç klasmana işlenmişse reddeder.
+function reopenFinishedMatch(matchId) {
+  const m = db.prepare('SELECT * FROM matches WHERE id = ?').get(matchId);
+  if (!m) throw new Error('Maç bulunamadı');
+  if (m.status !== 'finished') throw new Error('Maç bitmiş değil');
+  if (!m.entry1_id || !m.entry2_id) throw new Error('BYE maçı yeniden açılamaz');
+  const rec1 = db.prepare(`SELECT 1 FROM session_results sr JOIN competition_sessions cs ON cs.id = sr.session_id
+                            WHERE cs.tournament_id = ? LIMIT 1`).get(m.tournament_id);
+  const rec2 = db.prepare('SELECT 1 FROM league_schedule WHERE tournament_id = ? AND results_recorded = 1 LIMIT 1').get(m.tournament_id);
+  if (rec1 || rec2) throw new Error('Sonuçlar klasmana işlenmiş — maç yeniden açılamaz');
+  const st = db.prepare('SELECT * FROM stages WHERE id = ?').get(m.stage_id);
+  const later = db.prepare(`SELECT 1 FROM matches mm JOIN stages s2 ON s2.id = mm.stage_id
+                             WHERE s2.tournament_id = ? AND s2.stage_index > ? LIMIT 1`).get(m.tournament_id, st ? st.stage_index : 0);
+  if (later) throw new Error('Sonraki aşama kurulmuş — maç yeniden açılamaz');
+  if (m.bracket === 'final') {
+    const rf = db.prepare("SELECT 1 FROM matches WHERE stage_id = ? AND is_reset_final = 1 LIMIT 1").get(m.stage_id);
+    if (rf && !m.is_reset_final) throw new Error('Reset final oluşturulmuş — önce onu silin');
+  }
+  const blockers = [];
+  const checkNext = (nid, slot, entryId) => {
+    if (!nid || !entryId) return null;
+    const n = db.prepare('SELECT * FROM matches WHERE id = ?').get(nid);
+    if (!n) return null;
+    const col = slot === 1 ? 'entry1_id' : 'entry2_id';
+    if (n[col] !== entryId) return null;
+    const thrown = db.prepare('SELECT 1 FROM throws WHERE match_id = ? LIMIT 1').get(nid);
+    if (n.status === 'live' || n.status === 'finished' || thrown) blockers.push(nid);
+    return { n, col };
+  };
+  const loser = m.entry1_id === m.winner_entry_id ? m.entry2_id : m.entry1_id;
+  const w = checkNext(m.next_winner_match_id, m.next_winner_slot, m.winner_entry_id);
+  const l = checkNext(m.next_loser_match_id, m.next_loser_slot, loser);
+  if (blockers.length) throw new Error('Sonraki maç başlamış — bu maç yeniden açılamaz');
+  const t = db.prepare('SELECT * FROM tournaments WHERE id = ?').get(m.tournament_id);
+  const START = { '501': 501, '701': 701, '1001': 1001 };
+  const startScore = START[t && t.game_mode] ?? null;
+  const tx = db.transaction(() => {
+    for (const x of [w, l]) {
+      if (!x) continue;
+      db.prepare(`UPDATE matches SET ${x.col} = NULL,
+                   status = CASE WHEN status = 'ready' THEN 'pending' ELSE status END,
+                   board_id = NULL WHERE id = ?`).run(x.n.id);
+      db.prepare("UPDATE boards SET current_match_id = NULL, status = 'idle' WHERE current_match_id = ?").run(x.n.id);
+    }
+    db.prepare("UPDATE boards SET current_match_id = NULL, status = 'idle' WHERE current_match_id = ?").run(m.id);
+    db.prepare('DELETE FROM throws WHERE match_id = ?').run(m.id);
+    db.prepare(`UPDATE match_stats SET total_score = 0, darts_thrown = 0, turns = 0, legs_won = 0, sets_won = 0,
+                 best_checkout = 0, tons = 0, ton_plus = 0, one_eighty = 0, high_outs = 0, darts_in_finished_legs = 0
+               WHERE match_id = ?`).run(m.id);
+    db.prepare(`UPDATE matches SET status = 'ready', winner_entry_id = NULL, p1_legs = 0, p2_legs = 0,
+                 p1_sets = 0, p2_sets = 0, is_walkover = 0, finished_at = NULL, board_id = NULL,
+                 current_leg = 1, current_set = 1, current_turn = 1, starter_slot = 1,
+                 p1_sub_turn = 1, p2_sub_turn = 1, p1_leg_score = ?, p2_leg_score = ?,
+                 cricket_state_json = NULL, cricket_undo_json = NULL
+               WHERE id = ?`).run(startScore, startScore, m.id);
+    if (st && st.status === 'finished') db.prepare("UPDATE stages SET status = 'running' WHERE id = ?").run(st.id);
+    db.prepare("UPDATE tournaments SET status = 'running' WHERE id = ? AND status = 'finished'").run(m.tournament_id);
+  });
+  tx();
+  return db.prepare('SELECT * FROM matches WHERE id = ?').get(matchId);
+}
+
+// Henüz başlamamış maçların leg/set hedefini güncelle (dashboard: tur bazında leg)
+function setPendingRoundLegs(tournamentId, stageId, bracket, round, legs, sets) {
+  const rows = db.prepare(`SELECT m.id FROM matches m WHERE m.tournament_id = ? AND m.stage_id = ?
+      AND m.bracket = ? AND (? IS NULL OR m.round = ?) AND m.status IN ('pending','ready')
+      AND NOT EXISTS (SELECT 1 FROM throws t WHERE t.match_id = m.id)`).all(tournamentId, stageId, bracket, round, round);
+  const upd = db.prepare('UPDATE matches SET legs_to_win = ?, sets_to_win = ? WHERE id = ?');
+  for (const r of rows) upd.run(legs, sets, r.id);
+  return rows.length;
+}
+
+function renamePlayer(playerId, userId, name) {
+  return db.prepare('UPDATE players SET name = ? WHERE id = ? AND user_id = ?').run(name, playerId, userId).changes;
+}
+
 // Bir maçı (ve bağlı throws/match_stats satırlarını) tamamen kaldır.
 // Çift elemede bye nedeniyle oluşan "ölü" loser-braket kutularını temizlemek için.
 function deleteMatch(id) {
@@ -2679,7 +2758,7 @@ function avg3ByEntry(tournamentId) {
 
 module.exports = {
   db, init,
-  setTournamentConfigKey, tournamentDispatchHold,
+  setTournamentConfigKey, tournamentDispatchHold, reopenFinishedMatch, setPendingRoundLegs, renamePlayer,
   createUser, userByEmail, userById, allUsers,
   setUserRole, setOrganizerStatus, usersByOrganizerStatus, usersByRole, countAdmins,
   setVerifyToken, verifyEmailToken,

@@ -1442,6 +1442,83 @@ app.post('/api/matches/:id/reopen', auth.requireOrganizer, (req, res) => {
   }
 });
 
+// ── Kontrol Paneli (dashboard) uçları — Ekim 2026 ─────────────────────
+function ownMatchTournament(req, res) {
+  const m = db.matchById(+req.params.id);
+  if (!m) { res.status(404).json({ error: 'Maç bulunamadı' }); return null; }
+  const t = db.tournamentById(m.tournament_id);
+  if (!t || (t.user_id && t.user_id !== req.user.id)) { res.status(403).json({ error: 'Yetkisiz' }); return null; }
+  return { m, t };
+}
+function pushAllBoards(userId) {
+  for (const b of db.allBoards(userId || null)) {
+    io.to(`board:${b.id}`).emit('board:state', { board: b, match: b.current_match_id ? db.matchById(b.current_match_id) : null });
+  }
+}
+
+// Biten maçı yeniden aç (yanlış girilen sonucu düzeltmek için)
+app.post('/api/matches/:id/reopen-result', auth.requireOrganizer, (req, res) => {
+  try {
+    const r = ownMatchTournament(req, res); if (!r) return;
+    db.reopenFinishedMatch(r.m.id);
+    try { backup.triggerBackup(); } catch (_) {}
+    scheduler.assignPendingMatches(io, r.t.user_id || null);
+    pushAllBoards(r.t.user_id);
+    io.emit('match:update', { matchId: r.m.id });
+    scheduleBroadcast();
+    res.json({ ok: true });
+  } catch (e) {
+    res.status(400).json({ error: e.message });
+  }
+});
+
+// Turu duraklat: yeni maç ataması durur (devam eden maçlar sürer). Devam = /dispatch
+app.post('/api/tournaments/:id/pause', auth.requireOrganizer, (req, res) => {
+  const t = ownTournament(req, res); if (!t) return;
+  if (t.status !== 'running') return res.status(400).json({ error: 'Turnuva devam etmiyor' });
+  db.setTournamentConfigKey(t.id, 'dispatch_hold', true);
+  scheduleBroadcast();
+  res.json({ ok: true });
+});
+
+// Başlamamış maçların leg/set sayısını değiştir. body: {stage_id, bracket, round (null=hepsi), legs, sets}
+app.post('/api/tournaments/:id/round-legs', auth.requireOrganizer, (req, res) => {
+  try {
+    const t = ownTournament(req, res); if (!t) return;
+    const { stage_id, bracket } = req.body || {};
+    const round = req.body.round == null || req.body.round === '' ? null : +req.body.round;
+    const legs = Math.floor(+req.body.legs), sets = Math.max(1, Math.floor(+req.body.sets || 1));
+    if (!(legs >= 1)) return res.status(400).json({ error: 'Leg sayısı en az 1 olmalı' });
+    const st = db.stageById(+stage_id);
+    if (!st || st.tournament_id !== t.id) return res.status(400).json({ error: 'Aşama bulunamadı' });
+    if (!['winners', 'losers', 'final', 'rr'].includes(bracket)) return res.status(400).json({ error: 'Geçersiz braket' });
+    const n = db.setPendingRoundLegs(t.id, st.id, bracket, round, legs, sets);
+    // Aşama config'ine de yaz (sonradan oluşan maçlar, ör. reset final, tutarlı olsun)
+    if (round != null || bracket === 'rr') {
+      let cfg = {}; try { cfg = st.config_json ? JSON.parse(st.config_json) : {}; } catch (_) {}
+      cfg.round_overrides = cfg.round_overrides || {};
+      cfg.round_overrides[bracket === 'rr' ? 'rr' : `${bracket}-${round}`] = { legs, sets };
+      db.setStageConfig(st.id, cfg);
+    }
+    pushAllBoards(t.user_id);
+    scheduleBroadcast();
+    res.json({ ok: true, updated: n });
+  } catch (e) {
+    res.status(400).json({ error: e.message });
+  }
+});
+
+// Oyuncu adını düzelt (her an güvenli; skoru etkilemez)
+app.patch('/api/players/:id/name', auth.requireOrganizer, (req, res) => {
+  const name = String((req.body && req.body.name) || '').trim();
+  if (!name) return res.status(400).json({ error: 'İsim boş olamaz' });
+  const n = db.renamePlayer(+req.params.id, req.user.id, name);
+  if (!n) return res.status(404).json({ error: 'Oyuncu bulunamadı' });
+  pushAllBoards(req.user.id);
+  scheduleBroadcast();
+  res.json({ ok: true });
+});
+
 app.post('/api/matches/:id/walkover', (req, res) => {
   try {
     const matchId = +req.params.id;

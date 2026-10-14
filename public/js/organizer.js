@@ -18,6 +18,7 @@ const socket = io();
 socket.on('state', (s) => {
   state = s;
   render();
+  if (window._dashTid) renderDashboard();
 });
 
 // Çift eleme bracket reset: GF'de LB kazandı → leg sayısı sor → reset maçını oluştur
@@ -2055,6 +2056,7 @@ function renderTournament(t) {
           ${t.status === 'draft' && t.entries.length >= 2 ? `<button class="secondary" onclick="showMatchEditModal(${t.id})">🔀 Eşleşmeleri Düzenle</button>` : ''}
           ${t.status === 'draft' ? `<button class="primary" onclick="startTournament(${t.id})">🧱 Braketi Kur</button>` : ''}
           ${t.status === 'running' && tourHold(t) ? `<button class="primary" onclick="dispatchTournament(${t.id})">📤 Tabletlere Gönder – Başlat</button>` : ''}
+          ${t.status === 'running' ? `<button class="primary" title="Canlı durum, board'lar, leg sayıları, sonuç düzeltme" onclick="openDashboard(${t.id})">📟 Kontrol Paneli</button>` : ''}
           ${t.status === 'running' && tourUnplayed(t) ? `<button class="secondary" title="Hiç maç oynanmadıysa braketi silip taslağa döner" onclick="revertTournamentToDraft(${t.id})">↩ Taslağa Geri Dön</button>` : ''}
           ${t.status !== 'draft' ? `<button class="secondary" onclick="toggleReport(${t.id})">📊 Rapor</button>` : ''}
           ${t.status !== 'draft' ? `<button class="secondary" title="Braketi A4 (yatay) PDF olarak yazdır" onclick="printTournamentBracket(${t.id})">🖨️ Braket PDF</button>` : ''}
@@ -2789,3 +2791,217 @@ async function _saveMatchEdit() {
 
 // Initial render
 render();
+
+
+// ════════════════════════════════════════════════════════════════════
+// 📟 KONTROL PANELİ (dashboard) — Ekim 2026
+// Devam eden turnuvayı tek ekrandan izle/düzelt: durum özeti, board'lar,
+// başlamamış turların leg sayısı, hükmen, sonuç düzeltme (maçı yeniden aç),
+// oyuncu adı düzeltme, yeni maç atamayı duraklat/devam ettir.
+// Canlı: socket 'state' geldikçe yeniden çizilir.
+// ════════════════════════════════════════════════════════════════════
+function openDashboard(tid) {
+  window._dashTid = tid;
+  let ov = document.getElementById('dash-overlay');
+  if (!ov) {
+    ov = document.createElement('div');
+    ov.id = 'dash-overlay';
+    ov.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,0.75);z-index:9000;overflow:auto;padding:1rem;';
+    ov.addEventListener('click', (e) => { if (e.target === ov) closeDashboard(); });
+    document.body.appendChild(ov);
+  }
+  renderDashboard();
+}
+function closeDashboard() {
+  window._dashTid = null;
+  const ov = document.getElementById('dash-overlay');
+  if (ov) ov.remove();
+}
+
+function _dashRoundName(t, m, stageMatches) {
+  if (m.bracket === 'rr') return m.group_index != null ? `Grup ${String.fromCharCode(65 + m.group_index)}` : 'Round robin';
+  if (m.bracket === 'final') return m.is_reset_final ? 'Reset Final' : 'Büyük Final';
+  if (m.bracket === 'losers') return `Alt taraf · Tur ${m.round}`;
+  const cnt = stageMatches.filter(x => x.bracket === m.bracket && x.round === m.round).length;
+  return _roundLabel(cnt);
+}
+
+function renderDashboard() {
+  const ov = document.getElementById('dash-overlay');
+  const t = state.tournaments.find(x => x.id === window._dashTid);
+  if (!ov || !t) return closeDashboard();
+  const E = (e) => escapeHtml(entryLabel(e) || '—');
+  const ms = t.matches || [];
+  const real = (m) => m.entry1_id && m.entry2_id;
+  const boards = (state.boards || []).filter(b => b.tournament_id === t.id);
+  const onBoard = new Set(boards.map(b => b.current_match_id).filter(Boolean));
+  const fin = ms.filter(m => m.status === 'finished' && real(m));
+  const live = ms.filter(m => m.status === 'live');
+  const readyOn = ms.filter(m => m.status === 'ready' && onBoard.has(m.id));
+  const waiting = ms.filter(m => (m.status === 'ready' && !onBoard.has(m.id)) || m.status === 'pending');
+  const totalReal = ms.filter(m => real(m) || m.status !== 'finished').length;
+  const hold = tourHold(t);
+  // Uzun süren maç uyarısı için: maç 'live' + kaç dk? (başlama zamanı tutulmuyor → yok)
+  const warn = [];
+  if (hold) warn.push('⏸ Yeni maç ataması duraklatıldı — board\'lara yeni maç gitmiyor.');
+  if (!boards.length) warn.push('Bu turnuvaya atanmış board yok.');
+  const idleBoards = boards.filter(b => !b.current_match_id);
+  if (idleBoards.length && waiting.some(m => m.status === 'ready') && !hold)
+    warn.push(`${idleBoards.length} board boşta ama hazır maç bekliyor (oyuncular başka maçta meşgul olabilir).`);
+
+  const card = (n, label, color) => `<div style="flex:1;min-width:110px;padding:0.7rem 0.9rem;border-radius:10px;background:var(--surface-2);border:1px solid var(--border)">
+      <div style="font-size:1.6rem;font-weight:800;color:${color}">${n}</div><div style="font-size:0.8rem;color:var(--text-dim)">${label}</div></div>`;
+
+  const boardRows = boards.length ? boards.map(b => {
+    const m = b.current_match_id ? ms.find(x => x.id === b.current_match_id) : null;
+    let body = '<span style="color:var(--text-dim)">Boşta</span>';
+    if (m) {
+      const sc = (m.sets_to_win || 1) > 1 ? `Set ${m.p1_sets || 0}-${m.p2_sets || 0} · Leg ${m.p1_legs || 0}-${m.p2_legs || 0}` : `Leg ${m.p1_legs || 0}-${m.p2_legs || 0}`;
+      const chip = m.status === 'live' ? '<span class="chip live">CANLI</span>' : '<span class="chip warn">HAZIR</span>';
+      body = `${chip} ${E(m.entry1)} <span style="color:var(--text-dim)">vs</span> ${E(m.entry2)} <span style="color:var(--text-dim);margin-left:0.4rem">${sc}</span>`;
+    }
+    // Maç değiştir: canlı olmayan board'a, board'a atanmamış hazır bir maçı ata (/swap-match)
+    const pool = ms.filter(x => x.status === 'ready' && real(x) && !x.board_id && !onBoard.has(x.id));
+    const swap = (!m || m.status !== 'live') && pool.length ? `
+      <select onchange="dashSwap(${b.id}, this)" style="max-width:260px">
+        <option value="">🔀 Maç değiştir…</option>
+        ${pool.map(x => `<option value="${x.id}">${E(x.entry1)} vs ${E(x.entry2)} · ${escapeHtml(_dashRoundName(t, x, ms.filter(y => y.stage_id === x.stage_id)))}</option>`).join('')}
+      </select>` : '';
+    return `<div style="padding:0.5rem 0.7rem;border-bottom:1px solid var(--border);display:flex;gap:0.6rem;align-items:center;flex-wrap:wrap">
+      <b style="min-width:90px">📟 ${escapeHtml(b.name)}</b><div style="flex:1">${body}</div>${swap}</div>`;
+  }).join('') : '<div class="empty">Board yok</div>';
+
+  // Başlamamış turlar → leg düzenleme
+  const groups = {};
+  for (const m of ms) {
+    if (!(m.status === 'pending' || m.status === 'ready')) continue;
+    const key = `${m.stage_id}|${m.bracket}|${m.bracket === 'rr' ? '' : m.round}`;
+    if (!groups[key]) {
+      const stageMs = ms.filter(x => x.stage_id === m.stage_id);
+      groups[key] = { stage_id: m.stage_id, bracket: m.bracket, round: m.bracket === 'rr' ? null : m.round,
+        label: _dashRoundName(t, m, stageMs).replace(/^Grup .*/, 'Round robin'), legs: m.legs_to_win || t.legs_to_win, sets: m.sets_to_win || t.sets_to_win || 1, n: 0 };
+    }
+    groups[key].n++;
+  }
+  const legRows = Object.entries(groups).map(([k, g], i) => `
+    <div style="display:flex;gap:0.5rem;align-items:center;padding:0.4rem 0;border-bottom:1px solid var(--border);flex-wrap:wrap">
+      <div style="flex:1;min-width:140px">${escapeHtml(g.label)} <span style="color:var(--text-dim);font-size:0.8rem">(${g.n} maç bekliyor)</span></div>
+      <label style="font-size:0.85rem">İlk <input id="dl-l-${i}" type="number" min="1" value="${g.legs}" style="width:56px"> leg</label>
+      <label style="font-size:0.85rem">Set <input id="dl-s-${i}" type="number" min="1" value="${g.sets}" style="width:50px"></label>
+      <button class="secondary" onclick='dashSetLegs(${t.id}, ${JSON.stringify({ stage_id: g.stage_id, bracket: g.bracket, round: g.round })}, ${i})'>Uygula</button>
+    </div>`).join('') || '<div class="empty">Bekleyen tur yok</div>';
+
+  // Canlı/hazır maçlar → hükmen
+  const activeRows = [...live, ...ms.filter(m => m.status === 'ready' && real(m))].map(m => `
+    <div style="display:flex;gap:0.5rem;align-items:center;padding:0.4rem 0;border-bottom:1px solid var(--border);flex-wrap:wrap">
+      <div style="flex:1;min-width:180px">${m.status === 'live' ? '<span class="chip live">CANLI</span>' : '<span class="chip warn">HAZIR</span>'} ${E(m.entry1)} vs ${E(m.entry2)}</div>
+      <button class="secondary" title="${E(m.entry2)} gelmedi/çekildi" onclick="dashWalkover(${m.id}, 1)">🏳 ${E(m.entry1)} hükmen</button>
+      <button class="secondary" title="${E(m.entry1)} gelmedi/çekildi" onclick="dashWalkover(${m.id}, 2)">🏳 ${E(m.entry2)} hükmen</button>
+    </div>`).join('') || '<div class="empty">Canlı veya hazır maç yok</div>';
+
+  // Biten maçlar → yeniden aç (son bitenler üstte)
+  const finRows = fin.slice().sort((a, b) => String(b.finished_at || '').localeCompare(String(a.finished_at || '')) || b.id - a.id).map(m => {
+    const w = m.winner_entry_id === m.entry1_id ? 1 : 2;
+    const sc = (m.sets_to_win || 1) > 1 ? `${m.p1_sets || 0}-${m.p2_sets || 0} set` : `${m.p1_legs || 0}-${m.p2_legs || 0}`;
+    return `<div style="display:flex;gap:0.5rem;align-items:center;padding:0.4rem 0;border-bottom:1px solid var(--border);flex-wrap:wrap">
+      <div style="flex:1;min-width:180px">${w === 1 ? '<b>' + E(m.entry1) + '</b>' : E(m.entry1)} ${sc} ${w === 2 ? '<b>' + E(m.entry2) + '</b>' : E(m.entry2)}${m.is_walkover ? ' <span style="color:var(--text-dim);font-size:0.8rem">(hükmen)</span>' : ''}</div>
+      <button class="secondary" title="Sonucu sil, maçı yeniden oynat ya da hükmen düzelt" onclick="dashReopen(${m.id})">↩ Yeniden Aç</button>
+    </div>`;
+  }).join('') || '<div class="empty">Henüz biten maç yok</div>';
+
+  // Oyuncular → ad düzeltme
+  const players = [];
+  for (const e of (t.entries || [])) for (const p of [e.player1, e.player2]) if (p && !players.some(x => x.id === p.id)) players.push(p);
+  const playerRows = players.sort((a, b) => a.name.localeCompare(b.name, 'tr')).map(p => `
+    <div style="display:flex;gap:0.5rem;align-items:center;padding:0.3rem 0;border-bottom:1px solid var(--border)">
+      <div style="flex:1">${escapeHtml(p.name)}${p.nickname ? ` <span style="color:var(--text-dim)">(${escapeHtml(p.nickname)})</span>` : ''}</div>
+      <button class="secondary" style="padding:0.25rem 0.6rem" onclick="dashRename(${p.id})">✏️ Düzelt</button>
+    </div>`).join('');
+
+  const sec = (title, inner, open) => `<details ${open ? 'open' : ''} style="margin-top:0.9rem;background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:0.6rem 0.9rem">
+      <summary style="cursor:pointer;font-weight:700">${title}</summary><div style="margin-top:0.5rem">${inner}</div></details>`;
+  // Açık/kapalı bölümleri yeniden çizimde koru
+  const openState = {};
+  ov.querySelectorAll('details[data-k]').forEach(d => { openState[d.dataset.k] = d.open; });
+  const secK = (k, title, inner, def) => sec(title, inner, openState[k] ?? def).replace('<details ', `<details data-k="${k}" `);
+
+  ov.innerHTML = `<div style="max-width:980px;margin:0 auto;background:var(--bg);border:1px solid var(--border);border-radius:16px;padding:1.1rem 1.2rem">
+    <div style="display:flex;gap:0.6rem;align-items:center;flex-wrap:wrap">
+      <h2 style="flex:1;margin:0">📟 ${escapeHtml(t.name)}</h2>
+      ${t.status === 'running' ? (hold
+        ? `<button class="primary" onclick="dashResume(${t.id})">▶ Maç Atamaya Devam</button>`
+        : `<button class="secondary" title="Devam eden maçlar sürer, yeni maç atanmaz" onclick="dashPause(${t.id})">⏸ Yeni Maç Atamayı Durdur</button>`) : ''}
+      <button class="secondary" onclick="closeDashboard()">✕ Kapat</button>
+    </div>
+    <div style="display:flex;gap:0.6rem;margin-top:0.9rem;flex-wrap:wrap">
+      ${card(fin.length + ' / ' + totalReal, 'Biten maç', '#22c55e')}
+      ${card(live.length, 'Canlı', '#ff3860')}
+      ${card(readyOn.length, 'Board\'da hazır', '#ffbe00')}
+      ${card(waiting.length, 'Sırada bekleyen', 'var(--text)')}
+      ${card(boards.length - idleBoards.length + ' / ' + boards.length, 'Dolu board', '#00d4ff')}
+    </div>
+    ${warn.length ? `<div style="margin-top:0.8rem;padding:0.6rem 0.8rem;border-radius:10px;background:rgba(255,190,0,0.1);border:1px solid #ffbe00;font-size:0.9rem">${warn.map(w => '⚠️ ' + w).join('<br>')}</div>` : ''}
+    ${secK('b', '📟 Board\'lar', boardRows, true)}
+    ${secK('a', '🎯 Canlı / hazır maçlar — hükmen', activeRows, false)}
+    ${secK('l', '📐 Başlamamış turların leg sayısı', legRows, false)}
+    ${secK('f', '↩ Biten maçlar — sonuç düzeltme', finRows, false)}
+    ${secK('p', '✏️ Oyuncu adları', playerRows, false)}
+  </div>`;
+}
+
+async function dashPause(tid) {
+  if (!await showOrgConfirm('Yeni maç ataması durdurulsun mu?\nDevam eden ve board\'a atanmış maçlar sürer, boşalan board\'lara yeni maç gitmez.', '⏸ Durdur', 'İptal')) return;
+  const r = await api.post(`/api/tournaments/${tid}/pause`, {});
+  if (r.error) return toast('Hata: ' + r.error);
+  toast('Yeni maç ataması durduruldu');
+}
+async function dashResume(tid) {
+  const r = await api.post(`/api/tournaments/${tid}/dispatch`, {});
+  if (r.error) return toast('Hata: ' + r.error);
+  toast('Maç ataması devam ediyor');
+}
+async function dashSetLegs(tid, g, i) {
+  const legs = +document.getElementById('dl-l-' + i).value, sets = +document.getElementById('dl-s-' + i).value || 1;
+  if (!(legs >= 1)) return toast('Leg sayısı en az 1 olmalı');
+  if (!await showOrgConfirm(`Bu turda henüz başlamamış maçlar ${sets > 1 ? `ilk ${sets} set (set başı ilk ${legs} leg)` : `ilk ${legs} leg (Best of ${legs * 2 - 1})`} olacak. Onaylıyor musun?`, 'Uygula', 'İptal')) return;
+  const r = await api.post(`/api/tournaments/${tid}/round-legs`, { ...g, legs, sets });
+  if (r.error) return toast('Hata: ' + r.error);
+  toast(`${r.updated} maç güncellendi`);
+}
+async function dashWalkover(mid, slot) {
+  const t = state.tournaments.find(x => x.id === window._dashTid);
+  const m = t && (t.matches || []).find(x => x.id === mid);
+  if (!m) return;
+  const win = entryLabel(slot === 1 ? m.entry1 : m.entry2), lose = entryLabel(slot === 1 ? m.entry2 : m.entry1);
+  if (!await showOrgConfirm(`${lose} gelmedi / çekildi olarak işaretlensin mi?\n${win} hükmen kazanır. Maç istatistiklere sayılmaz.`, '🏳 Hükmen Ver', 'İptal')) return;
+  const r = await api.post(`/api/matches/${mid}/walkover`, { winnerSlot: slot });
+  if (r.error) return toast('Hata: ' + r.error);
+  toast('Hükmen sonuç kaydedildi');
+}
+async function dashReopen(mid) {
+  if (!await showOrgConfirm('Bu maç yeniden açılsın mı?\n\nSonuç ve atışlar silinir, maç tekrar "hazır" olur; kazananın ilerlediği sonraki maçtan çıkarılır. Sonra tekrar oynatabilir ya da "hükmen" ile doğru kazananı verebilirsin.\n\nSonraki maç başladıysa yapılamaz.', '↩ Yeniden Aç', 'İptal')) return;
+  const r = await api.post(`/api/matches/${mid}/reopen-result`, {});
+  if (r.error) return toast('Hata: ' + r.error);
+  toast('Maç yeniden açıldı');
+}
+async function dashRename(pid) {
+  const t = state.tournaments.find(x => x.id === window._dashTid);
+  let cur = '';
+  for (const e of (t?.entries || [])) for (const p of [e.player1, e.player2]) if (p && p.id === pid) cur = p.name;
+  const name = prompt('Oyuncunun doğru adı:', cur);
+  if (name == null) return;
+  if (!name.trim()) return toast('İsim boş olamaz');
+  const r = await api.patch(`/api/players/${pid}/name`, { name: name.trim() });
+  if (r.error) return toast('Hata: ' + r.error);
+  toast('İsim güncellendi');
+}
+
+async function dashSwap(boardId, sel) {
+  const mid = +sel.value; if (!mid) return;
+  const b = (state.boards || []).find(x => x.id === boardId);
+  const ok = await showOrgConfirm(`${b ? b.name : 'Board'} için maç değiştirilsin mi?\n${sel.options[sel.selectedIndex].text}${b && b.current_match_id ? '\n\nŞu anki (başlamamış) maç sıraya geri döner.' : ''}`, '🔀 Değiştir', 'İptal');
+  if (!ok) { sel.value = ''; return; }
+  const r = await api.post(`/api/boards/${boardId}/swap-match`, { match_id: mid });
+  if (r.error) { sel.value = ''; return toast('Hata: ' + r.error); }
+  toast('Maç değiştirildi');
+}

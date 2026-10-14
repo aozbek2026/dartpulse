@@ -1634,3 +1634,11 @@ Kullanıcı onayıyla (korumalı modüller). `scorer.html` kapsam dışı.
 - **Lig round:** `POST /api/competitions/:id/rounds/:rn/unstart` → oynanmamış round'un mini turnuvası silinir, `league_schedule.tournament_id=NULL`. `session.html`'de başlatma onayı + "↩ Geri Al".
 - **UI:** `organizer.js` (`startTournament` artık hold'lu kurar + özet/uyarı penceresi `tourSummaryHtml`, `dispatchTournament`, `revertTournamentToDraft`, sarı "beklemede" şeridi). `session.html` sezon oturumu: "🧱 Braketi Kur" + kontrol çubuğu (`sessionDispatch`/`sessionRevert`).
 - **Not:** Kullanıcı isteğiyle `session.html`'in başlatma akışına dokunuldu (canlı sezon kuralına istisna). Braket çizimi / klasman / puan koduna dokunulmadı; `sezon.html` değişmedi.
+
+## 📟 Kontrol Paneli (dashboard) — Ekim 2026
+
+`organizer.js` → devam eden turnuva kartında "📟 Kontrol Paneli" (`openDashboard`/`renderDashboard`, socket `state` ile canlı yenilenir). Bölümler: sayaçlar (biten/canlı/hazır/bekleyen/dolu board) + uyarılar, board'lar, canlı/hazır maçlara hükmen (`/walkover`), başlamamış turların leg/set'i, biten maçı yeniden açma, oyuncu adı düzeltme, yeni maç atamayı durdur/devam.
+- `POST /api/matches/:id/reopen-result` → `db.reopenFinishedMatch` (atışlar silinir, stats sıfır, maç ready, kazanan/kaybeden sonraki maçtan çıkarılır). Engeller: sonraki maç başlamış, sonraki aşama kurulmuş, reset final var, sonuç klasmana işlenmiş, BYE.
+- `POST /api/tournaments/:id/round-legs` → `db.setPendingRoundLegs` (yalnız atışsız pending/ready maçlar) + stage `round_overrides`'a yazar. SE finalinin bracket'ı `'final'`.
+- `POST /api/tournaments/:id/pause` → `dispatch_hold=true` (devam = `/dispatch`). `PATCH /api/players/:id/name` → `db.renamePlayer` (oyuncu kaydı tüm turnuvalarda değişir).
+- Maç süresi uyarısı YOK (maçta başlama zamanı tutulmuyor) — istenirse `matches.started_at` kolonu eklenmeli.
