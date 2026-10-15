@@ -86,16 +86,16 @@ function getToken(){
   try { return new URL(window.location.href).searchParams.get('t'); } catch(_) { return null; }
 }
 
-let STATE = { token:null, comp:null, standings:[], sessions:[], schedule:[], viewables:[], activeTid:null, matches:[] };
+let STATE = { base:null, token:null, comp:null, standings:[], sessions:[], schedule:[], viewables:[], activeTid:null, matches:[] };
 
 async function load(){
   const token = STATE.token;
-  const data = await apiGet(`/api/public/competition/${encodeURIComponent(token)}`);
+  const data = await apiGet(STATE.base);
   if(!data || data.error){
     document.getElementById('page-content').innerHTML =
       `<div style="text-align:center;padding:3rem 1rem;color:var(--text-dim)">
         <p style="font-size:1.1rem;color:var(--text)">Paylaşım bulunamadı</p>
-        <p>Bu izleyici linki geçersiz veya organizatör paylaşımı kapatmış olabilir.</p>
+        <p>${esc((data && data.error) || 'Bu izleyici linki geçersiz veya organizatör paylaşımı kapatmış olabilir.')}</p>
       </div>`;
     document.getElementById('comp-title').textContent = 'İzleyici';
     return;
@@ -208,7 +208,7 @@ async function loadBracket(tid){
   if(!host) return;
   _btSeq = 0; // kararlı dilim id'leri — yenilemede seçim korunur
   try {
-    const matches = await apiGet(`/api/public/competition/${encodeURIComponent(STATE.token)}/tournament/${tid}/matches`);
+    const matches = await apiGet(`${STATE.base}/tournament/${tid}/matches`);
     if(!Array.isArray(matches) || matches.length===0){
       host.innerHTML = '<p style="color:var(--text-dim)">Bu turnuvada henüz maç yok.</p>';
       return;
@@ -367,7 +367,11 @@ function renderBracketSimple(matches){
 // ── Boot + otomatik yenileme ──────────────────────────────────
 (function(){
   STATE.token = getToken();
-  if(!STATE.token){
+  // Katılımcı erişimi: ?c=<id> (giriş yapmış lig/sezon oyuncusu) — paylaşım linki gerekmez
+  let cid = null; try { cid = new URL(window.location.href).searchParams.get('c'); } catch(_) {}
+  STATE.base = STATE.token ? `/api/public/competition/${encodeURIComponent(STATE.token)}`
+             : (cid ? `/api/member/competition/${encodeURIComponent(cid)}` : null);
+  if(!STATE.token && !cid){
     document.getElementById('page-content').innerHTML = '<p style="color:#ef4444">URL\'de paylaşım kodu (t) eksik.</p>';
     document.getElementById('comp-title').textContent = 'İzleyici';
     return;

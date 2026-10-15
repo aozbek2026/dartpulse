@@ -866,6 +866,19 @@ app.get('/api/home-summary', auth.requireAuth, (req, res) => {
       && (!t.capacity || t.active_count < t.capacity)).slice(0, 3)
       .map(t => ({ id: t.id, name: t.name, event_date: t.event_date, active: t.active_count, capacity: t.capacity, owner: t.owner_name }));
     try { const pr = db.playerCareerProfile(u.id); out.profile = pr && pr.totals; } catch (_) {}
+    try {
+      out.competitions = db.db.prepare(
+        `SELECT DISTINCT c.id, c.name, c.type FROM competitions c
+           JOIN competition_players cp ON cp.competition_id = c.id
+           JOIN players p ON p.id = cp.player_id
+          WHERE p.account_user_id = ? AND c.status = 'running' ORDER BY c.id DESC LIMIT 4`).all(u.id)
+        .map(c => {
+          const st = db.competitionPlayers(c.id);
+          const ids = new Set(db.db.prepare('SELECT id FROM players WHERE account_user_id = ?').all(u.id).map(r => r.id));
+          const idx = st.findIndex(x => ids.has(x.player_id));
+          return { ...c, players: st.length, position: idx >= 0 ? idx + 1 : null, points: idx >= 0 ? st[idx].total_points : null };
+        });
+    } catch (_) { out.competitions = []; }
     res.json(out);
   } catch (e) {
     console.error('GET /api/home-summary:', e);
@@ -2179,6 +2192,74 @@ app.get('/api/public/tournament-by-id/:id', (req, res) => {
   }
 });
 
+// ── Katılımcı erişimi (Ekim 2026): ligin/sezonun oyuncusu olan kullanıcı, paylaşım
+// linki olmadan da klasmanı görebilir. Üyelik = competition_players.player_id'nin
+// players.account_user_id'si bu kullanıcı (online kayıtla bağlanan oyuncular).
+// Organizatör (sahibi) de görebilir.
+function memberCompetition(req, res) {
+  const c = db.db.prepare('SELECT * FROM competitions WHERE id = ?').get(+req.params.id);
+  if (!c) { res.status(404).json({ error: 'Bulunamadi' }); return null; }
+  const uid = req.user.id;
+  const member = c.user_id === uid || db.db.prepare(
+    `SELECT 1 FROM competition_players cp JOIN players p ON p.id = cp.player_id
+      WHERE cp.competition_id = ? AND p.account_user_id = ? LIMIT 1`).get(c.id, uid);
+  if (!member) { res.status(403).json({ error: 'Bu lig/sezonun katılımcısı değilsiniz' }); return null; }
+  return c;
+}
+function competitionPublicPayload(c) {
+  const sessions = db.sessionsForCompetition(c.id).map(s => {
+    let tournament_status = null;
+    if (s.tournament_id) { const t = db.tournamentById(s.tournament_id); if (t) tournament_status = t.status; }
+    return { ...s, tournament_status };
+  });
+  return {
+    competition: { id: c.id, name: c.name, type: c.type, category: c.category, status: c.status, game_mode: c.game_mode,
+      points_json: c.points_json ? safeParse(c.points_json) : null },
+    standings: db.competitionPlayers(c.id),
+    sessions,
+    schedule: c.type === 'league' ? db.leagueSchedule(c.id) : [],
+  };
+}
+// Kullanıcının oyuncu olduğu lig/sezonlar + kendi sırası/puanı
+app.get('/api/my-competitions', auth.requireAuth, (req, res) => {
+  try {
+    const rows = db.db.prepare(
+      `SELECT DISTINCT c.* FROM competitions c
+         JOIN competition_players cp ON cp.competition_id = c.id
+         JOIN players p ON p.id = cp.player_id
+        WHERE p.account_user_id = ? AND c.status != 'draft'
+        ORDER BY CASE c.status WHEN 'running' THEN 0 ELSE 1 END, c.id DESC`).all(req.user.id);
+    const out = rows.map(c => {
+      const st = db.competitionPlayers(c.id);
+      const idx = st.findIndex(x => db.db.prepare('SELECT account_user_id FROM players WHERE id = ?').get(x.player_id)?.account_user_id === req.user.id);
+      const me = idx >= 0 ? st[idx] : null;
+      return { id: c.id, name: c.name, type: c.type, status: c.status, players: st.length,
+        position: idx >= 0 ? idx + 1 : null, points: me ? me.total_points : null };
+    });
+    res.json({ competitions: out });
+  } catch (e) {
+    console.error('GET /api/my-competitions:', e);
+    res.status(500).json({ error: e.message });
+  }
+});
+app.get('/api/member/competition/:id', auth.requireAuth, (req, res) => {
+  try {
+    const c = memberCompetition(req, res); if (!c) return;
+    res.json(competitionPublicPayload(c));
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+app.get('/api/member/competition/:id/tournament/:tid/matches', auth.requireAuth, (req, res) => {
+  try {
+    const c = memberCompetition(req, res); if (!c) return;
+    const tid = +req.params.tid;
+    const allowed = new Set();
+    for (const s of db.sessionsForCompetition(c.id)) if (s.tournament_id) allowed.add(s.tournament_id);
+    for (const r of db.leagueSchedule(c.id)) if (r.tournament_id) allowed.add(r.tournament_id);
+    if (!allowed.has(tid)) return res.status(403).json({ error: 'Bu turnuva bu lig/sezona ait değil' });
+    res.json(enrichTournamentMatches(tid));
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
 // Token ile competition klasman + oturum/round listesi. Login GEREKMEZ.
 app.get('/api/public/competition/:token', (req, res) => {
   try {
@@ -2323,16 +2404,53 @@ app.delete('/api/competitions/:id', auth.requireOrganizer, (req, res) => {
 // Sezon: acik katilim, status='draft' veya 'running' iken eklenebilir
 
 // Listele
+// Oyuncuyu bir kullanıcı hesabına bağla / bağlantıyı kaldır (Ekim 2026).
+// body: { email } — boş e-posta bağlantıyı kaldırır. Bağlanan oyuncu, hesabıyla giriş
+// yapınca lig/sezon klasmanını ve kariyer istatistiklerini görür.
+app.post('/api/competitions/:id/players/:playerId/link', auth.requireOrganizer, (req, res) => {
+  try {
+    const userId = req.user.id;
+    const comp = db.competitionById(+req.params.id, userId);
+    if (!comp) return res.status(404).json({ error: 'Bulunamadi' });
+    const pid = +req.params.playerId;
+    const inComp = db.db.prepare('SELECT 1 FROM competition_players WHERE competition_id = ? AND player_id = ?').get(comp.id, pid);
+    const pl = db.db.prepare('SELECT * FROM players WHERE id = ?').get(pid);
+    if (!inComp || !pl || (pl.user_id && pl.user_id !== userId)) return res.status(404).json({ error: 'Oyuncu bulunamadı' });
+    const email = String((req.body && req.body.email) || '').trim().toLowerCase();
+    if (!email) {
+      db.db.prepare('UPDATE players SET account_user_id = NULL WHERE id = ?').run(pid);
+      return res.json({ ok: true, unlinked: true });
+    }
+    const u = db.userByEmail(email);
+    if (!u) return res.status(404).json({ error: 'Bu e-posta ile kayıtlı bir hesap yok. Oyuncunun önce siteye üye olması gerekiyor.' });
+    // Aynı organizatör havuzunda bu hesaba zaten bağlı BAŞKA bir oyuncu var mı?
+    const other = db.db.prepare('SELECT id, name FROM players WHERE account_user_id = ? AND user_id = ? AND id != ?').get(u.id, userId, pid);
+    db.db.prepare('UPDATE players SET account_user_id = ? WHERE id = ?').run(u.id, pid);
+    res.json({ ok: true, account_name: u.name || u.email,
+      warning: other ? `Bu hesap havuzundaki "${other.name}" oyuncusuna da bağlı. Aynı kişiyse sorun yok; istatistikler hesapta birleşir.` : null });
+  } catch (e) {
+    console.error('POST link player:', e);
+    res.status(400).json({ error: e.message });
+  }
+});
+
 app.get('/api/competitions/:id/players', auth.requireAuth, (req, res) => {
   try {
     const userId = req.session.userId;
     const compId = +req.params.id;
     const comp = db.competitionById(compId, userId);
     if (!comp) return res.status(404).json({ error: 'Bulunamadi' });
-    const players = db.competitionPlayers(compId).map(p => ({
-      ...p,
-      stats_json: p.stats_json ? safeParse(p.stats_json) : null,
-    }));
+    const acc = db.db.prepare('SELECT p.account_user_id, u.email, u.name FROM players p LEFT JOIN users u ON u.id = p.account_user_id WHERE p.id = ?');
+    const players = db.competitionPlayers(compId).map(p => {
+      const a = acc.get(p.player_id) || {};
+      return {
+        ...p,
+        stats_json: p.stats_json ? safeParse(p.stats_json) : null,
+        // Yalnız organizatöre: oyuncunun bağlı olduğu hesap (Ekim 2026)
+        account_user_id: a.account_user_id || null,
+        account_email: a.account_user_id ? a.email : null,
+      };
+    });
     res.json(players);
   } catch (e) {
     console.error('GET /api/competitions/:id/players:', e);

@@ -975,6 +975,11 @@
       cards.push(card(w ? 'wait' : 'me', w ? `⏳ YEDEK · ${r.wait_pos}. SIRA` : '✓ KAYITLISIN', r.name,
         hpDate(r.event_date) || 'Tarih belirtilmedi', 'Turnuvalarım', '/turnuvalar.html'));
     }
+    // Oyuncusu olduğu lig/sezonlar → klasman
+    for (const c of (d.competitions || [])) {
+      cards.push(card('me', `🏅 ${c.type === 'league' ? 'LİG' : 'SEZON'}${c.position ? ' · ' + c.position + '. SIRA' : ''}`, c.name,
+        `${c.points != null ? c.points + ' puan · ' : ''}${c.players} oyuncu`, 'Klasman', `/sezon.html?c=${c.id}`));
+    }
     // Kaydı açık turnuvalar (kayıtlı olmadıkları)
     for (const t of (d.open || [])) {
       cards.push(card('open', '🎫 KAYIT AÇIK', t.name,

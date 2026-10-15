@@ -245,9 +245,12 @@ function renderPlayers() {
         <div class="pmeta">
           ${p.sessions_played || 0} oturum oynadı · ${p.total_points || 0} puan
           ${p.joined_session && p.joined_session > 1 ? ` · ${p.joined_session}. oturumdan itibaren` : ''}
+          ${p.account_email ? ` · <span style="color:#22c55e" title="Bu oyuncu hesabıyla giriş yapınca klasmanı görür">🔗 ${escapeHtml(p.account_email)}</span>` : ''}
         </div>
       </div>
       <div class="pactions">
+        <button class="secondary" style="padding:0.3rem 0.6rem;font-size:0.8rem" title="Oyuncuyu bir üye hesabına bağla"
+          onclick="linkPlayerAccount(${p.player_id}, '${escapeJsStr(p.player_name)}', '${escapeJsStr(p.account_email || '')}')">${p.account_email ? '🔗 Değiştir' : '🔗 Hesap bağla'}</button>
         ${canRemove ? `
           <button class="danger" onclick="confirmRemove(${p.player_id}, '${escapeJsStr(p.player_name)}')">
             🗑️
@@ -2061,3 +2064,19 @@ document.addEventListener('keydown', (e) => {
 
 boot();
 window.renderRoundOvPanel = renderRoundOvPanel;
+
+
+// Oyuncu ↔ üye hesabı eşleştirme (Ekim 2026)
+async function linkPlayerAccount(playerId, name, current) {
+  const email = prompt(
+    `"${name}" oyuncusunu hangi üye hesabına bağlayalım?\n\nOyuncunun siteye üye olduğu e-posta adresini yaz. Bağlanınca kendi hesabıyla giriş yapıp bu ligin klasmanını ve istatistiklerini görebilir.\n\nBağlantıyı kaldırmak için boş bırakıp Tamam'a bas.`,
+    current || '');
+  if (email === null) return;
+  if (!email.trim() && !current) return;
+  const res = await api.post(`/api/competitions/${STATE.id}/players/${playerId}/link`, { email: email.trim() });
+  if (res.error) return toast('Hata: ' + res.error, 4500);
+  if (res.unlinked) toast('Hesap bağlantısı kaldırıldı');
+  else toast(`Bağlandı: ${res.account_name}` + (res.warning ? ' — ' + res.warning : ''), res.warning ? 6000 : 2500);
+  await loadPlayers();
+  renderPlayers();
+}
