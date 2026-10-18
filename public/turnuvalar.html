@@ -206,7 +206,9 @@ async function loadUpcoming() {
         </div>`;
     }).join('');
 
-    box.innerHTML = tCards + sCards;
+    box.innerHTML = (cCards ? `<div class="tn-sub" style="margin:0.2rem 0 0.6rem;font-size:0.8rem;color:var(--text-dim);text-transform:uppercase;letter-spacing:.08em">Liglerim & Sezonlarım</div>${cCards}` : '')
+      + ((tCards || sCards) ? `<div class="tn-sub" style="margin:1.2rem 0 0.6rem;font-size:0.8rem;color:var(--text-dim);text-transform:uppercase;letter-spacing:.08em">Kayıtlarım</div>` : '')
+      + tCards + sCards;
   } catch (e) { box.innerHTML = `<div class="tn-empty">Hata: ${esc(e.message)}</div>`; }
 }
 
@@ -239,13 +241,29 @@ async function withdrawSession(sid) {
 async function loadMine() {
   const box = document.getElementById('tn-mine');
   try {
-    const [{ registrations }, sRes] = await Promise.all([
+    const [{ registrations }, sRes, cRes] = await Promise.all([
       tnApi('/api/my-registrations'),
       tnApi('/api/my-session-registrations').catch(() => ({ registrations: [] })),
+      tnApi('/api/my-competitions').catch(() => ({ competitions: [] })),
     ]);
+    // Oyuncusu olduğum lig/sezonlar → genel klasman (Ekim 2026)
+    const comps = (cRes && cRes.competitions) || [];
+    const cCards = comps.map(c => `
+        <div class="tn-card">
+          <div class="tn-card-top">
+            <div style="min-width:0;">
+              <div class="tn-title">🏅 ${esc(c.name)} <span class="pill cat">${c.type === 'league' ? 'LİG' : 'SEZON'}</span></div>
+              <div class="tn-meta"><span>${c.status === 'running' ? '🔴 Devam ediyor' : '✅ Tamamlandı'}</span><span>👥 ${c.players} oyuncu</span>
+                ${c.position ? `<span>🏆 Genel klasmanda <b>${c.position}.</b> · ${c.points} puan</span>` : ''}</div>
+            </div>
+            <div class="tn-actions">
+              <a class="tn-btn reg" style="text-decoration:none" href="/sezon.html?c=${c.id}">📊 Genel Klasman</a>
+            </div>
+          </div>
+        </div>`).join('');
     const active = registrations.filter(r => r.status !== 'withdrawn');
     const sActive = ((sRes && sRes.registrations) || []).filter(r => r.status !== 'withdrawn');
-    if (!active.length && !sActive.length) {
+    if (!active.length && !sActive.length && !comps.length) {
       box.innerHTML = '<div class="tn-empty">Henüz bir turnuvaya kayıt olmadınız.</div>'; return;
     }
     const tCards = active.map(r => {
@@ -279,12 +297,15 @@ async function loadMine() {
             <div class="tn-actions">
               ${STATUS_PILL[r.status] || ''}
               ${detailBtn(r.tournament_id, r.tournament_status)}
+              ${r.competition_id ? `<a class="tn-btn" style="text-decoration:none;background:#2b3150;color:#fff" href="/sezon.html?c=${r.competition_id}">🏅 Genel Klasman</a>` : ''}
               ${['registered','waitlisted','checked_in'].includes(r.status) ? `<button class="tn-btn wd" onclick="withdrawMineSession(${r.session_id})">İptal</button>` : ''}
             </div>
           </div>
         </div>`;
     }).join('');
-    box.innerHTML = tCards + sCards;
+    box.innerHTML = (cCards ? `<div class="tn-sub" style="margin:0.2rem 0 0.6rem;font-size:0.8rem;color:var(--text-dim);text-transform:uppercase;letter-spacing:.08em">Liglerim & Sezonlarım</div>${cCards}` : '')
+      + ((tCards || sCards) ? `<div class="tn-sub" style="margin:1.2rem 0 0.6rem;font-size:0.8rem;color:var(--text-dim);text-transform:uppercase;letter-spacing:.08em">Kayıtlarım</div>` : '')
+      + tCards + sCards;
   } catch (e) { box.innerHTML = `<div class="tn-empty">Hata: ${esc(e.message)}</div>`; }
 }
 // Turnuva başladıysa/bittiyse izleyici ekranında detay (braket, maçlar, klasman)
