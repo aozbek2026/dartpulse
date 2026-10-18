@@ -147,6 +147,33 @@ window.addEventListener('load', updateFsToggle);
   const btn = document.getElementById('fs-toggle');
   if (!btn) return;
   btn.addEventListener('click', async () => { await requestFs(); updateFsToggle(); });
+
+  // Yerleşim (Ekim 2026): ekranda "Board değiştir" butonu varsa tam ekran butonu
+  // sağ üstte sabit durmak yerine onun yanına (akışa) girer → üst üste binmez.
+  // Ekran sık yeniden çizildiği için DOM değişince yeniden yerleştirilir.
+  let pending = false;
+  const place = () => {
+    pending = false;
+    const anchor = [...document.querySelectorAll('a[href="/board.html"].btn')].find(a => a.offsetParent !== null);
+    if (anchor) {
+      // Başlık space-between olduğu için ikisini tek kutuya (fs-wrap) al ki sağda yan yana dursunlar
+      let wrap = anchor.parentElement;
+      if (!wrap.classList.contains('fs-wrap')) {
+        wrap = document.createElement('span');
+        wrap.className = 'fs-wrap';
+        anchor.parentNode.insertBefore(wrap, anchor);
+        wrap.appendChild(anchor);
+      }
+      if (btn.nextElementSibling !== anchor) wrap.insertBefore(btn, anchor);
+      btn.classList.add('inline');
+    } else if (btn.parentElement !== document.body || btn.classList.contains('inline')) {
+      btn.classList.remove('inline');
+      document.body.appendChild(btn);
+    }
+  };
+  const schedule = () => { if (!pending) { pending = true; requestAnimationFrame(place); } };
+  new MutationObserver(schedule).observe(document.body, { childList: true, subtree: true });
+  schedule();
 })();
 
 let currentMatch = null;

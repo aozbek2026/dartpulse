@@ -20,7 +20,9 @@
     if (document.getElementById('dcp-um-css')) return;
     const css = `
 .dcp-um { position: fixed; top: 12px; right: 14px; z-index: 9000; font-size: 0.92rem; }
-.dcp-um.inline { position: relative; top: auto; right: auto; z-index: 60; }
+.dcp-um.inline { position: relative; top: auto; right: auto; z-index: 60; flex: none; margin-left: auto; }
+.top-bar-right .dcp-um.inline { margin-left: 0; }
+body.dcp-um-pad { padding-top: 54px !important; }
 .dcp-um-trigger { display: inline-flex; align-items: center; gap: 0.5rem;
   background: var(--surface, #1a1e2d); border: 1px solid var(--border, #2a2f48);
   border-radius: 999px; padding: 0.32rem 0.8rem 0.32rem 0.36rem; cursor: pointer;
@@ -114,9 +116,39 @@
         <div class="dcp-um-divider"></div>
         <button class="dcp-um-item danger" id="dcp-um-logout"><span class="ico">⏻</span><span>Çıkış Yap</span></button>
       </div>`;
-    const mount = MOUNT();
-    if (mount) { box.classList.add('inline'); mount.innerHTML = ''; mount.appendChild(box); }
-    else document.body.appendChild(box);
+    // Yerleşim (Ekim 2026): sayfanın kendi üst çubuğu varsa menü onun İÇİNE (akışta) girer,
+    // böylece sağ üstteki sayfa butonlarının üstüne binmez. Yoksa sağ üstte sabit durur ve
+    // altında buton varsa sayfa içeriği aşağı kaydırılır.
+    const fixedMount = MOUNT();
+    if (fixedMount) {
+      box.classList.add('inline'); fixedMount.innerHTML = ''; fixedMount.appendChild(box);
+    } else {
+      // Görünür bir üst çubuk varsa içine gir; yoksa sağ üstte sabit dur. Sayfalar
+      // görünümü değiştirdikçe (ör. izleyicide liste ↔ turnuva) yeniden yerleştirilir.
+      const visible = (el) => el && el.offsetParent !== null && el.getBoundingClientRect().height > 0;
+      const place = () => {
+        const slot = [...document.querySelectorAll('.top-bar-right')].find(visible) || [...document.querySelectorAll('.top-bar')].find(visible);
+        if (slot) {
+          if (box.parentElement !== slot) { box.classList.add('inline'); slot.appendChild(box); }
+          document.body.classList.remove('dcp-um-pad');
+          return;
+        }
+        if (box.parentElement !== document.body) { box.classList.remove('inline'); document.body.appendChild(box); }
+        // Sabit menünün altında sayfa butonu kalıyorsa içeriği aşağı kaydır
+        const r = box.getBoundingClientRect();
+        if (!r.width) return;
+        const hit = [...document.querySelectorAll('a,button,select,input,.btn')].some(el => {
+          if (box.contains(el) || el.offsetParent === null) return false;
+          const q = el.getBoundingClientRect();
+          return q.width && (q.top + window.scrollY) < 120 && q.left < r.right + 6 && q.right > r.left - 6 && q.top < r.bottom + 6 && q.bottom > r.top - 6;
+        });
+        if (hit) document.body.classList.add('dcp-um-pad');
+      };
+      document.body.appendChild(box);
+      place();
+      setInterval(place, 1000);
+      window.addEventListener('resize', place);
+    }
 
     const trigger = box.querySelector('#dcp-um-trigger');
     const dd = box.querySelector('#dcp-um-dd');

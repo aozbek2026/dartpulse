@@ -1941,6 +1941,9 @@ body.board-page #root.board-screen {
   box-shadow: 0 2px 10px rgba(0,0,0,0.4);
 }
 .fs-toggle:hover, .fs-toggle:active { background: rgba(11, 13, 20, 0.95); }
+/* "Board değiştir" yanına yerleşmiş hali (board.js bindFsToggle) */
+.fs-wrap { display: inline-flex; align-items: center; gap: 0.4rem; }
+.fs-toggle.inline { position: static; box-shadow: none; backdrop-filter: none; vertical-align: middle; }
 /* PWA standalone modda gizle — zaten tam ekran */
 @media (display-mode: standalone), (display-mode: fullscreen) {
   .fs-toggle { display: none !important; }
