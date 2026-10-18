@@ -379,7 +379,7 @@ function renderCricketMatch(m) {
   }).join('');
 
   const undoEnabled = cricketDarts.length > 0 || !!G.undoSnapshot;
-  const enterEnabled = cricketDarts.length > 0;
+  const enterEnabled = true; // Ekim 2026: boşken '✕ Iska' (3 ok ıska) olarak gönderilebilir
 
   root.innerHTML = `
     <div class="board-header">
@@ -406,7 +406,7 @@ function renderCricketMatch(m) {
       <div class="cr-bottom-bar">
         <button class="cr-undo-btn" onclick="cricketUndoDart()" ${undoEnabled ? '' : 'disabled'}>← GERİ</button>
         <div class="cr-dots">${dotsHtml}</div>
-        <button class="cr-miss-btn" onclick="submitCricketDarts()" ${enterEnabled ? '' : 'disabled'}>Enter</button>
+        <button class="cr-miss-btn" onclick="submitCricketDarts()" ${enterEnabled ? '' : 'disabled'}>${cricketDarts.length ? 'Enter' : '✕ Iska'}</button>
       </div>
     </div>
   `;
@@ -488,7 +488,7 @@ function renderFBCezaliMatch(m) {
     : '';
 
   const undoEnabled = fbDarts.length > 0 || !!G.undoSnapshot;
-  const enterEnabled = fbDarts.length > 0;
+  const enterEnabled = true; // Ekim 2026: boşken '✕ Iska' (3 ok ıska) olarak gönderilebilir
 
   root.innerHTML = `
     <div class="board-header">
@@ -516,7 +516,7 @@ function renderFBCezaliMatch(m) {
       <div class="cr-bottom-bar">
         <button class="cr-undo-btn" onclick="fbUndoDart()" ${undoEnabled ? '' : 'disabled'}>← GERİ</button>
         <div class="cr-dots">${dotsHtml}</div>
-        <button class="cr-miss-btn" onclick="submitFBCezaliDarts()" ${enterEnabled ? '' : 'disabled'}>Enter</button>
+        <button class="cr-miss-btn" onclick="submitFBCezaliDarts()" ${enterEnabled ? '' : 'disabled'}>${fbDarts.length ? 'Enter' : '✕ Iska'}</button>
       </div>
     </div>
   `;
@@ -589,7 +589,7 @@ function renderKarambolMatch(m) {
   }).join('');
 
   const undoEnabled = karambolDarts.length > 0 || !!G.undoSnapshot;
-  const enterEnabled = karambolDarts.length > 0;
+  const enterEnabled = true; // Ekim 2026: boşken '✕ Iska' (3 ok ıska) olarak gönderilebilir
 
   root.innerHTML = `
     <div class="board-header">
@@ -614,7 +614,7 @@ function renderKarambolMatch(m) {
       <div class="cr-bottom-bar">
         <button class="cr-undo-btn" onclick="karambolUndoDart()" ${undoEnabled ? '' : 'disabled'}>← GERİ</button>
         <div class="cr-dots">${dotsHtml}</div>
-        <button class="cr-miss-btn" onclick="submitKarambolDarts()" ${enterEnabled ? '' : 'disabled'}>Enter</button>
+        <button class="cr-miss-btn" onclick="submitKarambolDarts()" ${enterEnabled ? '' : 'disabled'}>${karambolDarts.length ? 'Enter' : '✕ Iska'}</button>
       </div>
     </div>
   `;

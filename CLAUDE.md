@@ -1661,3 +1661,4 @@ Avatar + açılır menü artık TEK dosyada. `common.js` bu dosyayı otomatik y�
 ## Üst üste binen butonlar (Ekim 2026)
 - `user-menu.js`: menü görünür `.top-bar-right` (yoksa `.top-bar`) içine akışta yerleşir, saniyede bir yeniden kontrol eder; üst çubuk yoksa sağ üstte sabit kalır ve altında buton varsa `body.dcp-um-pad` ile içerik aşağı kayar.
 - `board.js` `bindFsToggle` (kullanıcı onayıyla): "⛶ Tam ekran" butonu ekranda `a[href="/board.html"].btn` ("Board değiştir") varsa onunla birlikte `.fs-wrap` içine alınır (`.fs-toggle.inline`, style.css); MutationObserver ile her yeniden çizimde yeniden yerleşir. Yoksa eski sabit konum.
+- **Cricket "✕ Iska" (Ekim 2026, kullanıcı onayıyla):** Cricket / FB Cezalı / Karambol'de ok girilmemişken Enter butonu pasif değil, "✕ Iska" yazar → boş visit (3 ok ıska) gönderilir, sıra geçer. Hem `scorer.html` hem `board.js` (Konvansiyon #0 eşitliği). Motor/sunucu değişmedi (boş hits/allocation zaten geçerli).

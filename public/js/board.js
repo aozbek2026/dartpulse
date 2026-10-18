@@ -922,7 +922,7 @@ function renderCricketMatch(m) {
     <div class="cr-bottom-bar">
       <button class="cr-undo-btn" onclick="cricketUndoDart()" ${cricketDarts.length === 0 && !m.cricket_undo_json && !cricketPristine(m) ? 'disabled' : ''}>← GERİ</button>
       <div class="cr-dots">${dotsHtml}</div>
-      <button class="cr-miss-btn" onclick="submitCricketDarts()" ${cricketDarts.length === 0 ? 'disabled' : ''}>Enter</button>
+      <button class="cr-miss-btn" onclick="submitCricketDarts()" title="Ok girmeden basılırsa 3 ok ıska sayılır">${cricketDarts.length ? 'Enter' : '✕ Iska'}</button>
     </div>
   `;
 
@@ -1177,7 +1177,7 @@ function renderFBCezaliMatch(m) {
     <div class="cr-bottom-bar">
       <button class="cr-undo-btn" onclick="fbUndoDart()" ${fbDarts.length === 0 && !m.cricket_undo_json && !cricketPristine(m) ? 'disabled' : ''}>← GERİ</button>
       <div class="cr-dots">${dotsHtml}</div>
-      <button class="cr-miss-btn" onclick="submitFBCezaliDarts()" ${fbDarts.length === 0 ? 'disabled' : ''}>Enter</button>
+      <button class="cr-miss-btn" onclick="submitFBCezaliDarts()" title="Ok girmeden basılırsa 3 ok ıska sayılır">${fbDarts.length ? 'Enter' : '✕ Iska'}</button>
     </div>`;
 
   root.innerHTML = `
@@ -1488,7 +1488,7 @@ function renderKarambolMatch(m) {
     <div class="cr-bottom-bar">
       <button class="cr-undo-btn" onclick="karambolUndoDart()" ${karambolDarts.length === 0 && !m.cricket_undo_json && !cricketPristine(m) ? 'disabled' : ''}>← GERİ</button>
       <div class="cr-dots">${dotsHtml}</div>
-      <button class="cr-miss-btn" onclick="submitKarambolDarts()" ${karambolDarts.length === 0 ? 'disabled' : ''}>Enter</button>
+      <button class="cr-miss-btn" onclick="submitKarambolDarts()" title="Ok girmeden basılırsa 3 ok ıska sayılır">${karambolDarts.length ? 'Enter' : '✕ Iska'}</button>
     </div>`;
 
   root.innerHTML = `
