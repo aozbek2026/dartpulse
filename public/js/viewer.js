@@ -461,9 +461,34 @@ function liveStatCell(st, active) {
 }
 
 // ========== Render: Klasman ==========
+// Lig/sezon oturumu ise sezonun GENEL klasmanına bağlantı (Ekim 2026)
+const _compInfo = {};
+function renderCompLink(tourns) {
+  const host = document.getElementById('comp-link-host');
+  if (!host) return;
+  const seen = new Set(); const parts = [];
+  for (const t of tourns) {
+    const ci = _compInfo[t.id];
+    if (ci === undefined) {
+      _compInfo[t.id] = null;
+      fetch('/api/public/tournament-competition/' + t.id).then(r => r.json())
+        .then(d => { _compInfo[t.id] = (d && d.competition) || false; renderCompLink(tourns); }).catch(() => {});
+      continue;
+    }
+    if (!ci || seen.has(ci.id)) continue;
+    seen.add(ci.id);
+    parts.push(`<a href="${ci.url}" style="display:flex;align-items:center;gap:0.6rem;padding:0.7rem 0.9rem;margin-bottom:0.7rem;border-radius:10px;border:1px solid var(--accent-2);background:rgba(0,212,255,0.07);color:var(--text);text-decoration:none">
+      <span style="font-size:1.2rem">🏅</span>
+      <span style="flex:1">Bu ${ci.type === 'league' ? 'round' : 'oturum'} <b>${escapeHtml(ci.name)}</b> ${ci.type === 'league' ? 'liginin' : 'sezonunun'} parçası. Aşağıdaki tablo yalnız bu ${ci.type === 'league' ? 'round' : 'oturum'}un klasmanı.</span>
+      <b style="color:var(--accent-2);white-space:nowrap">${ci.type === 'league' ? 'Lig' : 'Sezon'} Genel Klasmanı →</b></a>`);
+  }
+  host.innerHTML = parts.join('');
+}
+
 function renderStandings() {
   const host = document.getElementById('standings-host');
   const tourns = getVisibleTournaments(state.tournaments.filter(t => t.status !== 'draft'));
+  try { renderCompLink(tourns); } catch (_) {}
   if (!tourns.length) {
     const msg = selectedTourId != null
       ? 'Seçili turnuva henüz başlamadı'

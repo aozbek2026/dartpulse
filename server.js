@@ -2260,6 +2260,21 @@ app.get('/api/member/competition/:id/tournament/:tid/matches', auth.requireAuth,
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
+// Turnuva bir lig/sezon oturumuna (ya da lig round'una) aitse, o lig/sezonun bilgisi +
+// genel klasman linki (izleyici sayfası "Sezon Genel Klasmanı" bağlantısı için). Login gerekmez.
+app.get('/api/public/tournament-competition/:tid', (req, res) => {
+  try {
+    const tid = +req.params.tid;
+    let cid = db.db.prepare('SELECT competition_id FROM competition_sessions WHERE tournament_id = ? LIMIT 1').get(tid)?.competition_id;
+    if (!cid) cid = db.db.prepare('SELECT competition_id FROM league_schedule WHERE tournament_id = ? LIMIT 1').get(tid)?.competition_id;
+    if (!cid) return res.json({ competition: null });
+    const c = db.db.prepare('SELECT id, name, type, public_token FROM competitions WHERE id = ?').get(cid);
+    if (!c) return res.json({ competition: null });
+    res.json({ competition: { id: c.id, name: c.name, type: c.type,
+      url: c.public_token ? `/sezon.html?t=${encodeURIComponent(c.public_token)}` : `/sezon.html?c=${c.id}` } });
+  } catch (e) { res.json({ competition: null }); }
+});
+
 // Token ile competition klasman + oturum/round listesi. Login GEREKMEZ.
 app.get('/api/public/competition/:token', (req, res) => {
   try {
