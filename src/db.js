@@ -1058,11 +1058,13 @@ function playerCareerProfile(accountUserId) {
       WHERE (e.player1_id IN (${ph}) OR e.player2_id IN (${ph}))
         AND (
           (es.stats_to_profile = 1 AND es.reg_enabled = 1)
-          OR EXISTS (SELECT 1 FROM session_registrations sr
-                      WHERE sr.session_id = cs.id AND sr.user_id = ?
-                        AND sr.player_id IS NOT NULL)
+          -- Sezon/lig oturumu: oyuncu kaydı bu hesaba bağlıysa (online kayıt YA DA
+          -- organizatörün elle ekleyip "Hesap bağla" ile eşleştirdiği) tüm oturumlar.
+          -- (Ekim 2026 düzeltmesi: eskiden yalnız oturuma online kayıt olunanlar görünüyordu.)
+          OR cs.id IS NOT NULL
+          OR EXISTS (SELECT 1 FROM league_schedule ls WHERE ls.tournament_id = t.id)
         )`
-  ).all(...playerIds, ...playerIds, accountUserId);
+  ).all(...playerIds, ...playerIds);
   if (!entries.length) return empty;
 
   const tournaments = [];
