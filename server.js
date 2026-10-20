@@ -2536,6 +2536,108 @@ app.post('/api/competitions/:id/players', auth.requireOrganizer, (req, res) => {
   }
 });
 
+// ── Taslak sezon oturumuna katılımcı ekle/listele (Ekim 2026) ──
+// Taslağa dönmüş (ya da henüz kurulmamış) oturumda, sezon havuzundan veya dışarıdan
+// (yeni isim) oyuncu eklemek için. Yeni oyuncu sezon havuzuna da eklenir.
+function _draftSession(req, res) {
+  const userId = req.session.userId;
+  const comp = db.competitionById(+req.params.id, userId);
+  if (!comp) { res.status(404).json({ error: 'Bulunamadi' }); return null; }
+  const s = db.sessionById(+req.params.sid);
+  if (!s || s.competition_id !== comp.id) { res.status(404).json({ error: 'Oturum bulunamadi' }); return null; }
+  const t = s.tournament_id ? db.tournamentById(s.tournament_id) : null;
+  if (!t) { res.status(400).json({ error: 'Bu oturuma bağlı turnuva yok' }); return null; }
+  return { userId, comp, s, t };
+}
+app.get('/api/competitions/:id/sessions/:sid/participants', auth.requireOrganizer, (req, res) => {
+  try {
+    const r = _draftSession(req, res); if (!r) return;
+    const entries = db.entriesForTournament(r.t.id).map(e => ({ entry_id: e.id, player_id: e.player1_id,
+      name: e.player1 ? e.player1.name : '?', nickname: e.player1 ? e.player1.nickname : null, seed: e.seed }));
+    const inT = new Set(entries.map(e => e.player_id));
+    const pool = db.competitionPlayers(r.comp.id).filter(p => !inT.has(p.player_id))
+      .map(p => ({ player_id: p.player_id, name: p.player_name, nickname: p.player_nickname }));
+    const st0 = db.stagesForTournament(r.t.id)[0];
+    let cfg = {}; try { cfg = st0 && st0.config_json ? JSON.parse(st0.config_json) : {}; } catch (_) {}
+    res.json({ tournament_id: r.t.id, status: r.t.status, entries, pool,
+      format: st0 ? st0.format : 'single_elim', legs_to_win: r.t.legs_to_win, sets_to_win: r.t.sets_to_win || 1,
+      round_overrides: cfg.round_overrides || {} });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+// Taslak oturum ayarlarını tek seferde kaydet: sıra (kura), seri başı, format, leg/set, tur bazında leg.
+// body: { order:[entryId...], seeds:{entryId:n|null}, format, legs_to_win, sets_to_win, round_overrides:{key:{legs,sets}} }
+app.put('/api/competitions/:id/sessions/:sid/draft', auth.requireOrganizer, (req, res) => {
+  try {
+    const r = _draftSession(req, res); if (!r) return;
+    if (r.t.status !== 'draft') return res.status(400).json({ error: 'Oturum taslakta değil — önce "Taslağa Geri Dön"' });
+    const b = req.body || {};
+    const st0 = db.stagesForTournament(r.t.id)[0];
+    const tx = db.db.transaction(() => {
+      if (Array.isArray(b.order) && b.order.length) db.updateEntrySlots(r.t.id, b.order.map(Number), b.seeds || null);
+      const legs = Math.floor(+b.legs_to_win), sets = Math.floor(+b.sets_to_win);
+      const upd = {};
+      if (legs >= 1) upd.legs_to_win = legs;
+      if (sets >= 1) upd.sets_to_win = sets;
+      if (Object.keys(upd).length) db.updateTournament(r.t.id, upd);
+      if (st0) {
+        if (['single_elim', 'double_elim', 'round_robin'].includes(b.format) && b.format !== st0.format) {
+          db.db.prepare('UPDATE stages SET format = ? WHERE id = ?').run(b.format, st0.id);
+        }
+        if (b.round_overrides && typeof b.round_overrides === 'object') {
+          const clean = {};
+          for (const [k, v] of Object.entries(b.round_overrides)) {
+            if (!/^((winners|losers|final)-\d+|rr)$/.test(k) || !v) continue;
+            const o = {};
+            if (+v.legs >= 1) o.legs = Math.floor(+v.legs);
+            if (+v.sets >= 1) o.sets = Math.floor(+v.sets);
+            if (Object.keys(o).length) clean[k] = o;
+          }
+          let cfg = {}; try { cfg = st0.config_json ? JSON.parse(st0.config_json) : {}; } catch (_) {}
+          cfg.round_overrides = clean;
+          db.setStageConfig(st0.id, cfg);
+        }
+      }
+    });
+    tx();
+    scheduleBroadcast();
+    res.json({ ok: true });
+  } catch (e) {
+    console.error('PUT session draft:', e);
+    res.status(400).json({ error: e.message });
+  }
+});
+app.post('/api/competitions/:id/sessions/:sid/participants', auth.requireOrganizer, (req, res) => {
+  try {
+    const r = _draftSession(req, res); if (!r) return;
+    if (r.t.status !== 'draft') return res.status(400).json({ error: 'Oturum taslakta değil — önce "Taslağa Geri Dön"' });
+    if (r.t.team_mode && r.t.team_mode !== 'singles') return res.status(400).json({ error: 'Eşli oturumda bu ekleme desteklenmiyor' });
+    let player = null;
+    const pid = +req.body.player_id;
+    if (pid) {
+      player = db.playerById(pid);
+      if (!player || (player.user_id != null && player.user_id !== r.userId)) return res.status(400).json({ error: 'Oyuncu bulunamadi' });
+    } else {
+      const name = String(req.body.name || '').trim();
+      if (!name) return res.status(400).json({ error: 'Oyuncu adı gerekli' });
+      player = db.allPlayers(r.userId).find(p => p.name.trim().toLowerCase() === name.toLowerCase())
+        || db.createPlayer(name, null, r.userId);
+    }
+    const entries = db.entriesForTournament(r.t.id);
+    if (entries.some(e => e.player1_id === player.id || e.player2_id === player.id))
+      return res.status(400).json({ error: `${player.name} zaten bu oturumda` });
+    // Sezon havuzunda yoksa ekle (bu oturumdan itibaren katılmış sayılır)
+    const inPool = db.competitionPlayers(r.comp.id).some(p => p.player_id === player.id);
+    if (!inPool) db.addCompetitionPlayer(r.comp.id, player.id, r.s.session_number || 1);
+    const slot = entries.reduce((m, e) => Math.max(m, e.slot || 0), 0) + 1;
+    db.addEntry(r.t.id, slot, player.id);
+    scheduleBroadcast();
+    res.json({ ok: true, name: player.name, added_to_pool: !inPool });
+  } catch (e) {
+    console.error('POST session participants:', e);
+    res.status(400).json({ error: e.message });
+  }
+});
+
 // Cikar
 app.delete('/api/competitions/:id/players/:playerId', auth.requireOrganizer, (req, res) => {
   try {

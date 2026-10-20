@@ -205,6 +205,10 @@ async function loadAndRender() {
       STATE.roundMatches = {};
       // Braketi Kur / Tabletlere Gönder / Taslağa Dön durumu (Ekim 2026)
       STATE.revert = null;
+      STATE.parts = null;
+      if (ses.tournament_status === 'draft') {
+        try { STATE.parts = await apiGet(`/api/competitions/${ses.competition_id}/sessions/${sid}/participants`); } catch (_) {}
+      }
       if (ses.tournament_status === 'running') {
         try { STATE.revert = await apiGet(`/api/tournaments/${ses.tournament_id}/revert-check`); } catch (_) {}
       }
@@ -313,6 +317,7 @@ function render() {
         <p style="margin:0 0 1rem 0;color:var(--text-dim);font-size:0.88rem">
           "Braketi Kur" tıklayınca bracket maçları oluşturulur ama tabletlere gönderilmez. Kontrol ettikten sonra "Tabletlere Gönder – Başlat" ile maçlar board'lara dağıtılır.
         </p>
+${renderDraftParticipants(s)}
         <button id="start-tournament-btn" class="primary" style="padding:0.7rem 1.4rem;font-size:1rem;background:#16a34a;border-color:#16a34a">
           🧱 Braketi Kur
         </button>
@@ -333,6 +338,7 @@ function render() {
   const startBtn = document.getElementById('start-tournament-btn');
   if (startBtn) {
     startBtn.addEventListener('click', async () => {
+      if (STATE.draft && STATE.draft.dirty) { const ok = await draftSave(s.competition_id, s.id, true); if (!ok) return; }
       if (!confirm('Braket kurulsun mu?\n\nMaçlar oluşturulur ama tabletlere gönderilmez. Kontrol ettikten sonra "Tabletlere Gönder – Başlat" ile başlatırsın.')) return;
       startBtn.disabled = true;
       startBtn.textContent = 'Kuruluyor…';
@@ -838,6 +844,149 @@ function renderBracketSimple(matches, comp) {
   });
   return renderBracketWithTabs(columns, '');
 }
+
+// ── Taslak oturum düzenleyici (Ekim 2026): katılımcı ekle/çıkar, seri başı, kura,
+// sıralama, format, leg/set, tur bazında leg. "💾 Kaydet" → PUT .../draft; "Braketi Kur" önce kaydeder.
+function _np2(n) { let p = 1; while (p < n) p *= 2; return p; }
+function _rl(mc) { return mc === 1 ? 'Final' : mc === 2 ? 'Yarı Final' : mc === 4 ? 'Çeyrek Final' : mc === 8 ? 'Son 16' : mc === 16 ? 'Son 32' : mc === 32 ? 'Son 64' : (mc * 2) + ' kişilik tur'; }
+function _draftRounds(format, n) {
+  if (format === 'round_robin' || n < 2) return [];
+  const bs = _np2(n), wb = Math.log2(bs), out = [];
+  if (format === 'single_elim') {
+    for (let r = 1; r <= wb; r++) out.push({ key: `${r === wb ? 'final' : 'winners'}-${r}`, label: _rl(bs / Math.pow(2, r)) });
+    return out;
+  }
+  for (let r = 1; r <= wb; r++) { const mc = bs / Math.pow(2, r); out.push({ key: `winners-${r}`, label: mc === 1 ? 'WB Final' : 'WB ' + _rl(mc) }); }
+  const lb = wb === 1 ? 0 : 2 * (wb - 1);
+  for (let r = 1; r <= lb; r++) out.push({ key: `losers-${r}`, label: r === lb ? 'LB Final' : `LB Round ${r}` });
+  out.push({ key: `final-${wb + lb + 1}`, label: 'Grand Final' });
+  return out;
+}
+function _ensureDraft() {
+  const P = STATE.parts;
+  if (!P || !P.entries) return null;
+  const D = STATE.draft;
+  const ids = P.entries.map(e => e.entry_id).join(',');
+  if (D && D.tid === P.tournament_id && D.ids === ids) return D;
+  // sunucudan taze kur (katılımcı eklenip çıkınca da yenilenir; yerel seri başı/sıra korunur)
+  const keep = D && D.tid === P.tournament_id ? D : null;
+  const order = keep ? keep.order.filter(id => P.entries.some(e => e.entry_id === id)) : [];
+  for (const e of P.entries) if (!order.includes(e.entry_id)) order.push(e.entry_id);
+  const seeds = {};
+  for (const e of P.entries) seeds[e.entry_id] = keep && keep.seeds[e.entry_id] !== undefined ? keep.seeds[e.entry_id] : (e.seed || '');
+  STATE.draft = { tid: P.tournament_id, ids, order, seeds,
+    format: keep ? keep.format : P.format, legs: keep ? keep.legs : P.legs_to_win, sets: keep ? keep.sets : P.sets_to_win,
+    ro: keep ? keep.ro : JSON.parse(JSON.stringify(P.round_overrides || {})), dirty: keep ? keep.dirty : false };
+  return STATE.draft;
+}
+function renderDraftParticipants(s) {
+  const P = STATE.parts;
+  if (!P || P.error || !P.entries) return '';
+  const D = _ensureDraft();
+  const byId = Object.fromEntries(P.entries.map(e => [e.entry_id, e]));
+  const opts = (P.pool || []).map(p => `<option value="${p.player_id}">${esc(p.name)}${p.nickname ? ' (' + esc(p.nickname) + ')' : ''}</option>`).join('');
+  const rows = D.order.map((id, i) => { const e = byId[id]; if (!e) return ''; return `
+    <div style="display:flex;align-items:center;gap:0.5rem;padding:0.35rem 0;border-bottom:1px solid var(--border)">
+      <span style="width:1.8em;color:var(--text-dim);text-align:right">${i + 1}.</span>
+      <span style="flex:1">${esc(e.name)}${e.nickname ? ` <span style="color:var(--text-dim)">(${esc(e.nickname)})</span>` : ''}</span>
+      <label style="font-size:0.78rem;color:var(--text-dim)">Seri başı <input type="number" min="1" value="${D.seeds[id] || ''}" style="width:54px" oninput="draftSeed(${id}, this.value)"></label>
+      <button class="secondary" style="padding:0.15rem 0.5rem" onclick="draftMove(${i},-1)" ${i === 0 ? 'disabled' : ''}>▲</button>
+      <button class="secondary" style="padding:0.15rem 0.5rem" onclick="draftMove(${i},1)" ${i === D.order.length - 1 ? 'disabled' : ''}>▼</button>
+      <button onclick="sessRemovePart(${P.tournament_id}, ${id}, '${esc(e.name).replace(/'/g, '')}')" title="Çıkar" style="background:none;border:0;color:#ef4444;cursor:pointer;font-size:1.1rem">×</button>
+    </div>`; }).join('');
+  const rounds = _draftRounds(D.format, D.order.length);
+  const roRows = rounds.map(r => { const v = D.ro[r.key] || {}; return `
+    <div style="display:flex;align-items:center;gap:0.5rem;padding:0.25rem 0">
+      <span style="flex:1;font-size:0.88rem">${esc(r.label)}</span>
+      <label style="font-size:0.78rem;color:var(--text-dim)">İlk <input type="number" min="1" placeholder="${D.legs}" value="${v.legs || ''}" style="width:54px" oninput="draftRo('${r.key}','legs',this.value)"> leg</label>
+      ${D.sets > 1 ? `<label style="font-size:0.78rem;color:var(--text-dim)">Set <input type="number" min="1" placeholder="${D.sets}" value="${v.sets || ''}" style="width:50px" oninput="draftRo('${r.key}','sets',this.value)"></label>` : ''}
+    </div>`; }).join('');
+  const box = 'text-align:left;margin:0 auto 1rem;max-width:680px;padding:1rem;border:1px solid var(--border);border-radius:10px;background:var(--surface)';
+  return `
+  <div style="${box}">
+    <div style="display:flex;align-items:center;gap:0.5rem;margin-bottom:0.5rem">
+      <b style="flex:1">👥 Katılımcılar & sıralama (${D.order.length})</b>
+      <button class="secondary" onclick="draftDraw()">🎲 Kura Çek</button>
+      <button class="secondary" onclick="draftResetSeeds()">Seri başlarını temizle</button>
+    </div>
+    <div style="font-size:0.78rem;color:var(--text-dim);margin-bottom:0.4rem">Seri başı verilenler braketi 1, 2, 3… sırasıyla yerleşir; kalanlar listedeki sırayla. Kura seri başsızları karıştırır.</div>
+    ${rows}
+    <div style="display:flex;gap:0.5rem;flex-wrap:wrap;align-items:center;margin-top:0.7rem">
+      ${opts ? `<select id="sp-pool" style="flex:1;min-width:160px"><option value="">Sezon havuzundan seç…</option>${opts}</select>
+      <button class="secondary" onclick="sessAddPart(${s.competition_id}, ${s.id}, 'pool')">+ Ekle</button>` : ''}
+    </div>
+    <div style="display:flex;gap:0.5rem;flex-wrap:wrap;align-items:center;margin-top:0.5rem">
+      <input id="sp-name" placeholder="Dışarıdan yeni oyuncu adı" style="flex:1;min-width:160px" onkeydown="if(event.key==='Enter')sessAddPart(${s.competition_id}, ${s.id}, 'name')">
+      <button class="secondary" onclick="sessAddPart(${s.competition_id}, ${s.id}, 'name')">+ Yeni oyuncu ekle</button>
+    </div>
+  </div>
+  <div style="${box}">
+    <b>⚙️ Format & leg</b>
+    <div style="display:flex;gap:0.8rem;flex-wrap:wrap;align-items:center;margin-top:0.6rem">
+      <label>Format <select onchange="draftSet('format', this.value)">
+        <option value="single_elim" ${D.format === 'single_elim' ? 'selected' : ''}>Tek eleme</option>
+        <option value="double_elim" ${D.format === 'double_elim' ? 'selected' : ''}>Çift eleme</option>
+        <option value="round_robin" ${D.format === 'round_robin' ? 'selected' : ''}>Round robin</option></select></label>
+      <label>İlk <input type="number" min="1" value="${D.legs}" style="width:56px" onchange="draftSet('legs', this.value)"> leg kazanan</label>
+      <label>Set <input type="number" min="1" value="${D.sets}" style="width:50px" onchange="draftSet('sets', this.value)"></label>
+    </div>
+    ${roRows ? `<div style="margin-top:0.8rem;font-weight:600;font-size:0.9rem">Tur bazında leg <span style="font-weight:400;color:var(--text-dim);font-size:0.78rem">(boş = varsayılan)</span></div>${roRows}` : (D.format === 'round_robin' ? '<div style="font-size:0.8rem;color:var(--text-dim);margin-top:0.5rem">Round robin\'de tur bazında leg yok.</div>' : '')}
+  </div>
+  <div style="max-width:680px;margin:0 auto 1rem;display:flex;gap:0.6rem;justify-content:center;align-items:center">
+    <button class="primary" onclick="draftSave(${s.competition_id}, ${s.id})">💾 Kaydet</button>
+    <span style="font-size:0.8rem;color:${D.dirty ? '#ffbe00' : 'var(--text-dim)'}">${D.dirty ? 'Kaydedilmemiş değişiklik var — "Braketi Kur" önce kaydeder' : 'Kaydedildi'}</span>
+  </div>`;
+}
+function _draftRerender() { STATE.draft.dirty = true; render(); }
+function draftSeed(id, v) { STATE.draft.seeds[id] = v; STATE.draft.dirty = true; }
+function draftMove(i, d) { const o = STATE.draft.order; const j = i + d; if (j < 0 || j >= o.length) return; [o[i], o[j]] = [o[j], o[i]]; _draftRerender(); }
+function draftDraw() {
+  const D = STATE.draft;
+  const seeded = D.order.filter(id => +D.seeds[id] >= 1).sort((a, b) => D.seeds[a] - D.seeds[b]);
+  const rest = D.order.filter(id => !(+D.seeds[id] >= 1));
+  for (let i = rest.length - 1; i > 0; i--) { const j = Math.floor(Math.random() * (i + 1)); [rest[i], rest[j]] = [rest[j], rest[i]]; }
+  D.order = [...seeded, ...rest];
+  toast('Kura çekildi'); _draftRerender();
+}
+function draftResetSeeds() { for (const k of Object.keys(STATE.draft.seeds)) STATE.draft.seeds[k] = ''; _draftRerender(); }
+function draftSet(k, v) { const D = STATE.draft; if (k === 'format') D.format = v; else D[k] = Math.max(1, parseInt(v, 10) || 1); _draftRerender(); }
+function draftRo(key, f, v) { const D = STATE.draft; D.ro[key] = D.ro[key] || {}; if (v === '' || !(+v >= 1)) delete D.ro[key][f]; else D.ro[key][f] = +v; if (!Object.keys(D.ro[key]).length) delete D.ro[key]; D.dirty = true; }
+async function draftSave(compId, sid, quiet) {
+  const D = STATE.draft; if (!D) return true;
+  const seeded = D.order.filter(id => +D.seeds[id] >= 1).sort((a, b) => D.seeds[a] - D.seeds[b]);
+  const rest = D.order.filter(id => !(+D.seeds[id] >= 1));
+  const order = [...seeded, ...rest];
+  const seeds = {}; for (const id of D.order) seeds[id] = +D.seeds[id] >= 1 ? +D.seeds[id] : null;
+  const valid = new Set(_draftRounds(D.format, D.order.length).map(r => r.key));
+  const ro = {}; for (const [k, v] of Object.entries(D.ro)) if (valid.has(k)) ro[k] = v;
+  const res = await fetch(`/api/competitions/${compId}/sessions/${sid}/draft`, { method: 'PUT', credentials: 'same-origin',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ order, seeds, format: D.format, legs_to_win: D.legs, sets_to_win: D.sets, round_overrides: ro }) })
+    .then(r => r.json()).catch(() => ({ error: 'Sunucu hatası' }));
+  if (res && res.error) { toast('Hata: ' + res.error); return false; }
+  D.order = order; D.dirty = false;
+  if (!quiet) { toast('Kaydedildi ✓'); await loadAndRender(); }
+  return true;
+}
+Object.assign(window, { draftSeed, draftMove, draftDraw, draftResetSeeds, draftSet, draftRo, draftSave });
+async function sessAddPart(compId, sid, mode) {
+  const body = {};
+  if (mode === 'pool') { const v = document.getElementById('sp-pool').value; if (!v) return toast('Önce bir oyuncu seç'); body.player_id = +v; }
+  else { const v = document.getElementById('sp-name').value.trim(); if (!v) return toast('Oyuncu adını yaz'); body.name = v; }
+  const res = await apiPost(`/api/competitions/${compId}/sessions/${sid}/participants`, body);
+  if (res && res.error) return toast('Hata: ' + res.error);
+  toast(`${res.name} eklendi${res.added_to_pool ? ' (sezon havuzuna da)' : ''}`);
+  await loadAndRender();
+}
+window.sessAddPart = sessAddPart;
+async function sessRemovePart(tid, entryId, name) {
+  if (!confirm(`${name} bu oturumdan çıkarılsın mı?`)) return;
+  const r = await fetch(`/api/tournaments/${tid}/entries/${entryId}`, { method: 'DELETE', credentials: 'same-origin' }).then(x => x.json()).catch(() => ({ error: 'Sunucu hatası' }));
+  if (r && r.error) return toast('Hata: ' + r.error);
+  toast(`${name} çıkarıldı`);
+  await loadAndRender();
+}
+window.sessRemovePart = sessRemovePart;
 
 // ── Sezon oturumu: Tabletlere gönder / Taslağa dön (Ekim 2026) ─────
 async function sessionDispatch(tid) {
