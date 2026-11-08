@@ -244,6 +244,21 @@ app.post('/api/admin/organizers/:userId/revoke', auth.requireAdmin, (req, res) =
   db.setOrganizerStatus(u.id, 'none', null);
   res.json({ ok: true });
 });
+// Oyuncu birleştir (yanlış e-postayla açılmış ikinci hesap). body: {from_player_id, to_player_id, account_email?, dry_run?}
+app.post('/api/admin/merge-players', auth.requireAdmin, (req, res) => {
+  try {
+    const { from_player_id, to_player_id, account_email, dry_run } = req.body || {};
+    let accId = null;
+    if (account_email) {
+      const u = db.db.prepare('SELECT id FROM users WHERE lower(email) = lower(?)').get(String(account_email).trim());
+      if (!u) return res.status(404).json({ error: 'Bu e-postayla hesap bulunamadı' });
+      accId = u.id;
+    }
+    const plan = db.mergePlayers(+from_player_id, +to_player_id, accId, !!dry_run);
+    if (!dry_run && typeof scheduleBroadcast === 'function') scheduleBroadcast();
+    res.json({ ok: true, plan });
+  } catch (e) { res.status(400).json({ error: e.message }); }
+});
 // Tüm turnuvalar (sahip bilgisiyle)
 app.get('/api/admin/tournaments', auth.requireAdmin, (req, res) => {
   res.json({ tournaments: db.adminAllTournaments() });

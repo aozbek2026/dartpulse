@@ -2709,6 +2709,82 @@ function addShotStatsToCompetitionPlayer(competitionId, playerId, shotStats) {
   ).run(JSON.stringify(cur), competitionId, playerId);
 }
 
+
+// Yönetici aracı: iki oyuncu kaydını birleştir (yanlış e-postayla açılmış ikinci hesap vb.).
+// fromPid'in tüm izleri (entries, session_results, kayıtlar, sezon klasman satırları) toPid'e
+// taşınır; klasman satırları toplanır. accountUserId verilirse toPid o hesaba bağlanır.
+// fromPid oyuncu kaydı SİLİNMEZ (sadece boşalır). dryRun=true ise hiçbir şey yazmaz, önizleme döner.
+function mergePlayers(fromPid, toPid, accountUserId, dryRun) {
+  const from = db.prepare('SELECT * FROM players WHERE id = ?').get(fromPid);
+  const to = db.prepare('SELECT * FROM players WHERE id = ?').get(toPid);
+  if (!from || !to) throw new Error('Oyuncu bulunamadı');
+  if (fromPid === toPid) throw new Error('Aynı oyuncu');
+  if (from.user_id !== to.user_id) throw new Error('Oyuncular farklı organizatörlere ait');
+  const parse = (j) => { try { return j ? JSON.parse(j) : {}; } catch { return {}; } };
+  const plan = { from, to, competitions: [] };
+  const run = () => {
+    const rows = db.prepare('SELECT * FROM competition_players WHERE player_id = ?').all(fromPid);
+    for (const a of rows) {
+      const b = db.prepare('SELECT * FROM competition_players WHERE competition_id = ? AND player_id = ?')
+        .get(a.competition_id, toPid);
+      if (!b) {
+        db.prepare('UPDATE competition_players SET player_id = ? WHERE id = ?').run(toPid, a.id);
+        plan.competitions.push({ competition_id: a.competition_id, moved: true });
+        continue;
+      }
+      const sa = parse(a.stats_json), sb = parse(b.stats_json), st = {};
+      for (const k of ['total_score','darts_thrown','tons','ton_plus','one_eighty','high_outs'])
+        st[k] = (+sa[k] || 0) + (+sb[k] || 0);
+      st.best_checkout = Math.max(+sa.best_checkout || 0, +sb.best_checkout || 0);
+      st.highest_match_3da = Math.max(+sa.highest_match_3da || 0, +sb.highest_match_3da || 0);
+      const m = {
+        joined_session: Math.min(a.joined_session || 1, b.joined_session || 1),
+        total_points: (a.total_points || 0) + (b.total_points || 0),
+        sessions_played: (a.sessions_played || 0) + (b.sessions_played || 0),
+        matches_won: (a.matches_won || 0) + (b.matches_won || 0),
+        matches_lost: (a.matches_lost || 0) + (b.matches_lost || 0),
+        legs_won: (a.legs_won || 0) + (b.legs_won || 0),
+        legs_lost: (a.legs_lost || 0) + (b.legs_lost || 0),
+        first_place: (a.first_place || 0) + (b.first_place || 0),
+        second_place: (a.second_place || 0) + (b.second_place || 0),
+        third_place: (a.third_place || 0) + (b.third_place || 0),
+        stats_json: JSON.stringify(st),
+      };
+      db.prepare(`UPDATE competition_players SET joined_session=@joined_session, total_points=@total_points,
+        sessions_played=@sessions_played, matches_won=@matches_won, matches_lost=@matches_lost,
+        legs_won=@legs_won, legs_lost=@legs_lost, first_place=@first_place, second_place=@second_place,
+        third_place=@third_place, stats_json=@stats_json WHERE id=@id`).run({ ...m, id: b.id });
+      db.prepare('DELETE FROM competition_players WHERE id = ?').run(a.id);
+      plan.competitions.push({ competition_id: a.competition_id, merged: m });
+    }
+    plan.entries = db.prepare('UPDATE entries SET player1_id = ? WHERE player1_id = ?').run(toPid, fromPid).changes
+      + db.prepare('UPDATE entries SET player2_id = ? WHERE player2_id = ?').run(toPid, fromPid).changes;
+    plan.session_results = db.prepare('UPDATE session_results SET player_id = ? WHERE player_id = ?').run(toPid, fromPid).changes;
+    plan.registrations = db.prepare('UPDATE registrations SET player_id = ? WHERE player_id = ?').run(toPid, fromPid).changes;
+    plan.session_registrations = db.prepare('UPDATE session_registrations SET player_id = ? WHERE player_id = ?').run(toPid, fromPid).changes;
+    if (accountUserId) {
+      const oldAcc = to.account_user_id;
+      db.prepare('UPDATE players SET account_user_id = ? WHERE id = ?').run(accountUserId, toPid);
+      db.prepare('UPDATE players SET account_user_id = NULL WHERE id = ?').run(fromPid);
+      if (oldAcc && oldAcc !== accountUserId) {
+        // Eski (yanlış) hesabın sezon kayıtlarını doğru hesaba geçir (çakışma yoksa)
+        plan.session_registrations_user = db.prepare(`UPDATE session_registrations SET user_id = ?
+          WHERE user_id = ? AND session_id NOT IN (SELECT session_id FROM session_registrations WHERE user_id = ?)`)
+          .run(accountUserId, oldAcc, accountUserId).changes;
+        plan.registrations_user = db.prepare(`UPDATE registrations SET user_id = ?
+          WHERE user_id = ? AND tournament_id NOT IN (SELECT tournament_id FROM registrations WHERE user_id = ?)`)
+          .run(accountUserId, oldAcc, accountUserId).changes;
+      }
+      const u = db.prepare('SELECT name FROM users WHERE id = ?').get(accountUserId);
+      if (u && u.name) db.prepare('UPDATE players SET name = ? WHERE id = ?').run(u.name, toPid);
+    }
+    if (dryRun) throw new Error('__DRY_RUN__');
+  };
+  try { db.transaction(run)(); }
+  catch (e) { if (e.message !== '__DRY_RUN__') throw e; plan.dry_run = true; }
+  return plan;
+}
+
 // --- User token fonksiyonları ---
 function setVerifyToken(userId, token) {
   db.prepare('UPDATE users SET verify_token = ? WHERE id = ?').run(token, userId);
@@ -2801,4 +2877,5 @@ module.exports = {
   addToCompetitionPlayerStats, addShotStatsToCompetitionPlayer,
   generateLeaguePlan, leagueSchedule, linkRoundToSession,
   recordLeagueRoundResults, leagueRoundResultsRecorded, backfillShotStatsForCompetition,
+  mergePlayers,
 };
