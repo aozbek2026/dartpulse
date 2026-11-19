@@ -505,19 +505,13 @@ function renderPreMatch() {
         const gm = tt?.game_mode;
         const isFBMode = gm === 'cricket_fb_cezali' || gm === 'cricket_fb_karambol';
         if (!isFBMode) return '';
+        // 10-11 tercihi turnuva kurulumunda belirlenir; burada sadece bilgi gösterilir
+        let incLow = true;
+        try { incLow = JSON.parse(tt?.config_json || '{}').include_low !== false; } catch (_) {}
         return `
         <div style="width: 100%; max-width: 780px;">
-          <div class="card" style="background: var(--surface-2); padding: 1.25rem;">
-            <div style="font-size: 0.78rem; color: var(--text-dim); letter-spacing: 0.1em; text-transform: uppercase; margin-bottom: 0.75rem;">🎯 Hedef segmentleri</div>
-            <label style="display: flex; align-items: center; gap: 0.85rem; cursor: pointer; padding: 0.4rem 0;">
-              <input type="checkbox" ${selectedIncludeLow ? 'checked' : ''}
-                onchange="selectIncludeLow(this.checked)"
-                style="width: 1.4rem; height: 1.4rem; cursor: pointer; accent-color: var(--accent);" />
-              <span style="font-size: 1.05rem; font-weight: 600;">10 ve 11 segmentleri dahil</span>
-            </label>
-            <div style="font-size: 0.82rem; color: var(--text-dim); margin-top: 0.3rem; padding-left: 2.25rem;">
-              Kapatılırsa oyun 12-20 + Bull + D + T + H ile oynanır.
-            </div>
+          <div class="card" style="background: var(--surface-2); padding: 0.9rem 1.25rem; font-size: 1.05rem; font-weight: 600;">
+            🎯 Hedefler: ${incLow ? '10–20' : '12–20'} + Bull + D + T + H
           </div>
         </div>`;
       })()}
@@ -617,8 +611,7 @@ async function beginMatch() {
     body.p1_sub_turn = selectedSubStarter1;
     body.p2_sub_turn = selectedSubStarter2;
   }
-  // FB Cezalı / Karambol için 10-11 dahil tercihi (varsayılan: dahil)
-  body.include_low = !!selectedIncludeLow;
+  // FB modlarında 10-11 tercihi turnuva ayarından gelir (sunucu belirler)
   const res = await api.post(`/api/matches/${currentMatch.id}/begin`, body);
   if (res.error) return toast('Hata: ' + res.error);
   selectedStarter = null;
@@ -1607,6 +1600,8 @@ function renderPostMatch() {
   const isTeamPool = (m.tournament_name || '').startsWith('__team_pool_');
   const postTName  = isTeamPool ? 'Takım Maçı' : (m.tournament_name || '');
 
+  // Ortalama / 180 / Best CO sadece X01'de anlamlı; cricket modlarında gizlenir
+  const isX01Post = !String(m.game_mode || '').startsWith('cricket');
   const setLegLabel = (s, l) => (s > 0 ? `${s} set ${l} leg` : `${l} leg`);
 
   root.innerHTML = `
@@ -1628,6 +1623,7 @@ function renderPostMatch() {
           <div style="font-size: 0.85rem; color: #22c55e; font-weight: 700; letter-spacing: 0.2em;">🏆 KAZANAN</div>
           <div style="font-size: 2.1rem; font-weight: 800; margin-top: 0.5rem;">${entryLabel(winnerEntry)}</div>
           <div style="font-size: 0.95rem; color: var(--text-dim); margin-top: 0.25rem;">${setLegLabel(wSets, wLegs)}</div>
+          ${isX01Post ? `
           <div style="display: grid; grid-template-columns: repeat(3, 1fr); gap: 0.75rem; margin-top: 1rem; font-variant-numeric: tabular-nums;">
             <div>
               <div style="font-size: 0.72rem; color: var(--text-dim); text-transform: uppercase;">3-Ok Ort.</div>
@@ -1641,13 +1637,14 @@ function renderPostMatch() {
               <div style="font-size: 0.72rem; color: var(--text-dim); text-transform: uppercase;">Best CO</div>
               <div style="font-size: 1.6rem; font-weight: 800;">${wStats.best_checkout || 0}</div>
             </div>
-          </div>
+          </div>` : ''}
         </div>
 
         <div class="card" style="background: var(--surface-2); border: 2px solid var(--surface-3, #2a2f3a); padding: 1.5rem; text-align: center;">
           <div style="font-size: 0.85rem; color: var(--text-dim); font-weight: 700; letter-spacing: 0.2em;">KAYBEDEN</div>
           <div style="font-size: 2.1rem; font-weight: 800; margin-top: 0.5rem; opacity: 0.85;">${entryLabel(loserEntry)}</div>
           <div style="font-size: 0.95rem; color: var(--text-dim); margin-top: 0.25rem;">${setLegLabel(lSets, lLegs)}</div>
+          ${isX01Post ? `
           <div style="display: grid; grid-template-columns: repeat(3, 1fr); gap: 0.75rem; margin-top: 1rem; font-variant-numeric: tabular-nums;">
             <div>
               <div style="font-size: 0.72rem; color: var(--text-dim); text-transform: uppercase;">3-Ok Ort.</div>
@@ -1661,7 +1658,7 @@ function renderPostMatch() {
               <div style="font-size: 0.72rem; color: var(--text-dim); text-transform: uppercase;">Best CO</div>
               <div style="font-size: 1.6rem; font-weight: 800;">${lStats.best_checkout || 0}</div>
             </div>
-          </div>
+          </div>` : ''}
         </div>
       </div>
 
@@ -1986,18 +1983,24 @@ function showLegSummary(summary) {
     const e2Name = entryLabel(m?.entry2);
     const winnerName = summary.winner_slot === 1 ? e1Name : e2Name;
     const showSets = (m?.sets_to_win || 1) > 1;
+    // Cricket modlarında X01 istatistikleri (ortalama/atılan) anlamsız — sadece puan gösterilir
+    const gmode = m?.game_mode;
+    const sideMode = gmode === 'cricket_fb_karambol' ? 'none' : (summary.is_cricket ? 'points' : 'x01');
+    // Leg numarası: X01 özetinde leg_index gelir; cricket modlarında biten leg = toplam leg sayısı
+    const legNo = summary.leg_index
+      ?? (summary.next_leg ? summary.next_leg - 1 : ((summary.p1_legs ?? 0) + (summary.p2_legs ?? 0)) || '');
 
     const overlay = document.createElement('div');
     overlay.className = 'leg-summary';
     overlay.innerHTML = `
       <div class="leg-summary-card">
-        <div class="leg-summary-banner">LEG ${summary.leg_index} BİTTİ</div>
+        <div class="leg-summary-banner">LEG ${legNo} BİTTİ</div>
         <div class="leg-summary-winner">🏆 ${winnerName}</div>
         ${summary.checkout ? `<div class="leg-summary-checkout">Checkout: <strong>${summary.checkout}</strong></div>` : ''}
 
         <div class="leg-summary-grid">
-          ${legSummarySide(e1Name, summary.p1, summary.winner_slot === 1)}
-          ${legSummarySide(e2Name, summary.p2, summary.winner_slot === 2)}
+          ${legSummarySide(e1Name, summary.p1, summary.winner_slot === 1, sideMode)}
+          ${legSummarySide(e2Name, summary.p2, summary.winner_slot === 2, sideMode)}
         </div>
 
         <div class="leg-summary-score">
@@ -2025,7 +2028,16 @@ function showLegSummary(summary) {
   });
 }
 
-function legSummarySide(name, p, isWinner) {
+function legSummarySide(name, p, isWinner, mode = 'x01') {
+  if (mode !== 'x01') {
+    return `
+    <div class="leg-summary-side ${isWinner ? 'winner' : ''}">
+      <div class="leg-summary-name">${name}</div>
+      ${mode === 'points' ? `<div class="leg-summary-stat-row">
+        <div class="leg-summary-stat"><span>Puan</span><strong>${p?.total ?? 0}</strong></div>
+      </div>` : ''}
+    </div>`;
+  }
   return `
     <div class="leg-summary-side ${isWinner ? 'winner' : ''}">
       <div class="leg-summary-name">${name}</div>

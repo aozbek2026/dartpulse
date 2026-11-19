@@ -185,7 +185,10 @@ try {
 // Public istemci yapılandırması — captcha site key gibi gizli olmayan değerler.
 // Turnstile site key'i açık (public) bir değerdir; secret ayrıdır (sadece server'da).
 app.get('/api/config', (req, res) => {
-  res.json({ turnstileSiteKey: process.env.TURNSTILE_SITE_KEY || null });
+  res.json({
+    turnstileSiteKey: process.env.TURNSTILE_SITE_KEY || null,
+    gaMeasurementId: process.env.GA_MEASUREMENT_ID || null, // Google Analytics (yalnız onayla yüklenir)
+  });
 });
 
 // --- Auth routes ---
@@ -547,6 +550,16 @@ app.post('/api/tournaments', auth.requireOrganizer, (req, res) => {
       entries: Array.isArray(b.entries) ? b.entries : [],
       allow_empty: !!reg,
     });
+    // Full Board modları: 10-11 tercihini turnuva config_json'una kaydet (tabletler buna uyar)
+    if (b.game_mode === 'cricket_fb_cezali' || b.game_mode === 'cricket_fb_karambol') {
+      let inc = true;
+      try { const c = typeof b.config_json === 'string' ? JSON.parse(b.config_json) : (b.config_json || {}); if (c && c.include_low === false) inc = false; } catch {}
+      let cfg = {};
+      try { const row = db.db.prepare('SELECT config_json FROM tournaments WHERE id = ?').get(t.id); cfg = row?.config_json ? JSON.parse(row.config_json) : {}; } catch {}
+      cfg.include_low = inc;
+      db.db.prepare('UPDATE tournaments SET config_json = ? WHERE id = ?').run(JSON.stringify(cfg), t.id);
+      t.config_json = JSON.stringify(cfg);
+    }
     // Online kayıtlı turnuva: etkinlik ayarlarını hemen aç (dummy katılımcı gerekmez)
     if (reg) {
       const toInt = v => (v === '' || v == null ? null : (Number.isFinite(+v) && +v > 0 ? +v : null));
@@ -1106,17 +1119,15 @@ app.post('/api/matches/:id/begin', (req, res) => {
       let cfg = {};
       try { cfg = tour.config_json ? JSON.parse(tour.config_json) : {}; } catch {}
       // İstek body'sinde explicit gelirse onu kullan, yoksa tournament config, yoksa true
-      const includeLow = (req.body && typeof req.body.include_low === 'boolean')
-        ? req.body.include_low
-        : (cfg.include_low !== false);
+      // Turnuva ayarı belirleyici (kurulumda sorulur); tablet gönderse bile dikkate alınmaz
+      const includeLow = cfg.include_low !== false;
       patch.cricket_state_json = JSON.stringify(engine.initFBCezaliState(includeLow));
     }
     if (tour?.game_mode === 'cricket_fb_karambol' && !m.cricket_state_json) {
       let cfg = {};
       try { cfg = tour.config_json ? JSON.parse(tour.config_json) : {}; } catch {}
-      const includeLow = (req.body && typeof req.body.include_low === 'boolean')
-        ? req.body.include_low
-        : (cfg.include_low !== false);
+      // Turnuva ayarı belirleyici (kurulumda sorulur); tablet gönderse bile dikkate alınmaz
+      const includeLow = cfg.include_low !== false;
       patch.cricket_state_json = JSON.stringify(engine.initKarambolState(includeLow));
     }
     db.updateMatch(id, patch);

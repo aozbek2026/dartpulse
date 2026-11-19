@@ -943,6 +943,11 @@ function onGameModeChange(val) {
   if (fbOpts) fbOpts.style.display = (val === 'cricket_fb_cezali' || val === 'cricket_fb_karambol') ? '' : 'none';
 }
 
+function fbLowLabel(t) {
+  if (t.game_mode !== 'cricket_fb_cezali' && t.game_mode !== 'cricket_fb_karambol') return '';
+  let inc = true; try { inc = JSON.parse(t.config_json || '{}').include_low !== false; } catch (_) {}
+  return inc ? ' (10–11 dahil)' : ' (10–11 hariç)';
+}
 function modeLabel(mode) {
   return { '501': '501', '701': '701', '1001': '1001', cricket: 'Cricket', cricket_fb_cezali: 'Full Board Cezalı', cricket_fb_karambol: 'Full Board Karambol' }[mode] || mode;
 }
@@ -1096,7 +1101,7 @@ function tourSummaryHtml(t) {
   if ((t.entries || []).length < 2) warn.push('En az 2 katılımcı gerekli.');
   return `<div style="text-align:left;font-size:0.92rem;line-height:1.6;white-space:normal;">
     <div><b>${t.name}</b></div>
-    <div>👥 ${(t.entries || []).length} katılımcı · ${modeLabel(t.game_mode)} · ${fmtName}</div>
+    <div>👥 ${(t.entries || []).length} katılımcı · ${modeLabel(t.game_mode)}${fbLowLabel(t)} · ${fmtName}</div>
     <div>🎯 ${legsTxt}</div>
     <div>📐 Tur bazında leg: ${ovTxt}</div>
     <div>🌱 Seri başı: ${seeded ? seeded + ' oyuncu' : 'yok'}</div>
