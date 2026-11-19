@@ -1145,12 +1145,27 @@ app.post('/api/matches/:id/begin', (req, res) => {
 });
 
 // Cricket/FB/Karambol için son visit öncesi snapshot — GERİ AL için
+// Cricket / FB Cezalı / Karambol GERİ: çok seviyeli geri alma.
+// cricket_undo_json artık snapshot YIĞINI (dizi); her visit öncesi bir snapshot eklenir,
+// her GERİ en sondakini geri yükler (X01'deki Geri Al gibi, leg geçişlerini de geri sarar).
+// Eski kayıtlar tek nesne olarak durabilir → tek elemanlı yığın sayılır.
+const CRICKET_UNDO_MAX = 200;
+function readCricketUndoStack(m) {
+  if (!m || !m.cricket_undo_json) return [];
+  try {
+    const v = JSON.parse(m.cricket_undo_json);
+    return Array.isArray(v) ? v : (v && typeof v === 'object' ? [v] : []);
+  } catch { return []; }
+}
 function cricketUndoSnapshot(matchId) {
   const m = db.matchById(matchId);
   if (!m) return;
+  let st1 = {}, st2 = {};
+  try { st1 = db.getStats(matchId, 1) || {}; st2 = db.getStats(matchId, 2) || {}; } catch {}
   const snap = {
     cricket_state_json: m.cricket_state_json || null,
     current_turn: m.current_turn,
+    starter_slot: m.starter_slot,
     p1_legs: m.p1_legs,
     p2_legs: m.p2_legs,
     current_leg: m.current_leg,
@@ -1161,8 +1176,15 @@ function cricketUndoSnapshot(matchId) {
     winner_entry_id: m.winner_entry_id,
     p1_sub_turn: m.p1_sub_turn,
     p2_sub_turn: m.p2_sub_turn,
+    stats: {
+      1: { legs_won: st1.legs_won || 0, sets_won: st1.sets_won || 0 },
+      2: { legs_won: st2.legs_won || 0, sets_won: st2.sets_won || 0 },
+    },
   };
-  db.updateMatch(matchId, { cricket_undo_json: JSON.stringify(snap) });
+  const stack = readCricketUndoStack(m);
+  stack.push(snap);
+  while (stack.length > CRICKET_UNDO_MAX) stack.shift();
+  db.updateMatch(matchId, { cricket_undo_json: JSON.stringify(stack) });
 }
 
 // Cricket: bir visit (3 ok) kaydı — hits: {20: 2, 19: 1, ...}
@@ -1249,10 +1271,12 @@ app.post('/api/matches/:id/cricket-undo', (req, res) => {
     const id = +req.params.id;
     const m = db.matchById(id);
     if (!m) return res.status(404).json({ error: 'Maç bulunamadı' });
-    if (!m.cricket_undo_json) return res.status(400).json({ error: 'Geri alınacak visit yok' });
-    let snap;
-    try { snap = JSON.parse(m.cricket_undo_json); } catch { return res.status(400).json({ error: 'Snapshot bozuk' }); }
-    db.updateMatch(id, {
+    // Biten maç geri alınmaz (kazanan sonraki maça işlenmiş olabilir — braket bozulur)
+    if (m.status !== 'live') return res.status(400).json({ error: 'Maç bitmiş, geri alınamaz' });
+    const stack = readCricketUndoStack(m);
+    if (!stack.length) return res.status(400).json({ error: 'Geri alınacak visit yok' });
+    const snap = stack.pop();
+    const patch = {
       cricket_state_json: snap.cricket_state_json,
       current_turn:      snap.current_turn,
       p1_legs:           snap.p1_legs,
@@ -1265,8 +1289,23 @@ app.post('/api/matches/:id/cricket-undo', (req, res) => {
       winner_entry_id:   snap.winner_entry_id,
       p1_sub_turn:       snap.p1_sub_turn,
       p2_sub_turn:       snap.p2_sub_turn,
-      cricket_undo_json: null, // tek seviye undo, kullanıldı
-    });
+      cricket_undo_json: stack.length ? JSON.stringify(stack) : null,
+    };
+    if (snap.starter_slot === 1 || snap.starter_slot === 2) patch.starter_slot = snap.starter_slot;
+    db.updateMatch(id, patch);
+    // Leg/set geri sarıldıysa istatistikteki legs_won / sets_won da geri alınır
+    if (snap.stats) {
+      for (const slot of [1, 2]) {
+        try {
+          const cur = db.getStats(id, slot) || {};
+          const want = snap.stats[slot] || {};
+          const d = {};
+          if ((cur.legs_won || 0) !== (want.legs_won || 0)) d.legs_won = (want.legs_won || 0) - (cur.legs_won || 0);
+          if ((cur.sets_won || 0) !== (want.sets_won || 0)) d.sets_won = (want.sets_won || 0) - (cur.sets_won || 0);
+          if (Object.keys(d).length) db.updateStats(id, slot, d);
+        } catch {}
+      }
+    }
     const updated = db.matchById(id);
     if (updated?.board_id) {
       io.to(`board:${updated.board_id}`).emit('board:state', {

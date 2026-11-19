@@ -1242,6 +1242,8 @@ Not: Deploy repo'su `aozbek2026/dartpulse` (branch `main`); env değişkenleri d
 - Özel domain (~₺200-300/yıl)
 
 ### Faz 4: Gelir modeli
+- **KALICI KURAL (kullanıcı isteği, Kas 2026): Reklam (AdSense) ve Google Analytics tabletlerde/kiosk ekranlarında ASLA çalışmaz** — `board.html`, `tv.html`, `scorer.html` ve PWA standalone modu. Reklam kodu eklenirken `cookie-consent.js`'teki aynı yol + standalone korumasını kullan; bu sayfalara reklam/analitik script'i ekleme.
+- Google Analytics (Kas 2026, uygulandı): `GA_MEASUREMENT_ID` Render env'i girilirse `cookie-consent.js` "Kabul Et/Reddet" sorar, GA yalnız onayla yüklenir (`dcp_consent` localStorage). Env yoksa eski bilgilendirme banner'ı.
 - AdSense başvurusu (1000+ ziyaret/ay sonrası)
 - Premium altyapısı: Stripe Checkout, $3-5/yıl, ek özellikler (turnuva arşivi, custom branding, daha fazla oyuncu sınırı)
 - Kullanıcı modelinde `tier: 'free' | 'premium'` kolonu — şimdiden ekleyebiliriz
@@ -1625,6 +1627,10 @@ Kullanıcı onayıyla (korumalı modüller). `scorer.html` kapsam dışı.
 - **`match-engine.js` `undoLastThrow`:** Son atış mevcut leg'de değilse (önceki leg'i bitiren checkout) leg/set geçişini geri sarar: leg skorları setteki kalan `is_finish` atışlarından yeniden sayılır, set değiştiyse kazananın seti −1, `current_leg/current_set` geri, `starter_slot` ters çevrilir, stats `legs_won/sets_won/darts_in_finished_legs` düşülür. Biten maçta (`status!=='live'`) hata verir. Dönüş `{ok, legReverted}`. Sınır: eşli maçta alt-oyuncu sırası (`pX_sub_turn`) geri yüklenmez.
 - **`server.js`:** `/undo` atış yoksa `{code:'NO_THROWS'}` döner + `board:state` yayınlar. Yeni `POST /api/matches/:id/unbegin`: hiç atış/visit yok + leg/set 0-0 ise live → ready (sıra/starter/cricket state sıfırlanır).
 - **`board.js`:** X01 "Geri Al" → atış → önceki leg → başlangıç ekranı (`confirmUnbegin`). Cricket/FB/Karambol "← GERİ" tahta boşken (`cricketPristine`) başlangıca döner (çoklu visit geri alma YOK, tek seviye — sonra bakılacak). X01'de maçı bitirecek checkout gönderilmeden önce onay sorulur (cricket modlarında yok). `showConfirm(msg, yesLabel, noLabel)` etiket parametresi aldı (walkover butonu artık doğru yazıyor).
+
+## Cricket modları — çok seviyeli GERİ + FB 10–11 ayarı (Kasım 2026)
+- **Çok seviyeli GERİ:** `matches.cricket_undo_json` artık snapshot **yığını** (dizi, max 200; eski tek-nesne kayıtlar tek elemanlı yığın sayılır). `server.js` `cricketUndoSnapshot` her visit öncesi push, `/cricket-undo` pop eder → her GERİ bir önceki ele gider, leg/set geçişini de geri sarar (snapshot'taki `stats.legs_won/sets_won` ile match_stats düzeltilir). Biten maç (`status!=='live'`) geri alınmaz. `scorer.html`'de aynı davranış `G.undoSnapshot.prev` bağlı listesiyle.
+- **FB 10–11:** tercih turnuva kurulumunda (`t-include-low`) → `tournaments.config_json.include_low` (server.js POST /api/tournaments). `/begin` tabletten gelen `include_low`'u yok sayar; board.js maç başında sadece bilgi satırı gösterir. Cricket leg-sonu özetinde yalnız "Puan", maç sonu ekranında X01 istatistikleri gizli.
 
 ## İki adımlı başlatma + Taslağa Geri Dön (Ekim 2026, kullanıcı onayıyla)
 

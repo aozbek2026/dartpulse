@@ -186,7 +186,7 @@ function buildMatch() {
     p1_leg_score: G.remaining[1],
     p2_leg_score: G.remaining[2],
     cricket_state_json: G.cricket_state ? JSON.stringify(G.cricket_state) : null,
-    cricket_undo_json: G.undoSnapshot ? JSON.stringify(G.undoSnapshot) : null,
+    cricket_undo_json: G.undoSnapshot ? '1' : null,  // sadece var/yok bilgisi kullanılıyor
     entry1: { player1: { name: G.players[1] } },
     entry2: { player1: { name: G.players[2] } },
     round_label: '',
@@ -1245,6 +1245,8 @@ function saveUndoSnapshot() {
     totalScore: [...G.totalScore],
     darts: [...G.darts],
     turns: [...G.turns],
+    // Çok seviyeli GERİ: önceki snapshot'a bağlı liste (her GERİ bir öncekine gider)
+    prev: G.undoSnapshot || null,
   };
 }
 
@@ -1263,7 +1265,7 @@ function restoreFromSnapshot() {
   G.totalScore = s.totalScore;
   G.darts = s.darts;
   G.turns = s.turns;
-  G.undoSnapshot = null;
+  G.undoSnapshot = s.prev || null;
   cricketDarts = []; fbDarts = []; karambolDarts = [];
   fbMetaMode = null; fbMetaScore = 0;
 }
