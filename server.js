@@ -1206,6 +1206,7 @@ app.post('/api/matches/:id/cricket-throw', (req, res) => {
         match: m,
       });
     }
+    if (result && result.matchFinished) handleMatchFinished(id);
     scheduleBroadcast();
     res.json({ ...result, match: enrichMatch(id) });
   } catch (e) {
@@ -1232,6 +1233,7 @@ app.post('/api/matches/:id/fb-cezali-throw', (req, res) => {
         match: m,
       });
     }
+    if (result && result.matchFinished) handleMatchFinished(id);
     scheduleBroadcast();
     res.json({ ...result, match: enrichMatch(id) });
   } catch (e) {
@@ -1258,6 +1260,7 @@ app.post('/api/matches/:id/karambol-throw', (req, res) => {
         match: m,
       });
     }
+    if (result && result.matchFinished) handleMatchFinished(id);
     scheduleBroadcast();
     res.json({ ...result, match: enrichMatch(id) });
   } catch (e) {
@@ -1485,6 +1488,44 @@ app.patch('/api/matches/:id/scorer', (req, res) => {
   }
 });
 
+// Maç bittiğinde ortak işlem: braket ilerletme + board/scheduler (X01 ve cricket modları)
+function handleMatchFinished(matchId) {
+  const m = db.matchById(matchId);
+  // "Kazanan hakemlik": bu board'da biten maçın galibini board'a yaz.
+  // /next ile board boşalınca scheduler bunu bir sonraki maçın scorer'ı yapabilir.
+  if (m && m.board_id && m.winner_entry_id) {
+    try { db.setBoardLastWinner(m.board_id, m.winner_entry_id); } catch (_) {}
+  }
+  if (m && m.team_phase_match_id) {
+    // Takım maçı — ayrı işleyici
+    onTeamMatchFinished(matchId, m);
+  } else {
+    const resetInfo = tournament.onMatchFinished(matchId);
+    if (resetInfo && resetInfo.needsResetFinal) {
+      // GF bitti, LB kazandı → organizatörden leg sayısı bekle
+      io.emit('tournament:reset_needed', {
+        tournamentId: resetInfo.tournamentId,
+        gfMatchId: resetInfo.gfMatchId,
+        defaultLegs: resetInfo.defaultLegs,
+      });
+    } else {
+      const t = m ? db.tournamentById(m.tournament_id) : null;
+      if (t && t.status === 'finished') {
+        // SADECE biten turnuvanın board'larını serbest bırak — aynı
+        // kullanıcının paralel oynayan başka turnuvalarına dokunma.
+        const boards = db.clearTournamentBoards(t.user_id, t.id);
+        for (const b of boards) {
+          io.to(`board:${b.id}`).emit('board:state', { board: { ...b, current_match_id: null, status: 'idle' }, match: null });
+        }
+        // Boşalan board'lar bekleyen başka turnuvaya yarayabilir.
+        scheduler.assignPendingMatches(io, t.user_id || null);
+      } else {
+        scheduler.assignPendingMatches(io, t?.user_id || null);
+      }
+    }
+  }
+}
+
 app.post('/api/matches/:id/throw', (req, res) => {
   try {
     const { playerSlot, score, finishDarts, bust, clientThrowId } = req.body;
@@ -1503,45 +1544,8 @@ app.post('/api/matches/:id/throw', (req, res) => {
     // Turnuva oynanırken sık yedek: her atışta tetikle (debounce'lu, en fazla ~15dk'da bir).
     try { backup.triggerBackup(); } catch (_) {}
     io.emit('match:update', { matchId });
-    if (result.matchFinished) {
-      const m = db.matchById(matchId);
-      // "Kazanan hakemlik": bu board'da biten maçın galibini board'a yaz.
-      // /next ile board boşalınca scheduler bunu bir sonraki maçın scorer'ı yapabilir.
-      if (m && m.board_id && m.winner_entry_id) {
-        try { db.setBoardLastWinner(m.board_id, m.winner_entry_id); } catch (_) {}
-      }
-      if (m && m.team_phase_match_id) {
-        // Takım maçı — ayrı işleyici
-        onTeamMatchFinished(matchId, m);
-      } else {
-        const resetInfo = tournament.onMatchFinished(matchId);
-        if (resetInfo && resetInfo.needsResetFinal) {
-          // GF bitti, LB kazandı → organizatörden leg sayısı bekle
-          io.emit('tournament:reset_needed', {
-            tournamentId: resetInfo.tournamentId,
-            gfMatchId: resetInfo.gfMatchId,
-            defaultLegs: resetInfo.defaultLegs,
-          });
-        } else {
-          const t = m ? db.tournamentById(m.tournament_id) : null;
-          if (t && t.status === 'finished') {
-            // SADECE biten turnuvanın board'larını serbest bırak — aynı
-            // kullanıcının paralel oynayan başka turnuvalarına dokunma.
-            const boards = db.clearTournamentBoards(t.user_id, t.id);
-            for (const b of boards) {
-              io.to(`board:${b.id}`).emit('board:state', { board: { ...b, current_match_id: null, status: 'idle' }, match: null });
-            }
-            // Boşalan board'lar bekleyen başka turnuvaya yarayabilir.
-            scheduler.assignPendingMatches(io, t.user_id || null);
-          } else {
-            scheduler.assignPendingMatches(io, t?.user_id || null);
-          }
-        }
-      }
-      scheduleBroadcast();
-    } else {
-      scheduleBroadcast();
-    }
+    if (result.matchFinished) handleMatchFinished(matchId);
+    scheduleBroadcast();
     res.json({ ...result, match: enrichMatch(matchId) });
   } catch (e) {
     res.status(400).json({ error: e.message });
@@ -3785,6 +3789,26 @@ scheduler.init(io);
 // (board'a atanmamış ready maç + boş board) durumları toparlasın.
 // Aksi halde restart sonrası kullanıcı bir tetikleyici (board patch, round bitti vs.)
 // olana kadar maçlar gelmez.
+// Startup onarımı: bitmiş ama kazananı/kaybedeni sonraki maça aktarılmamış maçları
+// yeniden işle (Kas 2026 — cricket modlarında aktarım yapılmıyordu). Idempotent.
+try {
+  const rows = db.db.prepare(`
+    SELECT m.id FROM matches m
+    JOIN tournaments t ON t.id = m.tournament_id
+    LEFT JOIN matches nw ON nw.id = m.next_winner_match_id
+    LEFT JOIN matches nl ON nl.id = m.next_loser_match_id
+    WHERE t.status = 'running' AND m.status = 'finished' AND m.winner_entry_id IS NOT NULL
+      AND m.team_phase_match_id IS NULL
+      AND (
+        (nw.id IS NOT NULL AND (CASE m.next_winner_slot WHEN 1 THEN nw.entry1_id ELSE nw.entry2_id END) IS NULL)
+        OR (nl.id IS NOT NULL AND m.entry1_id IS NOT NULL AND m.entry2_id IS NOT NULL
+            AND (CASE m.next_loser_slot WHEN 1 THEN nl.entry1_id ELSE nl.entry2_id END) IS NULL)
+      )
+    ORDER BY m.id`).all();
+  for (const r of rows) { try { tournament.onMatchFinished(r.id); } catch (e) { console.warn('[startup] onarım', r.id, e.message); } }
+  if (rows.length) console.log('[startup] braket onarımı:', rows.length, 'maç yeniden işlendi');
+} catch (e) { console.warn('[startup] braket onarım hatası:', e.message); }
+
 try {
   scheduler.assignPendingMatches(io, null);
   console.log('[startup] scheduler bir kez çalıştırıldı.');
